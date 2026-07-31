@@ -52,7 +52,6 @@ llambo jobs stress --server http://127.0.0.1:8080 --jobs 2 --requests-per-job 10
 
 llambo route simulate --limit 100 --modes fastest,balanced
 llambo route canary start --provider openai --traffic 0.1
-llambo completion zsh
 ```
 
 ## Model Selectors

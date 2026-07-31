@@ -1,0 +1,22 @@
+Usage: llambo <command> [flags]
+
+High-performance LLM gateway with parallel job processing.
+
+Commands:
+  config       Manage provider configuration
+  evals        Rank models from external evaluation data
+  jobs         Job testing and stress testing commands
+  models       List providers and configured models
+  ping         Ping all configured providers
+  prompt       Send the same prompt to multiple configured LLM providers and
+               compare responses.
+  providers    List configured providers and manage model catalog
+  route        Routing tools
+  serve        Start the LLM gateway server
+
+Options:
+  -h, --help             Show context-sensitive help.
+  -v, --version          Print version information.
+      --config=STRING    Config file path (default ~/.config/llambo/config.json)
+
+Run "llambo <command> --help" for command details.

@@ -34,6 +34,118 @@ func TestExecuteMetadataAndErrors(t *testing.T) {
 	}
 }
 
+func TestRootHelpGolden(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	t.Setenv("CLICOLOR_FORCE", "")
+
+	want, err := os.ReadFile(filepath.Join("testdata", "root_help.golden"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out, errOut bytes.Buffer
+	if err := execute(context.Background(), []string{"--help"}, &out, &errOut); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.String(); got != string(want) {
+		t.Fatalf("root help mismatch (-want +got):\n-%s\n+%s", want, got)
+	}
+	for _, hidden := range []string{"init", "run", "pin", "simulate", "start"} {
+		if strings.Contains(out.String(), "  "+hidden+" ") {
+			t.Errorf("root help includes recursive command %q:\n%s", hidden, out.String())
+		}
+	}
+}
+
+func TestNestedHelpListsDirectChildren(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	var out, errOut bytes.Buffer
+	if err := execute(context.Background(), []string{"models", "--help"}, &out, &errOut); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"catalog", "discover-free", "sync-pricing"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("models help missing direct child %q:\n%s", want, out.String())
+		}
+	}
+	if strings.Contains(out.String(), "import-quality") {
+		t.Errorf("models help includes recursive descendant:\n%s", out.String())
+	}
+}
+
+func TestVersionFlagsAndPositionalCommand(t *testing.T) {
+	original := Version
+	Version = "v0.1.0-test"
+	t.Cleanup(func() { Version = original })
+	for _, flag := range []string{"-v", "--version"} {
+		var out, errOut bytes.Buffer
+		if err := execute(context.Background(), []string{flag}, &out, &errOut); err != nil {
+			t.Fatalf("execute(%q): %v", flag, err)
+		}
+		if got, want := out.String(), "llambo version v0.1.0-test\n"; got != want {
+			t.Errorf("execute(%q) output = %q, want %q", flag, got, want)
+		}
+	}
+	var out, errOut bytes.Buffer
+	if err := execute(context.Background(), []string{"version"}, &out, &errOut); err == nil {
+		t.Fatal("positional version unexpectedly succeeded")
+	}
+}
+
+func TestHelpAndErrorsHonorTerminalColorControls(t *testing.T) {
+	t.Run("forced color", func(t *testing.T) {
+		t.Setenv("NO_COLOR", "")
+		t.Setenv("CLICOLOR_FORCE", "1")
+		var out, errOut bytes.Buffer
+		if err := execute(context.Background(), []string{"serve", "--help"}, &out, &errOut); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(out.String(), "\x1b[") {
+			t.Fatalf("forced-color help contains no ANSI styling: %q", out.String())
+		}
+		out.Reset()
+		if err := execute(context.Background(), []string{"--help"}, &out, &errOut); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(out.String(), "\x1b[2mRun ") {
+			t.Fatalf("forced-color command hint is not faint: %q", out.String())
+		}
+		if err := WriteError(&errOut, errors.New("unknown flag --wat")); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(errOut.String(), "\x1b[") || strings.Contains(errOut.String(), "Usage:") {
+			t.Fatalf("unexpected forced-color error output: %q", errOut.String())
+		}
+	})
+	t.Run("no color", func(t *testing.T) {
+		t.Setenv("NO_COLOR", "1")
+		t.Setenv("CLICOLOR_FORCE", "")
+		var out, errOut bytes.Buffer
+		if err := execute(context.Background(), []string{"--help"}, &out, &errOut); err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(out.String(), "\x1b[") {
+			t.Fatalf("NO_COLOR help contains ANSI styling: %q", out.String())
+		}
+		if err := WriteError(&errOut, errors.New("unknown flag --wat")); err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(errOut.String(), "\x1b[") || strings.Contains(errOut.String(), "Usage:") {
+			t.Fatalf("unexpected NO_COLOR error output: %q", errOut.String())
+		}
+	})
+}
+
+func TestParseErrorsAreConcise(t *testing.T) {
+	var out, errOut bytes.Buffer
+	err := execute(context.Background(), []string{"--bad-flag"}, &out, &errOut)
+	if err == nil {
+		t.Fatal("invalid flag unexpectedly succeeded")
+	}
+	if out.Len() != 0 || errOut.Len() != 0 || strings.Contains(err.Error(), "Usage:") {
+		t.Fatalf("parse error was not concise: stdout=%q stderr=%q error=%q", out.String(), errOut.String(), err)
+	}
+}
+
 func TestWriterAwareOperationalOutput(t *testing.T) {
 	t.Run("jobs progress", func(t *testing.T) {
 		var out bytes.Buffer
