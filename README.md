@@ -75,7 +75,7 @@ Config file location: `~/.config/llambo/config.json`
     "openai": {
       "provider_type": "openai",
       "base_url": "https://api.openai.com",
-      "model": "gpt-4o",
+      "model": "gpt-5.6-sol",
       "workers": 3,
       "priority": 1,
       "enabled": true
@@ -83,7 +83,7 @@ Config file location: `~/.config/llambo/config.json`
     "openrouter": {
       "provider_type": "openrouter",
       "base_url": "https://openrouter.ai/api",
-      "model": "anthropic/claude-3-5-sonnet",
+      "model": "~anthropic/claude-sonnet-latest",
       "workers": 2,
       "priority": 2,
       "enabled": true,
@@ -136,7 +136,7 @@ route_preferences:
       any_phrases: ["refactor", "goroutine", "debug"]
     choose:
       provider: openrouter
-      model: anthropic/claude-3-5-sonnet
+      model: ~anthropic/claude-sonnet-latest
 ```
 
 ---
@@ -162,7 +162,7 @@ route_preferences:
 curl http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "gpt-4o",
+    "model": "gpt-5.6-sol",
     "messages": [{"role": "user", "content": "Hello!"}]
   }'
 ```
@@ -175,7 +175,7 @@ Every response includes provider transparency metadata (`x_llambo` body field & 
   "choices": [...],
   "x_llambo": {
     "backend": "openai",
-    "model": "gpt-4o",
+    "model": "gpt-5.6-sol",
     "duration_ms": 420,
     "total_tokens": 75,
     "cost_usd": 0.0003
