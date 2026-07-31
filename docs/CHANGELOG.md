@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-07-31
+
 ### Added
 - Cache-first `llambo evals` rankings that combine LLM Stats and Artificial Analysis through the deterministic, frozen-reference LES-1 formula
 - External-evidence diagnostics for coverage, evidence bounds, source disagreement, identity confidence, reference drift, and jackknife rank stability
@@ -22,6 +24,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Handler timeouts and body size limits for gateway
 - Partial failure support for job processing
 - Auto-recovery for circuit breakers after cooldown period
+- High-performance LLM gateway service with parallel job processing
+- Intelligent multi-objective router with intent detection (`code`, `extraction`, `long_context`, `chat`) and policy modes (`quality`, `cheapest`, `fastest`, `balanced`)
+- Rule-based route preferences via `~/.config/llambo/route-preferences.yaml` and `llambo route query` CLI
+- Per-backend circuit breakers with automatic 60s to 5m failover recovery
+- Multi-key rotation on 429 rate limit responses
+- Streaming response engines for OpenAI and Anthropic compatible protocols
+- Cache-first `llambo evals` framework using the LES-1 percentile formula
+- Model catalog, health tracking, and zero-cost model discovery (`llambo models discover-free`)
+- Native Gemini API support, embeddings endpoint, and batch job manager
+- MIT Open Source License
 
 ### Changed
 - `llambo evals` keeps external sources cache-only by default while using live loopback OMLX inventory selection; `--offline` disables all source access
@@ -35,6 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Enhanced provider types and gateway interfaces
 - Improved SOLID compliance across codebase
 - Added comprehensive test coverage
+- Initial public release
 
 ### Fixed
 - Job status reporting and error handling
@@ -45,24 +58,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Local model evaluation harnesses, calibration anchors, ridge fitting, and local-score dependencies from the active ranking workflow
 - Bifrost SDK dependencies and abstractions
 - Unused code and legacy abstractions
-
-## [0.1.0] - 2026-07-31
-
-### Added
-- High-performance LLM gateway service with parallel job processing
-- Intelligent multi-objective router with intent detection (`code`, `extraction`, `long_context`, `chat`) and policy modes (`quality`, `cheapest`, `fastest`, `balanced`)
-- Rule-based route preferences via `~/.config/llambo/route-preferences.yaml` and `llambo route query` CLI
-- Per-backend circuit breakers with automatic 60s to 5m failover recovery
-- Multi-key rotation on 429 rate limit responses
-- Streaming response engines for OpenAI and Anthropic compatible protocols
-- Cache-first `llambo evals` framework using the LES-1 percentile formula
-- Model catalog, health tracking, and zero-cost model discovery (`llambo models discover-free`)
-- Native Gemini API support, embeddings endpoint, and batch job manager
-- MIT Open Source License
-
-### Changed
-- Initial public release
-
 ---
 
 ## Types of Changes

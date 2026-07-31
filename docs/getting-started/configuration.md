@@ -52,7 +52,7 @@ Here's a complete example configuration showing all available fields:
       "requires_key": true,
       "models": ["anthropic/claude-3-5-sonnet", "openai/gpt-4o-mini"],
       "extra_headers": {
-        "HTTP-Referer": "https://github.com/llambo",
+        "HTTP-Referer": "https://github.com/dotcommander/llambo",
         "X-Title": "Llambo Gateway"
       },
       "api_path": null

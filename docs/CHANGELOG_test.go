@@ -59,7 +59,7 @@ func TestChangelogHasUnreleasedSection(t *testing.T) {
 
 	changelog := string(content)
 
-	// Test that [Unreleased] section exists and has content
+	// Test that [Unreleased] is intentionally empty for the initial public release.
 	if !strings.Contains(changelog, "## [Unreleased]") {
 		t.Error("CHANGELOG.md missing [Unreleased] section header")
 	}
@@ -81,55 +81,8 @@ func TestChangelogHasUnreleasedSection(t *testing.T) {
 		unreleasedSection = changelog[unreleasedIndex:]
 	}
 
-	// Test that [Unreleased] section has at least one change type
-	changeTypes := []string{"### Added", "### Changed", "### Fixed", "### Removed"}
-	hasChangeType := false
-	for _, changeType := range changeTypes {
-		if strings.Contains(unreleasedSection, changeType) {
-			hasChangeType = true
-			break
-		}
-	}
-
-	if !hasChangeType {
-		t.Error("[Unreleased] section should contain at least one change type (Added, Changed, Fixed, or Removed)")
-	}
-
-	// Test that [Unreleased] section has at least one bullet point or change item
-	// Look for list items (lines starting with - or * after a change type section)
-	lines := strings.Split(unreleasedSection, "\n")
-	inChangeSection := false
-	hasChangeItems := false
-
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-
-		if strings.HasPrefix(trimmed, "### Added") ||
-			strings.HasPrefix(trimmed, "### Changed") ||
-			strings.HasPrefix(trimmed, "### Fixed") ||
-			strings.HasPrefix(trimmed, "### Removed") {
-			inChangeSection = true
-			continue
-		}
-
-		if inChangeSection && strings.HasPrefix(trimmed, "### ") {
-			// Reached another change type section
-			inChangeSection = false
-			continue
-		}
-
-		if inChangeSection && (strings.HasPrefix(trimmed, "- ") || strings.HasPrefix(trimmed, "* ")) {
-			hasChangeItems = true
-		}
-
-		if inChangeSection && strings.HasPrefix(trimmed, "## ") {
-			// Reached another major section
-			inChangeSection = false
-		}
-	}
-
-	if !hasChangeItems {
-		t.Error("[Unreleased] section should contain at least one change item (bullet point under a change type)")
+	if strings.TrimSpace(unreleasedSection) != "## [Unreleased]" {
+		t.Errorf("[Unreleased] must be empty before the next release:\n%s", unreleasedSection)
 	}
 }
 

@@ -38,7 +38,7 @@ Here's a complete example configuring 2+ providers with failover:
       "enabled": true,
       "requires_key": true,
       "extra_headers": {
-        "HTTP-Referer": "https://github.com/llambo",
+        "HTTP-Referer": "https://github.com/dotcommander/llambo",
         "X-Title": "Llambo Gateway"
       }
     },

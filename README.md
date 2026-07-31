@@ -88,7 +88,7 @@ Config file location: `~/.config/llambo/config.json`
       "priority": 2,
       "enabled": true,
       "extra_headers": {
-        "HTTP-Referer": "https://github.com/llambo"
+        "HTTP-Referer": "https://github.com/dotcommander/llambo"
       }
     }
   },

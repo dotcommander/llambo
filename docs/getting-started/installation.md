@@ -40,7 +40,7 @@ go install github.com/dotcommander/llambo@latest
 Or for a specific version:
 
 ```bash
-go install github.com/dotcommander/llambo@v1.0.0
+go install github.com/dotcommander/llambo@v0.1.0
 ```
 
 ### Method 2: Build from Source
@@ -57,14 +57,6 @@ go build -o llambo . && ln -sf $(pwd)/llambo ~/go/bin/llambo
 ```
 
 **Important**: The symlink step is critical because the `llambo` command expects to be in your PATH. Without it, you'll need to run `./llambo` from the project directory instead of `llambo`.
-
-### Method 3: Run Without Installation
-
-For testing or one-time use, you can run Llambo directly:
-
-```bash
-go run . serve
-```
 
 ## Verification
 
@@ -84,27 +76,27 @@ llambo
 You should see output similar to:
 
 ```
-Llambo - High-performance LLM gateway
+Usage: llambo <command> [flags]
 
-Usage:
-  llambo [command]
+High-performance LLM gateway with parallel job processing.
 
-Available Commands:
-  completion  Generate the autocompletion script for the specified shell
-  config      Manage provider configuration
-  help        Help about any command
-  jobs        Job testing and stress testing commands
-  models      List providers and configured models
-  ping        Ping all configured providers
-  prompt      Send a prompt to multiple models for comparison
-  providers   List configured providers and manage model catalog
-  route       Routing tools
-  serve       Start the gateway server
+Commands:
+  config       Manage provider configuration
+  evals        Rank models from external evaluation data
+  jobs         Job testing and stress testing commands
+  models       List providers and configured models
+  ping         Ping all configured providers
+  prompt       Send the same prompt to multiple configured LLM providers
+  providers    List configured providers and manage model catalog
+  route        Routing tools
+  serve        Start the LLM gateway server
 
-Flags:
-  -h, --help   help for llambo
+Options:
+  -h, --help             Show context-sensitive help.
+  -v, --version          Print version information.
+      --config=STRING    Config file path (default ~/.config/llambo/config.json)
 
-Use "llambo [command] --help" for more information about a command.
+Run "llambo <command> --help" for command details.
 ```
 
 ## Troubleshooting
