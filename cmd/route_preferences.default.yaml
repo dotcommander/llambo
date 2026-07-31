@@ -1,0 +1,32 @@
+route_preferences:
+  - name: atomic_fact_extraction
+    match:
+      intent: extraction
+      any_phrases:
+        - atomic fact
+        - atomic facts
+    choose:
+      provider: gemini
+      model: gemini-2.5-flash-lite
+    reason: atomic fact extraction prefers Gemini 2.5 Flash Lite
+
+  - name: draft_writer
+    match:
+      any_phrases:
+        - draft
+        - write
+    choose:
+      provider: deepseek
+      model: deepseek-v4-pro
+    reason: draft writing prefers DeepSeek V4 Pro
+
+fallback_decider:
+  provider: gemini
+  model: gemini-2.5-flash-lite
+  reason: fallback route decider is Gemini 2.5 Flash Lite
+
+# RouteLLM-inspired placeholder for future calibration. Today this file uses
+# deterministic ordered rules; later a calibrated decider can interpret this
+# threshold before falling back to routing.mode scoring.
+threshold: 0.5
+fallback_mode: quality

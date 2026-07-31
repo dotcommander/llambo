@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "projections": [
+    {
+      "artifact_key": "Qwen3.6-27B-MLX-4bit",
+      "source_key": "aa:qwen3.6-27b",
+      "confidence": "medium",
+      "basis": "Reviewed Qwen3.6 27B base identity; live OMLX metadata reports reasoning enabled for this MLX 4-bit artifact.",
+      "reviewed_at": "2026-07-10T00:00:00Z"
+    },
+    {
+      "artifact_key": "Qwen3.6-35B-A3B-oQ4-fp16-mtp",
+      "source_key": "aa:qwen3-6-35b-a3b",
+      "confidence": "medium",
+      "basis": "Reviewed Qwen3.6 35B A3B base identity; live OMLX metadata reports reasoning enabled and preserved MTP-compatible weights.",
+      "reviewed_at": "2026-07-10T00:00:00Z"
+    },
+    {
+      "artifact_key": "gemma-4-26B-A4B-it-heretic-4bit",
+      "source_key": "aa:gemma-4-26b-a4b-it",
+      "confidence": "low",
+      "basis": "Reviewed Gemma 4 26B A4B base identity; Heretic fine-tune and 4-bit quantization may change capability.",
+      "reviewed_at": "2026-07-10T00:00:00Z"
+    },
+    {
+      "artifact_key": "gpt-oss-20b-MXFP4-Q8",
+      "source_key": "gpt-oss-20b-high",
+      "confidence": "low",
+      "basis": "Reviewed GPT OSS 20B base identity; quantization and reasoning-effort parity are not independently proven.",
+      "reviewed_at": "2026-07-10T00:00:00Z"
+    },
+    {
+      "artifact_key": "granite-4.1-8b-nvfp4",
+      "source_key": "aa:granite-4-1-8b",
+      "confidence": "medium",
+      "basis": "Reviewed Granite 4.1 8B base identity with NVFP4 packaging variance.",
+      "reviewed_at": "2026-07-10T00:00:00Z"
+    },
+    {
+      "artifact_key": "Qwen-AgentWorld-35B-A3B-oQ4-MLX",
+      "source_key": "qwen3.6-35b-a3b",
+      "confidence": "low",
+      "basis": "Reviewed Qwen3.6 35B A3B base proxy; AgentWorld fine-tune and oQ4 MLX artifact may materially change capability.",
+      "reviewed_at": "2026-07-10T00:00:00Z"
+    }
+  ]
+}

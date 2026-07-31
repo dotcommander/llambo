@@ -1,0 +1,38 @@
+# === Binary ===
+/llambo
+
+# === Test Outputs ===
+*.cleaned.md
+*.test
+*.out
+coverage.txt
+*.prof
+
+# === IDE ===
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# === OS ===
+.DS_Store
+Thumbs.db
+*~
+
+# === Temporary ===
+*.log
+*.tmp
+*.bak
+
+# === Benchmark/Extraction Artifacts ===
+*extraction*.md
+*extraction*.json
+*diagnostic*.json
+*retest*.json
+*short*.json
+fixtures/giza.md
+
+# === Generated Artifacts Directory ===
+artifacts/model-sweep/
+artifacts/reviews/
+!artifacts/README.md

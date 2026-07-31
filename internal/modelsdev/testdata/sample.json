@@ -1,0 +1,8 @@
+{
+  "openai": { "models": { "gpt-4o": { "cost": { "input": 2.5, "output": 10 } } } },
+  "google": { "models": {
+    "gemini-2.5-pro": { "cost": { "input": 1.25, "output": 10 } },
+    "gemini-no-price": {}
+  } },
+  "zai": { "models": { "glm-5-turbo": { "cost": { "input": 1.2, "output": 4 } } } }
+}

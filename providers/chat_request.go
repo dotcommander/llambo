@@ -1,0 +1,139 @@
+package providers
+
+import (
+	"context"
+	"log/slog"
+	"time"
+
+	whtypes "github.com/garyblankenship/wormhole/v3/types"
+)
+
+const maxNativeStopSequences = 4
+
+// ChatRequestConfig holds configuration for chat requests
+type ChatRequestConfig struct {
+	Timeout    time.Duration
+	MaxRetries int
+	Backoffs   []time.Duration
+}
+
+// DefaultChatConfig provides sensible defaults for chat requests
+var DefaultChatConfig = ChatRequestConfig{
+	Timeout:    DefaultRequestTimeout,
+	MaxRetries: DefaultRetryCount,
+	Backoffs:   DefaultRetryBackoffs,
+}
+
+// ExecuteChatRequest sends a chat request through a wormhole provider with llambo-owned retry logic.
+// It handles parameter building, transient error retries, and usage/tool-call mapping.
+// Returns content, usage (may be nil), finish reason, tool calls (if any), and error.
+func ExecuteChatRequest(
+	ctx context.Context,
+	client whtypes.Provider,
+	cfg Config,
+	systemPrompt, userContent string,
+	reqConfig ChatRequestConfig,
+) (string, *LLMUsage, string, []ToolCall, error) {
+	request := buildTextRequest(ctx, cfg, systemPrompt, userContent)
+	usedNativeStops := len(request.Stop) > 0
+	start := time.Now()
+	slog.Debug("provider chat request: entry", "provider", cfg.GetProviderType(), "model", cfg.Model)
+
+	var lastErr error
+	for attempt := 0; attempt <= reqConfig.MaxRetries; attempt++ {
+		resp, err := client.Text(ctx, request)
+		if err == nil {
+			content, usage, model, toolCalls, err := extractContentFromTextResponse(resp, cfg.Model)
+			outcome := "success"
+			if err != nil {
+				outcome = "error"
+			}
+			slog.Debug("provider chat request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", outcome)
+			return content, usageOrEstimate(usage, systemPrompt, userContent, content), model, toolCalls, err
+		}
+
+		if usedNativeStops && isUnsupportedStopError(err) {
+			request.Stop = nil
+			usedNativeStops = false
+			attempt--
+			continue
+		}
+
+		lastErr = wrapProviderError(err, cfg)
+		if !IsRetryable(lastErr) || attempt >= reqConfig.MaxRetries {
+			break
+		}
+		if err := waitChatBackoff(ctx, reqConfig, attempt); err != nil {
+			slog.Debug("provider chat request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "error")
+			return "", nil, "", nil, err
+		}
+	}
+
+	slog.Debug("provider chat request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", reqConfig.MaxRetries, "outcome", "error")
+	return "", nil, "", nil, lastErr
+}
+
+// ExecuteChatStreamRequest sends a streaming chat request and forwards deltas.
+// Returns full content, usage, finish reason, tool calls, whether any chunk was emitted, and error.
+func ExecuteChatStreamRequest(
+	ctx context.Context,
+	client whtypes.Provider,
+	cfg Config,
+	systemPrompt, userContent string,
+	onChunk ChatStreamHandler,
+	reqConfig ChatRequestConfig,
+) (string, *LLMUsage, string, []ToolCall, bool, error) {
+	request := buildTextRequest(ctx, cfg, systemPrompt, userContent)
+	usedNativeStops := len(request.Stop) > 0
+	start := time.Now()
+	slog.Debug("provider chat stream request: entry", "provider", cfg.GetProviderType(), "model", cfg.Model)
+
+	var lastErr error
+	for attempt := 0; attempt <= reqConfig.MaxRetries; attempt++ {
+		stream, err := client.Stream(ctx, request)
+		if err != nil {
+			if usedNativeStops && isUnsupportedStopError(err) {
+				request.Stop = nil
+				usedNativeStops = false
+				attempt--
+				continue
+			}
+			lastErr = wrapProviderError(err, cfg)
+			if !IsRetryable(lastErr) || attempt >= reqConfig.MaxRetries {
+				slog.Debug("provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "error")
+				return "", nil, "", nil, false, lastErr
+			}
+			if err := waitChatBackoff(ctx, reqConfig, attempt); err != nil {
+				slog.Debug("provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "error")
+				return "", nil, "", nil, false, err
+			}
+			continue
+		}
+
+		content, usage, finishReason, toolCalls, emitted, err := consumeTextStream(stream, cfg.Model, onChunk)
+		if err == nil {
+			slog.Debug("provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "success")
+			return content, usageOrEstimate(usage, systemPrompt, userContent, content), finishReason, toolCalls, emitted, nil
+		}
+
+		if usedNativeStops && !emitted && isUnsupportedStopError(err) {
+			request.Stop = nil
+			usedNativeStops = false
+			attempt--
+			continue
+		}
+
+		lastErr = wrapProviderError(err, cfg)
+		if emitted || !IsRetryable(lastErr) || attempt >= reqConfig.MaxRetries {
+			slog.Debug("provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "error")
+			return "", nil, "", nil, emitted, lastErr
+		}
+		if err := waitChatBackoff(ctx, reqConfig, attempt); err != nil {
+			slog.Debug("provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "error")
+			return "", nil, "", nil, emitted, err
+		}
+	}
+
+	slog.Debug("provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", reqConfig.MaxRetries, "outcome", "error")
+	return "", nil, "", nil, false, lastErr
+}
