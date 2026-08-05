@@ -224,6 +224,8 @@ func TestFetchWritingCatalogDiscoversFreshPublicModels(t *testing.T) {
 				{"id":"fresh/CreativeWriter-7B","pipeline_tag":"text-generation","createdAt":"2026-08-04T00:00:00.000Z","lastModified":"2026-08-05T03:00:00.000Z","downloads":12,"likes":4,"private":false,"gated":false,"tags":["transformers","license:apache-2.0"]},
 				{"id":"private/model","pipeline_tag":"text-generation","private":true,"gated":false},
 				{"id":"gated/model","pipeline_tag":"text-generation","private":false,"gated":true},
+				{"id":"gated/string-model","pipeline_tag":"text-generation","private":false,"gated":"auto"},
+				{"id":"gated/manual-model","pipeline_tag":"text-generation","private":false,"gated":"manual"},
 				{"id":"fresh/SecondWriter","pipeline_tag":"text-generation","private":false,"gated":false,"tags":[]},
 				{"id":"not-a-text-model","pipeline_tag":"text-to-image","private":false,"gated":false}
 			]`))

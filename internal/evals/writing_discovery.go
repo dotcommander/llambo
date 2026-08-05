@@ -51,15 +51,41 @@ type WritingDiscoveredOpenModel struct {
 }
 
 type huggingFaceModelListItem struct {
-	ID           string   `json:"id"`
-	PipelineTag  string   `json:"pipeline_tag"`
-	CreatedAt    string   `json:"createdAt"`
-	LastModified string   `json:"lastModified"`
-	Downloads    int64    `json:"downloads"`
-	Likes        int64    `json:"likes"`
-	Gated        bool     `json:"gated"`
-	Private      bool     `json:"private"`
-	Tags         []string `json:"tags"`
+	ID           string           `json:"id"`
+	PipelineTag  string           `json:"pipeline_tag"`
+	CreatedAt    string           `json:"createdAt"`
+	LastModified string           `json:"lastModified"`
+	Downloads    int64            `json:"downloads"`
+	Likes        int64            `json:"likes"`
+	Gated        writingModelBool `json:"gated"`
+	Private      writingModelBool `json:"private"`
+	Tags         []string         `json:"tags"`
+}
+
+type writingModelBool bool
+
+func (value *writingModelBool) UnmarshalJSON(data []byte) error {
+	var boolean bool
+	if err := json.Unmarshal(data, &boolean); err == nil {
+		*value = writingModelBool(boolean)
+		return nil
+	}
+	var text string
+	if err := json.Unmarshal(data, &text); err != nil {
+		return err
+	}
+	switch strings.ToLower(strings.TrimSpace(text)) {
+	case "", "false", "0", "no", "none":
+		*value = false
+	case "true", "1", "yes", "auto":
+		*value = true
+	default:
+		// Hugging Face has used additional string states such as "manual".
+		// Unknown non-empty states are gated conservatively so discovery never
+		// treats an access-controlled model as an open candidate.
+		*value = true
+	}
+	return nil
 }
 
 func fetchWritingOpenModelDiscovery(ctx context.Context, client *http.Client, catalog WritingCatalog, opts WritingCatalogOptions, fetchedAt time.Time) (WritingOpenModelDiscovery, []WritingDiscoveredOpenModel) {
@@ -107,7 +133,7 @@ func fetchWritingOpenModelDiscovery(ctx context.Context, client *http.Client, ca
 	}
 	candidates := make([]WritingDiscoveredOpenModel, 0, minInt(limit, len(items)))
 	for _, item := range items {
-		if item.ID == "" || item.PipelineTag != "text-generation" || item.Private || item.Gated {
+		if item.ID == "" || item.PipelineTag != "text-generation" || bool(item.Private) || bool(item.Gated) {
 			continue
 		}
 		if _, exists := known[item.ID]; exists {
@@ -123,8 +149,8 @@ func fetchWritingOpenModelDiscovery(ctx context.Context, client *http.Client, ca
 			LastModified:   item.LastModified,
 			Downloads:      item.Downloads,
 			Likes:          item.Likes,
-			Gated:          item.Gated,
-			Private:        item.Private,
+			Gated:          bool(item.Gated),
+			Private:        bool(item.Private),
 			Tags:           append([]string(nil), item.Tags...),
 			ReviewStatus:   writingDiscoveryReviewStatus,
 			Notes:          writingDiscoveryCandidateNotes,
