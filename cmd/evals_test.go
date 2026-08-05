@@ -31,8 +31,15 @@ func TestEncodeEvalsReport(t *testing.T) {
 	if !strings.Contains(string(jsonData), `"name": "Local A"`) {
 		t.Fatalf("tracked projection was hidden by limit: %s", jsonData)
 	}
-	if _, err := encodeEvalsReport(report, "html", 1); err == nil {
-		t.Fatal("expected unsupported format error")
+	htmlData, err := encodeEvalsReport(report, "html", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(htmlData) == 0 || !strings.Contains(string(htmlData), "<") {
+		t.Fatalf("unexpected HTML report: %s", htmlData)
+	}
+	if _, err := encodeEvalsReport(report, "yaml", 1); err == nil || !strings.Contains(err.Error(), "supported: markdown, json, html") {
+		t.Fatalf("unexpected unsupported format error: %v", err)
 	}
 }
 

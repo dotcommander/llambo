@@ -51,6 +51,9 @@ llambo route query "Write a fast Go routine to parse JSON"
 
 # Rank models offline using LLM Stats + Artificial Analysis percentile scores
 llambo evals --rank-by coding
+
+# Save a standalone browser report
+llambo evals --format html --output /tmp/llambo-evals.html
 ```
 
 ---

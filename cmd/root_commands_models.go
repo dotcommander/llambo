@@ -51,7 +51,7 @@ func (c *serveCommand) Run(io *commandIO) error {
 
 type evalsCommand struct {
 	Refresh        bool    `help:"fetch fresh source snapshots from the network"`
-	Format         string  `default:"markdown" help:"report format: markdown or json"`
+	Format         string  `default:"markdown" help:"report format: markdown, json, or html"`
 	Output         string  `short:"o" help:"write the report to this file instead of stdout"`
 	Limit          int     `default:"50" help:"maximum eligible canonical models; eligible tracked projections are always included; 0 includes all"`
 	AllowPartial   bool    `name:"allow-partial" help:"continue with an LLM Stats-only report when Artificial Analysis is unavailable"`

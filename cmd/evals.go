@@ -99,6 +99,8 @@ func encodeEvalsReport(report evals.Report, format string, limit int) ([]byte, e
 	switch strings.ToLower(strings.TrimSpace(format)) {
 	case "markdown", "md":
 		return []byte(evals.RenderMarkdown(report, limit)), nil
+	case "html":
+		return []byte(evals.RenderHTML(report, limit)), nil
 	case "json":
 		report.Models = limitEvalsModels(report.Models, limit)
 		data, err := json.MarshalIndent(report, "", "  ")
@@ -107,7 +109,7 @@ func encodeEvalsReport(report evals.Report, format string, limit int) ([]byte, e
 		}
 		return append(data, '\n'), nil
 	default:
-		return nil, fmt.Errorf("unsupported --format %q (supported: markdown, json)", format)
+		return nil, fmt.Errorf("unsupported --format %q (supported: markdown, json, html)", format)
 	}
 }
 

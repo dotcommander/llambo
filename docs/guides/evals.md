@@ -5,6 +5,7 @@ llambo evals
 llambo evals --rank-by coding
 llambo evals --rank-by value --limit 100
 llambo evals --format json --output /tmp/llambo-evals.json
+llambo evals --format html --output /tmp/llambo-evals.html
 llambo evals --min-overall -1 --max-output-price -1
 llambo evals --no-omlx
 llambo evals --projections ./eval-projections.json
@@ -37,7 +38,7 @@ they never refresh implicitly. Local OMLX discovery is live and is not cached.
 | Option | Type | Default | Behavior |
 | --- | --- | --- | --- |
 | `--rank-by` | string | `overall` | Selects `overall`, `general`, `coding`, `reasoning`, `agents`, `writing`, `long-context`, `speed`, `value`, or `price` |
-| `--format` | string | `markdown` | Emits `markdown`/`md` or `json` |
+| `--format` | string | `markdown` | Emits `markdown`/`md`, `json`, or standalone `html` |
 | `--limit` | integer | `50` | Limits eligible canonical ranked rows; eligible tracked projections are always included; `0` includes every eligible model |
 | `--min-overall` | number | `40` | Includes only models with overall score at least this value; models without overall are excluded; a negative value disables the filter |
 | `--max-output-price` | number | `10` | Excludes canonical models whose highest known source output price exceeds this amount per 1M tokens; unknown prices and local projections remain eligible; a negative value disables the filter |
@@ -48,6 +49,9 @@ they never refresh implicitly. Local OMLX discovery is live and is not cached.
 | `--refresh` | boolean | `false` | Fetches and replaces external source snapshots |
 | `--offline` | boolean | `false` | Uses cached external snapshots and skips live OMLX discovery |
 | `--allow-partial` | boolean | `false` | Allows an LLM Stats-only report when the Artificial Analysis cache or refresh is unavailable |
+
+Use `--format html --output <path>` to write a standalone report for viewing in a
+browser. Markdown and JSON may be written to the same `--output` option.
 
 Without `--allow-partial`, both cached snapshots are required. LLM Stats is
 always required because it supplies the broader profile inventory.
