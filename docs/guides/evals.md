@@ -65,6 +65,17 @@ remote license, creation time, last modification time, download count, and
 gated status. This is a freshness check for the reviewed queue, not an attempt
 to discover every new model on Hugging Face.
 
+The Markdown and JSON outputs also include a **Run plan** for each source. It
+links the prompt artifact, records known prompt counts, names the expected
+generation and judging flow, and calls out reproducibility traps such as judge
+model, temperature, serving mode, and multi-stage context.
+
+After a live refresh, **Open-weight leaderboard coverage** matches reviewed
+model aliases to the primary leaderboard. `measured` means a public row was
+matched. `variant` means the row may use a different reasoning mode or serving
+variant. `needs-run` means no score is inferred and the reviewed model still
+needs an evaluation run.
+
 The offline registry also points to:
 
 | Source | Best use | Surface |

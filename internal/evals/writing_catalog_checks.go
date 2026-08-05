@@ -34,7 +34,7 @@ type WritingModelStatus struct {
 	HTTPStatus      int       `json:"http_status,omitempty"`
 	RegistryLicense string    `json:"registry_license,omitempty"`
 	RemoteLicense   string    `json:"remote_license,omitempty"`
-	LicenseMatch    bool      `json:"license_match,omitempty"`
+	LicenseMatch    bool      `json:"license_match"`
 	PipelineTag     string    `json:"pipeline_tag,omitempty"`
 	CreatedAt       string    `json:"created_at,omitempty"`
 	LastModified    string    `json:"last_modified,omitempty"`
@@ -137,6 +137,23 @@ func inspectWritingArtifact(benchmarkID string, body []byte) (int, error) {
 		return len(prompts), nil
 	default:
 		return 0, nil
+	}
+}
+
+func applyWritingPromptCounts(catalog *WritingCatalog) {
+	for _, check := range catalog.SourceChecks {
+		if check.Records == 0 {
+			continue
+		}
+		for index := range catalog.Benchmarks {
+			if catalog.Benchmarks[index].ID != check.BenchmarkID {
+				continue
+			}
+			switch check.BenchmarkID {
+			case "writingbench", "eqbench-creative-v3", "ifeval":
+				catalog.Benchmarks[index].PromptCount = check.Records
+			}
+		}
 	}
 }
 

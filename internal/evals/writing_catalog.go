@@ -22,13 +22,14 @@ var markdownLinkRE = regexp.MustCompile(`\[([^\]]+)\]\([^)]*\)`)
 // WritingCatalog describes writing-focused evaluation sources without mixing
 // their source-native scores into the LES-1 report.
 type WritingCatalog struct {
-	GeneratedAt     time.Time             `json:"generated_at"`
-	RegistryVersion int                   `json:"registry_version"`
-	Benchmarks      []WritingBenchmark    `json:"benchmarks"`
-	OpenModels      []WritingOpenModel    `json:"open_models"`
-	SourceChecks    []WritingSourceStatus `json:"source_checks,omitempty"`
-	OpenModelChecks []WritingModelStatus  `json:"open_model_checks,omitempty"`
-	Leaderboards    []WritingLeaderboard  `json:"leaderboards,omitempty"`
+	GeneratedAt       time.Time              `json:"generated_at"`
+	RegistryVersion   int                    `json:"registry_version"`
+	Benchmarks        []WritingBenchmark     `json:"benchmarks"`
+	OpenModels        []WritingOpenModel     `json:"open_models"`
+	SourceChecks      []WritingSourceStatus  `json:"source_checks,omitempty"`
+	OpenModelChecks   []WritingModelStatus   `json:"open_model_checks,omitempty"`
+	OpenModelCoverage []WritingModelCoverage `json:"open_model_coverage,omitempty"`
+	Leaderboards      []WritingLeaderboard   `json:"leaderboards,omitempty"`
 }
 
 type WritingBenchmark struct {
@@ -36,6 +37,11 @@ type WritingBenchmark struct {
 	Name          string `json:"name"`
 	URL           string `json:"url"`
 	DataURL       string `json:"data_url,omitempty"`
+	PromptURL     string `json:"prompt_url,omitempty"`
+	PromptFormat  string `json:"prompt_format,omitempty"`
+	PromptCount   int    `json:"prompt_count,omitempty"`
+	RunMode       string `json:"run_mode,omitempty"`
+	RunNotes      string `json:"run_notes,omitempty"`
 	Focus         string `json:"focus"`
 	Scoring       string `json:"scoring"`
 	ScrapeMethod  string `json:"scrape_method"`
@@ -47,14 +53,16 @@ type WritingBenchmark struct {
 // represented by one of the public writing leaderboards. Coverage is kept
 // explicit because public weights and leaderboard coverage are independent.
 type WritingOpenModel struct {
-	ID             string `json:"id"`
-	Name           string `json:"name"`
-	Provider       string `json:"provider"`
-	HuggingFaceURL string `json:"huggingface_url"`
-	License        string `json:"license"`
-	Coverage       string `json:"coverage"`
-	Priority       string `json:"priority"`
-	Notes          string `json:"notes,omitempty"`
+	ID                   string   `json:"id"`
+	Name                 string   `json:"name"`
+	Provider             string   `json:"provider"`
+	HuggingFaceURL       string   `json:"huggingface_url"`
+	License              string   `json:"license"`
+	Coverage             string   `json:"coverage"`
+	Priority             string   `json:"priority"`
+	LeaderboardAliases   []string `json:"leaderboard_aliases,omitempty"`
+	LeaderboardMatchType string   `json:"leaderboard_match_type,omitempty"`
+	Notes                string   `json:"notes,omitempty"`
 }
 
 type WritingLeaderboard struct {
@@ -99,6 +107,10 @@ func DefaultWritingCatalog(now time.Time) WritingCatalog {
 				Name:          "Lech Mazur Creative Story-Writing",
 				URL:           "https://github.com/lechmazur/writing",
 				DataURL:       WritingPrimaryURL,
+				PromptURL:     "https://github.com/lechmazur/writing/tree/main/prompts_wc",
+				PromptFormat:  "text brief files",
+				RunMode:       "Generate a matched short story for each brief, then use pairwise judging against the published comparison protocol.",
+				RunNotes:      "Pin the prompt revision, generation settings, and evaluator roster. Do not compare source-native scores with LES-1.",
 				Focus:         "Creative short stories under matched constrained briefs",
 				Scoring:       "Pairwise Thurstone comparison with estimated win chance and uncertainty range",
 				ScrapeMethod:  "Markdown leaderboard and public prompt/story artifacts",
@@ -110,6 +122,11 @@ func DefaultWritingCatalog(now time.Time) WritingCatalog {
 				Name:          "WritingBench",
 				URL:           "https://github.com/X-PLUG/WritingBench",
 				DataURL:       "https://raw.githubusercontent.com/X-PLUG/WritingBench/main/benchmark_query/benchmark_all.jsonl",
+				PromptURL:     "https://raw.githubusercontent.com/X-PLUG/WritingBench/main/benchmark_query/benchmark_all.jsonl",
+				PromptFormat:  "JSONL",
+				PromptCount:   1000,
+				RunMode:       "Generate one response per real-world query and score against the instance-specific criteria.",
+				RunNotes:      "Use the same evaluator or critic model and preserve the query domain metadata.",
 				Focus:         "Real-world professional writing across six domains and 100 subdomains",
 				Scoring:       "Instance-specific criteria judged by an LLM evaluator or critic model",
 				ScrapeMethod:  "JSONL query corpus plus evaluator artifacts",
@@ -121,6 +138,11 @@ func DefaultWritingCatalog(now time.Time) WritingCatalog {
 				Name:          "EQ-Bench Creative Writing v3",
 				URL:           "https://github.com/EQ-bench/creative-writing-bench",
 				DataURL:       "https://raw.githubusercontent.com/EQ-bench/creative-writing-bench/main/data/creative_writing_prompts_v3.json",
+				PromptURL:     "https://raw.githubusercontent.com/EQ-bench/creative-writing-bench/main/data/creative_writing_prompts_v3.json",
+				PromptFormat:  "JSON object with seed modifiers",
+				PromptCount:   32,
+				RunMode:       "Generate three iterations per prompt and score with the published rubric and pairwise ranking protocol.",
+				RunNotes:      "Pin temperature, min-p, judge model, and the result archive version.",
 				Focus:         "Creative writing quality across 32 prompts and three iterations",
 				Scoring:       "Rubric judging combined with pairwise Glicko/Elo ranking",
 				ScrapeMethod:  "Prompt JSON and published run/result archives",
@@ -132,6 +154,10 @@ func DefaultWritingCatalog(now time.Time) WritingCatalog {
 				Name:          "EQ-Bench Longform Writing",
 				URL:           "https://github.com/EQ-bench/longform-writing-bench",
 				DataURL:       "https://eqbench.com/creative_writing_longform.html",
+				PromptURL:     "https://github.com/EQ-bench/longform-writing-bench/tree/main",
+				PromptFormat:  "multi-stage longform prompts and rubrics",
+				RunMode:       "Run planning, revision, character, and chapter tasks, then score consistency and degradation.",
+				RunNotes:      "Keep all chapters and intermediate planning artifacts. This is expensive and judge-dependent.",
 				Focus:         "Planning, revision, character profiles, and eight-chapter narrative consistency",
 				Scoring:       "Rubric-based longform quality and degradation analysis",
 				ScrapeMethod:  "Public prompts, rubrics, per-model reports, and leaderboard HTML",
@@ -142,6 +168,10 @@ func DefaultWritingCatalog(now time.Time) WritingCatalog {
 				ID:            "arena-creative-writing",
 				Name:          "Arena Creative Writing",
 				URL:           "https://arena.ai/leaderboard/text/creative-writing",
+				PromptURL:     "https://arena.ai/leaderboard/text/creative-writing",
+				PromptFormat:  "live pairwise web conversations",
+				RunMode:       "Use as an external human-preference cross-check rather than a fixed local rerun.",
+				RunNotes:      "The live page does not expose a stable public prompt corpus in this catalog.",
 				Focus:         "Human preference for creative-writing conversations",
 				Scoring:       "Live pairwise preference ranking",
 				ScrapeMethod:  "Rendered leaderboard page",
@@ -153,6 +183,10 @@ func DefaultWritingCatalog(now time.Time) WritingCatalog {
 				Name:          "IFEval",
 				URL:           "https://github.com/google-research/google-research/tree/master/instruction_following_eval",
 				DataURL:       "https://raw.githubusercontent.com/google-research/google-research/master/instruction_following_eval/data/input_data.jsonl",
+				PromptURL:     "https://raw.githubusercontent.com/google-research/google-research/master/instruction_following_eval/data/input_data.jsonl",
+				PromptFormat:  "JSONL with deterministic constraints",
+				RunMode:       "Generate a response for each instruction and run the reference checker.",
+				RunNotes:      "Report strict and loose constraint satisfaction separately from prose quality.",
 				Focus:         "Deterministic instruction and format compliance in generated text",
 				Scoring:       "Programmatic constraint satisfaction",
 				ScrapeMethod:  "Public JSONL prompts and reference checker",
@@ -164,6 +198,10 @@ func DefaultWritingCatalog(now time.Time) WritingCatalog {
 				Name:          "IFBench",
 				URL:           "https://github.com/allenai/IFBench",
 				DataURL:       "https://huggingface.co/datasets/allenai/IFBench_test",
+				PromptURL:     "https://huggingface.co/datasets/allenai/IFBench_test",
+				PromptFormat:  "Hugging Face dataset with constraint metadata",
+				RunMode:       "Generate responses for the out-of-distribution constraints and run the programmatic checker.",
+				RunNotes:      "Keep optional multiturn cases separate from single-turn scores.",
 				Focus:         "Out-of-distribution instruction following with 58 constraints",
 				Scoring:       "Programmatic constraint satisfaction, with optional multiturn cases",
 				ScrapeMethod:  "Public repository and Hugging Face dataset",
@@ -175,6 +213,10 @@ func DefaultWritingCatalog(now time.Time) WritingCatalog {
 				Name:          "Lech Mazur Writing Styles",
 				URL:           "https://github.com/lechmazur/writing_styles",
 				DataURL:       "https://github.com/lechmazur/writing_styles",
+				PromptURL:     "https://github.com/lechmazur/writing_styles",
+				PromptFormat:  "story corpus and CSV feature artifacts",
+				RunMode:       "Generate a comparable story corpus and measure style fingerprints and within-model diversity.",
+				RunNotes:      "Treat diversity as a separate axis. It is not a quality score.",
 				Focus:         "Style fingerprints and within-model writing diversity",
 				Scoring:       "Style-feature and diversity analysis, not a quality leaderboard",
 				ScrapeMethod:  "CSV artifacts and generated story corpus",
@@ -194,33 +236,37 @@ func DefaultWritingCatalog(now time.Time) WritingCatalog {
 				Notes:          "Newest verified public-weight candidate in this registry; not present in the primary story leaderboard snapshot.",
 			},
 			{
-				ID:             "moonshotai/Kimi-K3",
-				Name:           "Kimi K3",
-				Provider:       "Moonshot AI",
-				HuggingFaceURL: "https://huggingface.co/moonshotai/Kimi-K3",
-				License:        "kimi-k3",
-				Coverage:       "primary leaderboard",
-				Priority:       "high",
-				Notes:          "Public weights with a nonstandard model license. Review terms before redistribution.",
+				ID:                 "moonshotai/Kimi-K3",
+				Name:               "Kimi K3",
+				Provider:           "Moonshot AI",
+				HuggingFaceURL:     "https://huggingface.co/moonshotai/Kimi-K3",
+				License:            "other",
+				Coverage:           "primary leaderboard",
+				Priority:           "high",
+				LeaderboardAliases: []string{"Kimi K3"},
+				Notes:              "Hugging Face currently reports an `other` license with a kimi-k3 tag. Review terms before redistribution.",
 			},
 			{
-				ID:             "zai-org/GLM-5.2",
-				Name:           "GLM-5.2",
-				Provider:       "Z.ai",
-				HuggingFaceURL: "https://huggingface.co/zai-org/GLM-5.2",
-				License:        "MIT",
-				Coverage:       "primary leaderboard",
-				Priority:       "high",
+				ID:                   "zai-org/GLM-5.2",
+				Name:                 "GLM-5.2",
+				Provider:             "Z.ai",
+				HuggingFaceURL:       "https://huggingface.co/zai-org/GLM-5.2",
+				License:              "MIT",
+				Coverage:             "primary leaderboard",
+				Priority:             "high",
+				LeaderboardAliases:   []string{"GLM-5.2"},
+				LeaderboardMatchType: "variant",
 			},
 			{
-				ID:             "MiniMaxAI/MiniMax-M3",
-				Name:           "MiniMax-M3",
-				Provider:       "MiniMax",
-				HuggingFaceURL: "https://huggingface.co/MiniMaxAI/MiniMax-M3",
-				License:        "minimax-m3",
-				Coverage:       "primary leaderboard",
-				Priority:       "high",
-				Notes:          "Public weights with a nonstandard model license. Review terms before redistribution.",
+				ID:                 "MiniMaxAI/MiniMax-M3",
+				Name:               "MiniMax-M3",
+				Provider:           "MiniMax",
+				HuggingFaceURL:     "https://huggingface.co/MiniMaxAI/MiniMax-M3",
+				License:            "other",
+				Coverage:           "primary leaderboard",
+				Priority:           "high",
+				LeaderboardAliases: []string{"MiniMax-M3"},
+				Notes:              "Hugging Face currently reports an `other` license with a minimax-m3 tag. Review terms before redistribution.",
 			},
 			{
 				ID:             "Qwen/Qwen3.6-35B-A3B",
@@ -243,41 +289,47 @@ func DefaultWritingCatalog(now time.Time) WritingCatalog {
 				Notes:          "Exact public-weight variant to run alongside the larger Qwen3.6 release.",
 			},
 			{
-				ID:             "google/gemma-4-31B-it",
-				Name:           "Gemma 4 31B it",
-				Provider:       "Google",
-				HuggingFaceURL: "https://huggingface.co/google/gemma-4-31B-it",
-				License:        "Apache-2.0",
-				Coverage:       "primary variant",
-				Priority:       "high",
-				Notes:          "The primary leaderboard includes a Gemma 4 31B reasoning setting; verify the serving mode when comparing runs.",
+				ID:                   "google/gemma-4-31B-it",
+				Name:                 "Gemma 4 31B it",
+				Provider:             "Google",
+				HuggingFaceURL:       "https://huggingface.co/google/gemma-4-31B-it",
+				License:              "Apache-2.0",
+				Coverage:             "primary variant",
+				Priority:             "high",
+				LeaderboardAliases:   []string{"Gemma 4 31B"},
+				LeaderboardMatchType: "variant",
+				Notes:                "The primary leaderboard includes a Gemma 4 31B reasoning setting; verify the serving mode when comparing runs.",
 			},
 			{
-				ID:             "mistralai/Mistral-Large-3-675B-Instruct-2512",
-				Name:           "Mistral Large 3 675B Instruct",
-				Provider:       "Mistral AI",
-				HuggingFaceURL: "https://huggingface.co/mistralai/Mistral-Large-3-675B-Instruct-2512",
-				License:        "Apache-2.0",
-				Coverage:       "primary leaderboard",
-				Priority:       "medium",
+				ID:                   "mistralai/Mistral-Large-3-675B-Instruct-2512",
+				Name:                 "Mistral Large 3 675B Instruct",
+				Provider:             "Mistral AI",
+				HuggingFaceURL:       "https://huggingface.co/mistralai/Mistral-Large-3-675B-Instruct-2512",
+				License:              "Apache-2.0",
+				Coverage:             "primary leaderboard",
+				Priority:             "medium",
+				LeaderboardAliases:   []string{"Mistral Large 3"},
+				LeaderboardMatchType: "variant",
 			},
 			{
-				ID:             "XiaomiMiMo/MiMo-V2.5-Pro",
-				Name:           "Xiaomi MiMo V2.5 Pro",
-				Provider:       "Xiaomi",
-				HuggingFaceURL: "https://huggingface.co/XiaomiMiMo/MiMo-V2.5-Pro",
-				License:        "MIT",
-				Coverage:       "primary leaderboard",
-				Priority:       "medium",
+				ID:                 "XiaomiMiMo/MiMo-V2.5-Pro",
+				Name:               "Xiaomi MiMo V2.5 Pro",
+				Provider:           "Xiaomi",
+				HuggingFaceURL:     "https://huggingface.co/XiaomiMiMo/MiMo-V2.5-Pro",
+				License:            "MIT",
+				Coverage:           "primary leaderboard",
+				Priority:           "medium",
+				LeaderboardAliases: []string{"Xiaomi MiMo V2.5 Pro"},
 			},
 			{
-				ID:             "openai/gpt-oss-120b",
-				Name:           "GPT-OSS-120B",
-				Provider:       "OpenAI",
-				HuggingFaceURL: "https://huggingface.co/openai/gpt-oss-120b",
-				License:        "Apache-2.0",
-				Coverage:       "primary leaderboard",
-				Priority:       "medium",
+				ID:                 "openai/gpt-oss-120b",
+				Name:               "GPT-OSS-120B",
+				Provider:           "OpenAI",
+				HuggingFaceURL:     "https://huggingface.co/openai/gpt-oss-120b",
+				License:            "Apache-2.0",
+				Coverage:           "primary leaderboard",
+				Priority:           "medium",
+				LeaderboardAliases: []string{"GPT-OSS-120B"},
 			},
 			{
 				ID:             "openai/gpt-oss-20b",
@@ -343,8 +395,10 @@ func FetchWritingCatalog(ctx context.Context, opts WritingCatalogOptions) (Writi
 		FetchedAt:   fetchedAt,
 		Rows:        rows,
 	}}
+	catalog.OpenModelCoverage = buildWritingModelCoverage(catalog.OpenModels, rows)
 	if opts.ValidateSources {
 		catalog.SourceChecks = append(catalog.SourceChecks, fetchWritingSourceChecks(ctx, client, catalog, opts, fetchedAt)...)
+		applyWritingPromptCounts(&catalog)
 	}
 	if opts.ValidateModels {
 		catalog.OpenModelChecks = fetchWritingModelChecks(ctx, client, catalog.OpenModels, opts, fetchedAt)

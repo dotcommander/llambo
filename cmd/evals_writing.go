@@ -77,6 +77,28 @@ func renderWritingCatalogMarkdown(catalog evals.WritingCatalog) string {
 		)
 	}
 
+	out.WriteString("\n## Run plan\n\n")
+	out.WriteString("Each row identifies a public prompt surface and the safest way to rerun that benchmark. A blank count means the source is live, multi-stage, or not a fixed corpus.\n\n")
+	out.WriteString("| Benchmark | Prompt artifact | Format | Prompts | Run mode | Run notes |\n")
+	out.WriteString("| --- | --- | --- | ---: | --- | --- |\n")
+	for _, benchmark := range catalog.Benchmarks {
+		promptURL := benchmark.PromptURL
+		if promptURL == "" {
+			promptURL = benchmark.DataURL
+		}
+		if promptURL == "" {
+			promptURL = benchmark.URL
+		}
+		fmt.Fprintf(&out, "| %s | %s | %s | %s | %s | %s |\n",
+			writingCatalogCell(benchmark.Name),
+			writingCatalogLink(benchmark.PromptFormat, promptURL),
+			writingCatalogCell(benchmark.PromptFormat),
+			writingCatalogCount(benchmark.PromptCount),
+			writingCatalogCell(benchmark.RunMode),
+			writingCatalogCell(benchmark.RunNotes),
+		)
+	}
+
 	out.WriteString("\n## Public source checks\n\n")
 	if len(catalog.SourceChecks) == 0 {
 		out.WriteString("No live source checks were run. Use `llambo evals writing --refresh` to fetch the registered artifacts.\n")
@@ -135,6 +157,27 @@ func renderWritingCatalogMarkdown(catalog evals.WritingCatalog) string {
 		}
 	}
 
+	out.WriteString("\n## Open-weight leaderboard coverage\n\n")
+	if len(catalog.OpenModelCoverage) == 0 {
+		out.WriteString("No live coverage match was run. Use `llambo evals writing --refresh` to compare the reviewed queue with the current primary leaderboard.\n")
+	} else {
+		out.WriteString("Measured rows use explicit reviewed aliases. `variant` matches may differ by serving mode or size. `needs-run` means no comparable public row was found, not that the model is weak. No score is inferred for missing rows.\n\n")
+		out.WriteString("| Model | Status | Match type | Matched row | Rank | Comparison score | Win chance | Notes |\n")
+		out.WriteString("| --- | --- | --- | --- | ---: | ---: | ---: | --- |\n")
+		for _, item := range catalog.OpenModelCoverage {
+			fmt.Fprintf(&out, "| %s | %s | %s | %s | %s | %s | %s | %s |\n",
+				writingCatalogCell(item.ModelName),
+				writingCatalogCell(item.Status),
+				writingCatalogCell(item.MatchType),
+				writingCatalogCell(item.MatchedLeaderboardModel),
+				writingCatalogNumber(item.Rank),
+				writingCatalogFloat(item.ComparisonScore),
+				writingCatalogPercent(item.WinChancePercent),
+				writingCatalogCell(item.Notes),
+			)
+		}
+	}
+
 	out.WriteString("\n## Live leaderboard snapshot\n\n")
 	if len(catalog.Leaderboards) == 0 {
 		out.WriteString("No live snapshot was fetched. Run `llambo evals writing --refresh` to scrape the primary public leaderboard.\n")
@@ -171,6 +214,27 @@ func writingCatalogCount(value int) string {
 		return "—"
 	}
 	return fmt.Sprintf("%d", value)
+}
+
+func writingCatalogNumber(value int) string {
+	if value == 0 {
+		return "—"
+	}
+	return fmt.Sprintf("%d", value)
+}
+
+func writingCatalogFloat(value *float64) string {
+	if value == nil {
+		return "—"
+	}
+	return fmt.Sprintf("%.1f", *value)
+}
+
+func writingCatalogPercent(value *float64) string {
+	if value == nil {
+		return "—"
+	}
+	return fmt.Sprintf("%.0f%%", *value)
 }
 
 func writingCatalogLicenseMatch(check evals.WritingModelStatus) string {

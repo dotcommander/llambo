@@ -68,6 +68,31 @@ func TestDefaultWritingCatalogIncludesSourcesAndOpenModels(t *testing.T) {
 			t.Fatalf("catalog missing open model %q", want)
 		}
 	}
+	if benchmark := writingBenchmarkByID(catalog.Benchmarks, "writingbench"); benchmark.PromptCount != 1000 || benchmark.PromptFormat != "JSONL" || benchmark.PromptURL == "" || benchmark.RunMode == "" {
+		t.Fatalf("writing benchmark is not run-ready: %#v", benchmark)
+	}
+}
+
+func TestBuildWritingModelCoverageDistinguishesExactAndVariantMatches(t *testing.T) {
+	models := []WritingOpenModel{
+		{ID: "exact", Name: "Kimi K3", LeaderboardAliases: []string{"Kimi K3"}},
+		{ID: "variant", Name: "Gemma 4 31B it", LeaderboardAliases: []string{"Gemma 4 31B"}},
+		{ID: "missing", Name: "DeepSeek V4 Flash-0731", LeaderboardAliases: []string{"DeepSeek V4 Flash-0731"}},
+	}
+	rows := []WritingLeaderboardRow{
+		{Rank: 1, Model: "Kimi K3", Score: 2.9, WinChance: 87},
+		{Rank: 2, Model: "Gemma 4 31B Reasoning", Score: -1.4, WinChance: 29},
+	}
+	coverage := buildWritingModelCoverage(models, rows)
+	if coverage[0].Status != "measured" || coverage[0].MatchType != "exact" || coverage[0].Rank != 1 {
+		t.Fatalf("unexpected exact coverage: %#v", coverage[0])
+	}
+	if coverage[1].Status != "measured" || coverage[1].MatchType != "variant" || coverage[1].Rank != 2 {
+		t.Fatalf("unexpected variant coverage: %#v", coverage[1])
+	}
+	if coverage[2].Status != "needs-run" || coverage[2].ComparisonScore != nil {
+		t.Fatalf("unexpected missing coverage: %#v", coverage[2])
+	}
 }
 
 func TestFetchWritingCatalog(t *testing.T) {
@@ -212,4 +237,13 @@ func containsWritingModel(models []WritingOpenModel, id string) bool {
 		}
 	}
 	return false
+}
+
+func writingBenchmarkByID(benchmarks []WritingBenchmark, id string) WritingBenchmark {
+	for _, benchmark := range benchmarks {
+		if benchmark.ID == id {
+			return benchmark
+		}
+	}
+	return WritingBenchmark{ID: id}
 }

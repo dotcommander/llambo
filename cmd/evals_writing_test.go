@@ -18,7 +18,7 @@ func TestEncodeWritingCatalog(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(markdown)
-	for _, want := range []string{"# Writing Benchmark Catalog", "WritingBench", "DeepSeek V4 Flash-0731", "No live snapshot"} {
+	for _, want := range []string{"# Writing Benchmark Catalog", "WritingBench", "DeepSeek V4 Flash-0731", "## Run plan", "No live source checks", "No live coverage match", "No live snapshot"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("markdown missing %q:\n%s", want, text)
 		}
