@@ -37,7 +37,7 @@ llambo models discover-free -P nvidia --pin
 
 llambo evals
 llambo evals --refresh --output /tmp/llambo-evals.md
-llambo evals --format html --output /tmp/llambo-evals.html
+llambo evals --rank-by coding --format html --output /tmp/llambo-evals-coding.html
 llambo evals --rank-by coding
 llambo evals --min-overall -1 --max-output-price -1
 llambo evals --no-omlx

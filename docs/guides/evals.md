@@ -5,7 +5,7 @@ llambo evals
 llambo evals --rank-by coding
 llambo evals --rank-by value --limit 100
 llambo evals --format json --output /tmp/llambo-evals.json
-llambo evals --format html --output /tmp/llambo-evals.html
+llambo evals --rank-by coding --format html --output /tmp/llambo-evals-coding.html
 llambo evals --min-overall -1 --max-output-price -1
 llambo evals --no-omlx
 llambo evals --projections ./eval-projections.json

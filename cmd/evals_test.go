@@ -38,6 +38,9 @@ func TestEncodeEvalsReport(t *testing.T) {
 	if len(htmlData) == 0 || !strings.Contains(string(htmlData), "<") {
 		t.Fatalf("unexpected HTML report: %s", htmlData)
 	}
+	if strings.Contains(string(htmlData), `data-value="b">B</td>`) || !strings.Contains(string(htmlData), "Local A") || !strings.Contains(string(htmlData), "data-sortable=\"true\"") {
+		t.Fatalf("HTML limit or sortable markup was not preserved: %s", htmlData)
+	}
 	if _, err := encodeEvalsReport(report, "yaml", 1); err == nil || !strings.Contains(err.Error(), "supported: markdown, json, html") {
 		t.Fatalf("unexpected unsupported format error: %v", err)
 	}

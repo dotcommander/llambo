@@ -49,11 +49,11 @@ llambo prompt --models free --fuse "Design a microservice architecture for real-
 # Query smart routing decisions for your prompt
 llambo route query "Write a fast Go routine to parse JSON"
 
-# Rank models offline using LLM Stats + Artificial Analysis percentile scores
+# Rank cached external evaluations by coding profile
 llambo evals --rank-by coding
 
-# Save a standalone browser report
-llambo evals --format html --output /tmp/llambo-evals.html
+# Save a standalone sortable browser report
+llambo evals --rank-by coding --format html --output /tmp/llambo-evals-coding.html
 ```
 
 ---
@@ -63,7 +63,7 @@ llambo evals --format html --output /tmp/llambo-evals.html
 - **🔥 Real-time Parallel Execution**: Send batch jobs across multiple providers concurrently. Results stream back the second each backend completes.
 - **🛡️ Auto-Failover & Key Rotation**: Configured with multiple API keys? Llambo automatically rotates keys on `429 Too Many Requests`. If a provider goes down, requests seamlessly fail over to the next healthy backend.
 - **🧠 Intelligent Intent Router**: Automatically classifies your prompt intent (`code`, `extraction`, `long_context`, `chat`) and picks the optimal backend based on your desired policy (`fastest`, `cheapest`, `quality`, or `balanced`).
-- **📊 Cache-First Evals (`llambo evals`)**: Rank models using the deterministic LES-1 benchmark formula without needing network probes. Filter by coding, writing, speed, or cost limits instantly.
+- **📊 Cache-First Evals (`llambo evals`)**: Rank models using the deterministic LES-1 benchmark formula without refreshing external sources. Filter by coding, writing, speed, or cost limits instantly.
 - **🔄 Drop-In Compatibility**: 100% compatible with OpenAI (`/v1/chat/completions`), Anthropic Messages (`/v1/messages`), and Embeddings (`/v1/embeddings`).
 
 ---

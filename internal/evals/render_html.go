@@ -231,7 +231,7 @@ details summary:focus-visible { outline: 3px solid color-mix(in srgb, var(--acce
       <tbody>
 `)
 	if len(canonicalRows[:limit]) == 0 {
-		b.WriteString(`<tr><td class="empty" colspan="16">No eligible canonical models matched the current filters.</td></tr>`)
+		b.WriteString(`<tr data-empty="true"><td class="empty" colspan="16">No eligible canonical models matched the current filters.</td></tr>`)
 	} else {
 		previousScore := 0.0
 		previousRank := 0
@@ -318,7 +318,9 @@ function sortTable(tableID, header) {
 	const direction = currentIndex === String(index)
 	  ? (currentDirection === "asc" ? "desc" : "asc")
 	  : (type === "number" ? "desc" : "asc");
-	const rows = Array.prototype.slice.call(table.tBodies[0].rows);
+	const rows = Array.prototype.slice.call(table.tBodies[0].rows)
+	  .filter(row => row.dataset.empty !== "true" && row.cells.length > index);
+	if (!rows.length) return;
 	rows.forEach((row, rowIndex) => { row.dataset.originalIndex = String(rowIndex); });
 	rows.sort((left, right) => {
     const a = left.cells[index];
@@ -334,8 +336,9 @@ function sortTable(tableID, header) {
 	  } else {
 	    result = aValue.localeCompare(bValue, undefined, { numeric: true, sensitivity: "base" });
 	  }
-	  if (result === 0 || Number.isNaN(result)) {
-	    result = Number(left.dataset.originalIndex) - Number(right.dataset.originalIndex);
+	  if (Number.isNaN(result)) result = 0;
+	  if (result === 0) {
+	    return Number(left.dataset.originalIndex) - Number(right.dataset.originalIndex);
 	  }
 	  return direction === "asc" ? result : -result;
   });

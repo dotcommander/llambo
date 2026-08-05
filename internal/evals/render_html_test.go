@@ -83,3 +83,16 @@ func TestRenderHTMLIsDeterministic(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderHTMLEmptyRankingKeepsSortHandlersSafe(t *testing.T) {
+	got := RenderHTML(Report{FormulaVersion: FormulaVersion, RankingProfile: "overall"}, 0)
+	for _, want := range []string{
+		`<tr data-empty="true">`,
+		`.filter(row => row.dataset.empty !== "true" && row.cells.length > index);`,
+		`return Number(left.dataset.originalIndex) - Number(right.dataset.originalIndex);`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("empty ranking HTML missing safety marker %q:\n%s", want, got)
+		}
+	}
+}
