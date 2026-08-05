@@ -3,7 +3,6 @@ package evals
 import (
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -15,7 +14,7 @@ const (
 	WritingCatalogVersion = 1
 	WritingPrimaryID      = "lechmazur-writing"
 	WritingPrimaryURL     = "https://raw.githubusercontent.com/lechmazur/writing/main/README.md"
-	maxWritingSourceBody  = 2 << 20
+	maxWritingSourceBody  = 32 << 20
 )
 
 var markdownLinkRE = regexp.MustCompile(`\[([^\]]+)\]\([^)]*\)`)
@@ -23,11 +22,13 @@ var markdownLinkRE = regexp.MustCompile(`\[([^\]]+)\]\([^)]*\)`)
 // WritingCatalog describes writing-focused evaluation sources without mixing
 // their source-native scores into the LES-1 report.
 type WritingCatalog struct {
-	GeneratedAt     time.Time            `json:"generated_at"`
-	RegistryVersion int                  `json:"registry_version"`
-	Benchmarks      []WritingBenchmark   `json:"benchmarks"`
-	OpenModels      []WritingOpenModel   `json:"open_models"`
-	Leaderboards    []WritingLeaderboard `json:"leaderboards,omitempty"`
+	GeneratedAt     time.Time             `json:"generated_at"`
+	RegistryVersion int                   `json:"registry_version"`
+	Benchmarks      []WritingBenchmark    `json:"benchmarks"`
+	OpenModels      []WritingOpenModel    `json:"open_models"`
+	SourceChecks    []WritingSourceStatus `json:"source_checks,omitempty"`
+	OpenModelChecks []WritingModelStatus  `json:"open_model_checks,omitempty"`
+	Leaderboards    []WritingLeaderboard  `json:"leaderboards,omitempty"`
 }
 
 type WritingBenchmark struct {
@@ -74,9 +75,13 @@ type WritingLeaderboardRow struct {
 }
 
 type WritingCatalogOptions struct {
-	Client *http.Client
-	URL    string
-	Now    func() time.Time
+	Client          *http.Client
+	URL             string
+	Now             func() time.Time
+	ValidateSources bool
+	ValidateModels  bool
+	SourceURLs      map[string]string
+	ModelURLs       map[string]string
 }
 
 // DefaultWritingCatalog returns the offline registry. It intentionally carries
@@ -147,7 +152,7 @@ func DefaultWritingCatalog(now time.Time) WritingCatalog {
 				ID:            "ifeval",
 				Name:          "IFEval",
 				URL:           "https://github.com/google-research/google-research/tree/master/instruction_following_eval",
-				DataURL:       "https://github.com/google-research/google-research/tree/master/instruction_following_eval",
+				DataURL:       "https://raw.githubusercontent.com/google-research/google-research/master/instruction_following_eval/data/input_data.jsonl",
 				Focus:         "Deterministic instruction and format compliance in generated text",
 				Scoring:       "Programmatic constraint satisfaction",
 				ScrapeMethod:  "Public JSONL prompts and reference checker",
@@ -314,37 +319,36 @@ func FetchWritingCatalog(ctx context.Context, opts WritingCatalogOptions) (Writi
 
 	fetchedAt := now().UTC()
 	catalog := DefaultWritingCatalog(fetchedAt)
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return WritingCatalog{}, fmt.Errorf("create writing leaderboard request: %w", err)
-	}
-	request.Header.Set("Accept", "text/markdown, text/plain;q=0.9")
-	request.Header.Set("User-Agent", "llambo-writing-benchmarks/1")
-	response, err := client.Do(request)
+	artifact, err := fetchWritingArtifact(ctx, client, url, fetchedAt)
 	if err != nil {
 		return WritingCatalog{}, fmt.Errorf("fetch writing leaderboard: %w", err)
 	}
-	defer response.Body.Close()
-	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return WritingCatalog{}, fmt.Errorf("fetch writing leaderboard: HTTP %s", response.Status)
-	}
-	body, err := io.ReadAll(io.LimitReader(response.Body, maxWritingSourceBody+1))
-	if err != nil {
-		return WritingCatalog{}, fmt.Errorf("read writing leaderboard: %w", err)
-	}
-	if len(body) > maxWritingSourceBody {
-		return WritingCatalog{}, fmt.Errorf("writing leaderboard exceeds %d-byte limit", maxWritingSourceBody)
-	}
-	rows, err := ParseWritingLeaderboard(string(body))
+	rows, err := ParseWritingLeaderboard(string(artifact.Body))
 	if err != nil {
 		return WritingCatalog{}, err
 	}
+	catalog.SourceChecks = append(catalog.SourceChecks, WritingSourceStatus{
+		BenchmarkID: WritingPrimaryID,
+		SourceURL:   url,
+		FetchedAt:   artifact.FetchedAt,
+		Status:      "available",
+		HTTPStatus:  artifact.HTTPStatus,
+		ContentType: artifact.ContentType,
+		Bytes:       artifact.Bytes,
+		Records:     len(rows),
+	})
 	catalog.Leaderboards = []WritingLeaderboard{{
 		BenchmarkID: WritingPrimaryID,
 		SourceURL:   url,
 		FetchedAt:   fetchedAt,
 		Rows:        rows,
 	}}
+	if opts.ValidateSources {
+		catalog.SourceChecks = append(catalog.SourceChecks, fetchWritingSourceChecks(ctx, client, catalog, opts, fetchedAt)...)
+	}
+	if opts.ValidateModels {
+		catalog.OpenModelChecks = fetchWritingModelChecks(ctx, client, catalog.OpenModels, opts, fetchedAt)
+	}
 	return catalog, nil
 }
 

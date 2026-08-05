@@ -16,8 +16,10 @@ func runWritingCatalog(cmd *commandIO, format, output string, refresh bool) erro
 	if refresh {
 		var err error
 		catalog, err = evals.FetchWritingCatalog(cmd.Context(), evals.WritingCatalogOptions{
-			Client: &http.Client{Timeout: 30 * time.Second},
-			Now:    time.Now,
+			Client:          &http.Client{Timeout: 30 * time.Second},
+			Now:             time.Now,
+			ValidateSources: true,
+			ValidateModels:  true,
 		})
 		if err != nil {
 			return err
@@ -75,6 +77,26 @@ func renderWritingCatalogMarkdown(catalog evals.WritingCatalog) string {
 		)
 	}
 
+	out.WriteString("\n## Public source checks\n\n")
+	if len(catalog.SourceChecks) == 0 {
+		out.WriteString("No live source checks were run. Use `llambo evals writing --refresh` to fetch the registered artifacts.\n")
+	} else {
+		out.WriteString("Refresh checks the primary leaderboard plus each registered public artifact. An `available` check confirms the endpoint was fetched; parsed record counts are shown where the source format is known.\n\n")
+		out.WriteString("| Benchmark | Status | HTTP | Records | Bytes | Fetched | Error |\n")
+		out.WriteString("| --- | --- | ---: | ---: | ---: | --- | --- |\n")
+		for _, check := range catalog.SourceChecks {
+			fmt.Fprintf(&out, "| %s | %s | %d | %s | %d | `%s` | %s |\n",
+				writingCatalogLink(check.BenchmarkID, check.SourceURL),
+				writingCatalogCell(check.Status),
+				check.HTTPStatus,
+				writingCatalogCount(check.Records),
+				check.Bytes,
+				writingCatalogTime(check.FetchedAt),
+				writingCatalogCell(check.Error),
+			)
+		}
+	}
+
 	out.WriteString("\n## Latest open-weight model queue\n\n")
 	out.WriteString("Coverage labels distinguish models already measured by a public leaderboard from candidates that still need a writing rerun. License labels are copied from the reviewed model registry and should be checked before redistribution.\n\n")
 	out.WriteString("| Model | Provider | License | Coverage | Priority | Hugging Face | Notes |\n")
@@ -89,6 +111,28 @@ func renderWritingCatalogMarkdown(catalog evals.WritingCatalog) string {
 			writingCatalogLink(model.ID, model.HuggingFaceURL),
 			writingCatalogCell(model.Notes),
 		)
+	}
+
+	out.WriteString("\n## Open-weight metadata checks\n\n")
+	if len(catalog.OpenModelChecks) == 0 {
+		out.WriteString("No live model metadata checks were run. Use `llambo evals writing --refresh` to verify the queue against Hugging Face.\n")
+	} else {
+		out.WriteString("These checks verify that the reviewed model IDs are public and expose current creation, modification, license, and download metadata. They do not discover every new model on Hugging Face.\n\n")
+		out.WriteString("| Model | Status | Remote license | Match | Created | Last modified | Downloads | Gated | Error |\n")
+		out.WriteString("| --- | --- | --- | --- | --- | --- | ---: | --- | --- |\n")
+		for _, check := range catalog.OpenModelChecks {
+			fmt.Fprintf(&out, "| %s | %s | %s | %s | %s | %s | %d | %t | %s |\n",
+				writingCatalogLink(check.ModelName, check.MetadataURL),
+				writingCatalogCell(check.Status),
+				writingCatalogCell(check.RemoteLicense),
+				writingCatalogLicenseMatch(check),
+				writingCatalogCell(check.CreatedAt),
+				writingCatalogCell(check.LastModified),
+				check.Downloads,
+				check.Gated,
+				writingCatalogCell(check.Error),
+			)
+		}
 	}
 
 	out.WriteString("\n## Live leaderboard snapshot\n\n")
@@ -120,6 +164,23 @@ func writingCatalogLink(label, url string) string {
 func writingCatalogCell(value string) string {
 	value = strings.ReplaceAll(value, "\n", " ")
 	return strings.ReplaceAll(value, "|", "\\|")
+}
+
+func writingCatalogCount(value int) string {
+	if value == 0 {
+		return "—"
+	}
+	return fmt.Sprintf("%d", value)
+}
+
+func writingCatalogLicenseMatch(check evals.WritingModelStatus) string {
+	if check.RemoteLicense == "" {
+		return "—"
+	}
+	if check.LicenseMatch {
+		return "yes"
+	}
+	return "no"
 }
 
 func writingCatalogTime(value time.Time) string {

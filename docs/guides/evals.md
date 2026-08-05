@@ -40,7 +40,7 @@ the LES-1 ranking report:
 # Offline: show the reviewed source registry and current open-weight queue
 llambo evals writing
 
-# Deliberately scrape the latest primary creative-writing leaderboard
+# Deliberately scrape the latest leaderboard and validate public artifacts
 llambo evals writing --refresh
 
 # Save machine-readable source-native rows for a rerun or review
@@ -49,11 +49,21 @@ llambo evals writing --refresh --format json --output /tmp/llambo-writing.json
 
 The catalog keeps scores in the scale used by each upstream benchmark. It does
 not average, percentile-transform, or inject them into `llambo evals` LES-1
-scores. The primary refresh currently scrapes the public
+scores. Refresh scrapes the public
 [Lech Mazur creative story-writing leaderboard](https://github.com/lechmazur/writing),
 which publishes pairwise comparison scores, estimated win chance, and an
 uncertainty range. Its public artifacts include the prompts and generated
 stories, so a model can be rerun against the same constrained briefs.
+
+Refresh also checks the registered public artifact URLs. It parses known
+machine-readable corpora where possible, including WritingBench's 1,000 JSONL
+queries, EQ-Bench Creative Writing v3's 32 prompt records, and IFEval's JSONL
+corpus. HTML and repository-backed sources are reported as endpoint-available
+when fetched, without pretending that a live page is a reproducible score.
+The same refresh verifies every reviewed Hugging Face model ID and records its
+remote license, creation time, last modification time, download count, and
+gated status. This is a freshness check for the reviewed queue, not an attempt
+to discover every new model on Hugging Face.
 
 The offline registry also points to:
 
