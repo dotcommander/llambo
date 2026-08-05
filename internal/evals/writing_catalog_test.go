@@ -213,6 +213,55 @@ func TestFetchWritingCatalogValidatesSourcesAndModels(t *testing.T) {
 	}
 }
 
+func TestFetchWritingCatalogDiscoversFreshPublicModels(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/primary":
+			_, _ = w.Write([]byte(writingLeaderboardFixture))
+		case "/models":
+			_, _ = w.Write([]byte(`[
+				{"id":"deepseek-ai/DeepSeek-V4-Flash-0731","pipeline_tag":"text-generation","private":false,"gated":false,"downloads":100,"tags":["license:mit"]},
+				{"id":"fresh/CreativeWriter-7B","pipeline_tag":"text-generation","createdAt":"2026-08-04T00:00:00.000Z","lastModified":"2026-08-05T03:00:00.000Z","downloads":12,"likes":4,"private":false,"gated":false,"tags":["transformers","license:apache-2.0"]},
+				{"id":"private/model","pipeline_tag":"text-generation","private":true,"gated":false},
+				{"id":"gated/model","pipeline_tag":"text-generation","private":false,"gated":true},
+				{"id":"fresh/SecondWriter","pipeline_tag":"text-generation","private":false,"gated":false,"tags":[]},
+				{"id":"not-a-text-model","pipeline_tag":"text-to-image","private":false,"gated":false}
+			]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	fetched, err := FetchWritingCatalog(context.Background(), WritingCatalogOptions{
+		Client:             server.Client(),
+		URL:                server.URL + "/primary",
+		Now:                func() time.Time { return time.Unix(2, 0).UTC() },
+		DiscoverOpenModels: true,
+		DiscoverLimit:      2,
+		DiscoveryURL:       server.URL + "/models",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fetched.OpenModelDiscovery == nil || fetched.OpenModelDiscovery.Status != "available" || fetched.OpenModelDiscovery.Candidates != 2 {
+		t.Fatalf("unexpected discovery status: %#v", fetched.OpenModelDiscovery)
+	}
+	if len(fetched.DiscoveredOpenModels) != 2 {
+		t.Fatalf("discovered models = %d, want 2: %#v", len(fetched.DiscoveredOpenModels), fetched.DiscoveredOpenModels)
+	}
+	first := fetched.DiscoveredOpenModels[0]
+	if first.ID != "fresh/CreativeWriter-7B" || first.Name != "CreativeWriter-7B" || first.License != "apache-2.0" || first.ReviewStatus != "needs-review" {
+		t.Fatalf("unexpected first discovered model: %#v", first)
+	}
+	if first.Notes == "" || first.HuggingFaceURL == "" || first.Downloads != 12 || first.Likes != 4 {
+		t.Fatalf("discovered model lost review metadata: %#v", first)
+	}
+	if fetched.DiscoveredOpenModels[1].ID != "fresh/SecondWriter" {
+		t.Fatalf("unexpected second discovered model: %#v", fetched.DiscoveredOpenModels[1])
+	}
+}
+
 func writingSourceCheckByID(checks []WritingSourceStatus, id string) WritingSourceStatus {
 	for _, check := range checks {
 		if check.BenchmarkID == id {

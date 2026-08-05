@@ -57,6 +57,8 @@ type evalsCommand struct {
 	ExportPrompts  string               `name:"export-prompts" help:"write normalized public writing prompts as JSONL (writing requires --refresh)"`
 	PromptSource   string               `name:"prompt-source" default:"writingbench" help:"prompt export source: writingbench, eqbench-creative-v3, ifeval, or all"`
 	PromptLimit    int                  `name:"prompt-limit" help:"maximum prompt records to export; 0 exports all selected records"`
+	DiscoverModels bool                 `name:"discover-open-models" help:"discover fresh public text-generation model candidates from Hugging Face (writing requires --refresh)"`
+	DiscoverLimit  int                  `name:"discover-limit" default:"25" help:"maximum fresh Hugging Face candidates to include"`
 	Limit          int                  `default:"50" help:"maximum eligible canonical models; eligible tracked projections are always included; 0 includes all"`
 	AllowPartial   bool                 `name:"allow-partial" help:"continue with an LLM Stats-only report when Artificial Analysis is unavailable"`
 	RankBy         string               `name:"rank-by" default:"overall" help:"ranking profile: overall, general, coding, reasoning, agents, writing, long-context, speed, value, price"`
@@ -75,7 +77,7 @@ func (*evalsWritingCommand) Run(*commandIO) error { return nil }
 
 func (c *evalsCommand) Run(io *commandIO) error {
 	if c.Writing != nil {
-		return runWritingCatalog(io, c.Format, c.Output, c.Refresh, c.ExportPrompts, c.PromptSource, c.PromptLimit)
+		return runWritingCatalog(io, c.Format, c.Output, c.Refresh, c.ExportPrompts, c.PromptSource, c.PromptLimit, c.DiscoverModels, c.DiscoverLimit)
 	}
 	evalsRefresh, evalsFormat, evalsOutput, evalsLimit, evalsPartial, evalsRankBy, evalsOffline, evalsProjections, evalsMinOverall, evalsMaxOutputPrice, evalsOMLXURL, evalsNoOMLX = c.Refresh, c.Format, c.Output, c.Limit, c.AllowPartial, c.RankBy, c.Offline, c.Projections, c.MinOverall, c.MaxOutputPrice, c.OMLXURL, c.NoOMLX
 	return runEvals(io, nil)

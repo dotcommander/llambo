@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	WritingCatalogVersion = 2
+	WritingCatalogVersion = 3
 	WritingPrimaryID      = "lechmazur-writing"
 	WritingPrimaryURL     = "https://raw.githubusercontent.com/lechmazur/writing/main/README.md"
 	maxWritingSourceBody  = 32 << 20
@@ -22,15 +22,17 @@ var markdownLinkRE = regexp.MustCompile(`\[([^\]]+)\]\([^)]*\)`)
 // WritingCatalog describes writing-focused evaluation sources without mixing
 // their source-native scores into the LES-1 report.
 type WritingCatalog struct {
-	GeneratedAt       time.Time              `json:"generated_at"`
-	RegistryVersion   int                    `json:"registry_version"`
-	Benchmarks        []WritingBenchmark     `json:"benchmarks"`
-	OpenModels        []WritingOpenModel     `json:"open_models"`
-	SourceChecks      []WritingSourceStatus  `json:"source_checks,omitempty"`
-	OpenModelChecks   []WritingModelStatus   `json:"open_model_checks,omitempty"`
-	OpenModelCoverage []WritingModelCoverage `json:"open_model_coverage,omitempty"`
-	Leaderboards      []WritingLeaderboard   `json:"leaderboards,omitempty"`
-	PromptRecords     []WritingPromptRecord  `json:"prompt_records,omitempty"`
+	GeneratedAt          time.Time                    `json:"generated_at"`
+	RegistryVersion      int                          `json:"registry_version"`
+	Benchmarks           []WritingBenchmark           `json:"benchmarks"`
+	OpenModels           []WritingOpenModel           `json:"open_models"`
+	SourceChecks         []WritingSourceStatus        `json:"source_checks,omitempty"`
+	OpenModelChecks      []WritingModelStatus         `json:"open_model_checks,omitempty"`
+	OpenModelCoverage    []WritingModelCoverage       `json:"open_model_coverage,omitempty"`
+	Leaderboards         []WritingLeaderboard         `json:"leaderboards,omitempty"`
+	PromptRecords        []WritingPromptRecord        `json:"prompt_records,omitempty"`
+	OpenModelDiscovery   *WritingOpenModelDiscovery   `json:"open_model_discovery,omitempty"`
+	DiscoveredOpenModels []WritingDiscoveredOpenModel `json:"discovered_open_models,omitempty"`
 }
 
 type WritingBenchmark struct {
@@ -90,6 +92,9 @@ type WritingCatalogOptions struct {
 	ValidateSources      bool
 	ValidateModels       bool
 	IncludePromptRecords bool
+	DiscoverOpenModels   bool
+	DiscoverLimit        int
+	DiscoveryURL         string
 	SourceURLs           map[string]string
 	ModelURLs            map[string]string
 }
@@ -411,6 +416,11 @@ func FetchWritingCatalog(ctx context.Context, opts WritingCatalogOptions) (Writi
 	}
 	if opts.ValidateModels {
 		catalog.OpenModelChecks = fetchWritingModelChecks(ctx, client, catalog.OpenModels, opts, fetchedAt)
+	}
+	if opts.DiscoverOpenModels {
+		discovery, candidates := fetchWritingOpenModelDiscovery(ctx, client, catalog, opts, fetchedAt)
+		catalog.OpenModelDiscovery = &discovery
+		catalog.DiscoveredOpenModels = candidates
 	}
 	return catalog, nil
 }

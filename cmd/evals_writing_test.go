@@ -18,7 +18,7 @@ func TestEncodeWritingCatalog(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(markdown)
-	for _, want := range []string{"# Writing Benchmark Catalog", "WritingBench", "DeepSeek V4 Flash-0731", "## Run plan", "No live source checks", "No live coverage match", "No live snapshot"} {
+	for _, want := range []string{"# Writing Benchmark Catalog", "WritingBench", "DeepSeek V4 Flash-0731", "## Run plan", "No live source checks", "No fresh model discovery", "No live coverage match", "No live snapshot"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("markdown missing %q:\n%s", want, text)
 		}
@@ -38,6 +38,27 @@ func TestEncodeWritingCatalog(t *testing.T) {
 
 	if _, err := encodeWritingCatalog(catalog, "html"); err == nil || !strings.Contains(err.Error(), "supported: markdown, json") {
 		t.Fatalf("unexpected unsupported format error: %v", err)
+	}
+	catalog.OpenModelDiscovery = &evals.WritingOpenModelDiscovery{
+		SourceURL:  "https://example.com/models",
+		FetchedAt:  time.Unix(2, 0).UTC(),
+		Status:     "available",
+		Candidates: 1,
+	}
+	catalog.DiscoveredOpenModels = []evals.WritingDiscoveredOpenModel{{
+		ID:             "fresh/Writer-7B",
+		Name:           "Writer-7B",
+		HuggingFaceURL: "https://huggingface.co/fresh/Writer-7B",
+		License:        "apache-2.0",
+		ReviewStatus:   "needs-review",
+		Notes:          "review me",
+	}}
+	markdown, err = encodeWritingCatalog(catalog, "markdown")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(markdown), "## Fresh public model discovery") || !strings.Contains(string(markdown), "Writer-7B") || !strings.Contains(string(markdown), "needs-review") {
+		t.Fatalf("markdown missing discovery section: %s", markdown)
 	}
 }
 
@@ -80,5 +101,13 @@ func TestWritingPromptExportRequiresRefresh(t *testing.T) {
 	err := execute(context.Background(), []string{"evals", "writing", "--export-prompts", "/tmp/writing-prompts.jsonl"}, &out, &errOut)
 	if err == nil || !strings.Contains(err.Error(), "requires --refresh") {
 		t.Fatalf("unexpected export validation error: %v", err)
+	}
+}
+
+func TestWritingModelDiscoveryRequiresRefresh(t *testing.T) {
+	var out, errOut bytes.Buffer
+	err := execute(context.Background(), []string{"evals", "writing", "--discover-open-models"}, &out, &errOut)
+	if err == nil || !strings.Contains(err.Error(), "requires --refresh") {
+		t.Fatalf("unexpected discovery validation error: %v", err)
 	}
 }

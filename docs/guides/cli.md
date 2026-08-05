@@ -44,6 +44,7 @@ llambo evals --no-omlx
 llambo evals --projections ./eval-projections.json
 llambo evals writing --refresh --format json --output /tmp/llambo-writing.json
 llambo evals writing --refresh --prompt-source writingbench --prompt-limit 20 --export-prompts /tmp/writingbench.jsonl
+llambo evals writing --refresh --discover-open-models --discover-limit 25
 
 llambo ping --models healthy -P nvidia
 llambo ping --models category:long_context -P openrouter

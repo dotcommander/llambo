@@ -12,12 +12,18 @@ import (
 	"github.com/dotcommander/llambo/internal/evals"
 )
 
-func runWritingCatalog(cmd *commandIO, format, output string, refresh bool, exportPrompts, promptSource string, promptLimit int) error {
+func runWritingCatalog(cmd *commandIO, format, output string, refresh bool, exportPrompts, promptSource string, promptLimit int, discoverModels bool, discoverLimit int) error {
 	if exportPrompts != "" && !refresh {
 		return fmt.Errorf("--export-prompts requires --refresh so the public prompt artifact is fetched")
 	}
+	if discoverModels && !refresh {
+		return fmt.Errorf("--discover-open-models requires --refresh so the public model listing is fetched")
+	}
 	if promptLimit < 0 {
 		return fmt.Errorf("--prompt-limit cannot be negative")
+	}
+	if discoverLimit < 0 {
+		return fmt.Errorf("--discover-limit cannot be negative")
 	}
 	if exportPrompts != "" && output != "" && filepath.Clean(exportPrompts) == filepath.Clean(output) {
 		return fmt.Errorf("--export-prompts and --output must name different files")
@@ -31,6 +37,8 @@ func runWritingCatalog(cmd *commandIO, format, output string, refresh bool, expo
 			ValidateSources:      true,
 			ValidateModels:       true,
 			IncludePromptRecords: exportPrompts != "",
+			DiscoverOpenModels:   discoverModels,
+			DiscoverLimit:        discoverLimit,
 		})
 		if err != nil {
 			return err
@@ -211,6 +219,34 @@ func renderWritingCatalogMarkdown(catalog evals.WritingCatalog) string {
 				check.Gated,
 				writingCatalogCell(check.Error),
 			)
+		}
+	}
+
+	out.WriteString("\n## Fresh public model discovery\n\n")
+	if catalog.OpenModelDiscovery == nil {
+		out.WriteString("No fresh model discovery was run. Use `llambo evals writing --refresh --discover-open-models` to list recent public text-generation candidates.\n")
+	} else {
+		discovery := catalog.OpenModelDiscovery
+		fmt.Fprintf(&out, "Discovery status: `%s`  \nSource: %s  \nFetched: `%s`  \nCandidates: `%d`\n\n", writingCatalogCell(discovery.Status), writingCatalogLink(discovery.SourceURL, discovery.SourceURL), writingCatalogTime(discovery.FetchedAt), discovery.Candidates)
+		if discovery.Error != "" {
+			fmt.Fprintf(&out, "Discovery error: `%s`\n\n", writingCatalogCell(discovery.Error))
+		}
+		if len(catalog.DiscoveredOpenModels) > 0 {
+			out.WriteString("These are fresh candidates, not reviewed models. No benchmark score or leaderboard coverage is inferred.\n\n")
+			out.WriteString("| Candidate | License | Last modified | Downloads | Likes | Review status | Tags | Notes |\n")
+			out.WriteString("| --- | --- | --- | ---: | ---: | --- | --- | --- |\n")
+			for _, model := range catalog.DiscoveredOpenModels {
+				fmt.Fprintf(&out, "| %s | %s | %s | %d | %d | %s | %s | %s |\n",
+					writingCatalogLink(model.Name, model.HuggingFaceURL),
+					writingCatalogCell(model.License),
+					writingCatalogCell(model.LastModified),
+					model.Downloads,
+					model.Likes,
+					writingCatalogCell(model.ReviewStatus),
+					writingCatalogCell(strings.Join(model.Tags, ", ")),
+					writingCatalogCell(model.Notes),
+				)
+			}
 		}
 	}
 

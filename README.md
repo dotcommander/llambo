@@ -58,6 +58,9 @@ llambo evals writing --refresh
 # Export public writing prompts as normalized JSONL for model reruns
 llambo evals writing --refresh --prompt-source writingbench --prompt-limit 20 --export-prompts /tmp/writingbench.jsonl
 
+# Find newly updated public text-generation candidates for review
+llambo evals writing --refresh --discover-open-models --discover-limit 25
+
 # Save a standalone sortable browser report
 llambo evals --rank-by coding --format html --output /tmp/llambo-evals-coding.html
 ```

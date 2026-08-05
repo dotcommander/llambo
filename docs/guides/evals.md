@@ -49,6 +49,9 @@ llambo evals writing --refresh --format json --output /tmp/llambo-writing.json
 # Export normalized prompts for direct model testing
 llambo evals writing --refresh --prompt-source writingbench --prompt-limit 20 \
   --export-prompts /tmp/writingbench.jsonl
+
+# Discover recent public text-generation candidates without inventing scores
+llambo evals writing --refresh --discover-open-models --discover-limit 25
 ```
 
 The catalog keeps scores in the scale used by each upstream benchmark. It does
@@ -114,6 +117,14 @@ catalog exposes canonical Hugging Face IDs and license labels. “Public weights
 does not always mean permissive redistribution, so review nonstandard licenses
 before shipping a model.
 
+`--discover-open-models` performs a separate bounded Hugging Face query sorted by
+`lastModified`. It excludes reviewed IDs, private repositories, gated models,
+and non-text-generation rows, then labels the remaining public candidates
+`needs-review`. Discovery captures identity, timestamps, downloads, likes,
+license tags, and raw tags. It never assigns a writing score, leaderboard
+coverage, or a redistribution approval. This keeps freshness useful without
+turning an unreviewed model feed into evaluation evidence.
+
 On first use, run `llambo evals --refresh` once to create the snapshots. Llambo
 stores them under your operating system's user cache directory at
 `llambo/evals/`. Later `llambo evals` runs read those files regardless of age;
@@ -136,6 +147,8 @@ they never refresh implicitly. Local OMLX discovery is live and is not cached.
 | `--export-prompts` | path | unset | Writes normalized prompt JSONL; writing mode requires `--refresh` |
 | `--prompt-source` | string | `writingbench` | Selects `writingbench`, `eqbench-creative-v3`, `ifeval`, or `all` for prompt export |
 | `--prompt-limit` | integer | `0` | Limits exported prompt records; `0` exports all selected records |
+| `--discover-open-models` | boolean | `false` | Queries Hugging Face for recent public text-generation candidates; requires `--refresh` |
+| `--discover-limit` | integer | `25` | Maximum fresh candidates retained; discovery is bounded to 100 |
 | `--offline` | boolean | `false` | Uses cached external snapshots and skips live OMLX discovery |
 | `--allow-partial` | boolean | `false` | Allows an LLM Stats-only report when the Artificial Analysis cache or refresh is unavailable |
 
