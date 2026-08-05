@@ -9,6 +9,9 @@ llambo evals --rank-by coding --format html --output /tmp/llambo-evals-coding.ht
 llambo evals --min-overall -1 --max-output-price -1
 llambo evals --no-omlx
 llambo evals --projections ./eval-projections.json
+llambo evals writing
+llambo evals writing --refresh
+llambo evals writing --refresh --format json --output /tmp/llambo-writing.json
 ```
 
 `llambo evals` transforms cached LLM Stats and Artificial Analysis snapshots
@@ -27,6 +30,50 @@ llambo evals --refresh
 
 `--offline` disables the loopback OMLX request as well as external source access
 and cannot be combined with `--refresh`. `--no-omlx` skips only local discovery.
+
+## Writing benchmark catalog
+
+Use the separate writing catalog when you want concrete prose tests rather than
+the LES-1 ranking report:
+
+```bash
+# Offline: show the reviewed source registry and current open-weight queue
+llambo evals writing
+
+# Deliberately scrape the latest primary creative-writing leaderboard
+llambo evals writing --refresh
+
+# Save machine-readable source-native rows for a rerun or review
+llambo evals writing --refresh --format json --output /tmp/llambo-writing.json
+```
+
+The catalog keeps scores in the scale used by each upstream benchmark. It does
+not average, percentile-transform, or inject them into `llambo evals` LES-1
+scores. The primary refresh currently scrapes the public
+[Lech Mazur creative story-writing leaderboard](https://github.com/lechmazur/writing),
+which publishes pairwise comparison scores, estimated win chance, and an
+uncertainty range. Its public artifacts include the prompts and generated
+stories, so a model can be rerun against the same constrained briefs.
+
+The offline registry also points to:
+
+| Source | Best use | Surface |
+| --- | --- | --- |
+| [WritingBench](https://github.com/X-PLUG/WritingBench) | Real-world professional writing across six domains | Public JSONL query corpus and evaluator artifacts |
+| [EQ-Bench Creative Writing v3](https://github.com/EQ-bench/creative-writing-bench) | Creative quality across repeated prompts | Prompt JSON and published result archives |
+| [EQ-Bench Longform Writing](https://github.com/EQ-bench/longform-writing-bench) | Planning, revision, and narrative consistency | Prompts, rubrics, reports, and leaderboard HTML |
+| [Arena Creative Writing](https://arena.ai/leaderboard/text/creative-writing) | Human-preference cross-check | Live rendered leaderboard |
+| [IFEval](https://github.com/google-research/google-research/tree/master/instruction_following_eval) and [IFBench](https://github.com/allenai/IFBench) | Strict brief and format adherence | Public prompt data and deterministic checkers |
+| [Lech Mazur Writing Styles](https://github.com/lechmazur/writing_styles) | Style fingerprints and diversity | CSV artifacts and story corpus |
+
+The model queue includes the latest reviewed public-weight candidates and marks
+whether each one is already covered by a public leaderboard or still needs a
+writing rerun. It currently includes DeepSeek V4 Flash-0731, Kimi K3, GLM-5.2,
+MiniMax-M3, Qwen3.6 27B and 35B A3B, Gemma 4 31B, Mistral Large 3, Xiaomi MiMo
+V2.5 Pro, GPT-OSS 20B and 120B, and Qwen3 235B A22B Instruct 2507. The JSON
+catalog exposes canonical Hugging Face IDs and license labels. “Public weights”
+does not always mean permissive redistribution, so review nonstandard licenses
+before shipping a model.
 
 On first use, run `llambo evals --refresh` once to create the snapshots. Llambo
 stores them under your operating system's user cache directory at

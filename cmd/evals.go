@@ -136,6 +136,14 @@ func writeEvalsReport(path string, data []byte) error {
 }
 
 func writeEvalsReportTo(errOut io.Writer, path string, data []byte) error {
+	if err := writeAtomicOutput(path, data); err != nil {
+		return err
+	}
+	fmt.Fprintf(errOut, "Evaluation report written to %s\n", path)
+	return nil
+}
+
+func writeAtomicOutput(path string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -146,6 +154,5 @@ func writeEvalsReportTo(errOut io.Writer, path string, data []byte) error {
 	if err := os.Rename(tmp, path); err != nil {
 		return err
 	}
-	fmt.Fprintf(errOut, "Evaluation report written to %s\n", path)
 	return nil
 }

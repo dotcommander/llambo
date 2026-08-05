@@ -52,6 +52,9 @@ llambo route query "Write a fast Go routine to parse JSON"
 # Rank cached external evaluations by coding profile
 llambo evals --rank-by coding
 
+# Scrape writing benchmarks and list the latest open-weight model queue
+llambo evals writing --refresh
+
 # Save a standalone sortable browser report
 llambo evals --rank-by coding --format html --output /tmp/llambo-evals-coding.html
 ```

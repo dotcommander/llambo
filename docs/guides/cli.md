@@ -42,6 +42,7 @@ llambo evals --rank-by coding
 llambo evals --min-overall -1 --max-output-price -1
 llambo evals --no-omlx
 llambo evals --projections ./eval-projections.json
+llambo evals writing --refresh --format json --output /tmp/llambo-writing.json
 
 llambo ping --models healthy -P nvidia
 llambo ping --models category:long_context -P openrouter
