@@ -143,7 +143,7 @@ func TestFetchWritingCatalogValidatesSourcesAndModels(t *testing.T) {
 		case "/source/writingbench":
 			_, _ = w.Write([]byte("{\"prompt\":\"one\"}\n{\"prompt\":\"two\"}\n"))
 		case "/source/eqbench-creative-v3":
-			_, _ = w.Write([]byte(`{"1":{},"2":{}}`))
+			_, _ = w.Write([]byte(`{"1":{"writing_prompt":"creative one"},"2":{"writing_prompt":"creative two"}}`))
 		case "/source/ifeval":
 			_, _ = w.Write([]byte("{\"prompt\":\"one\"}\n"))
 		case "/model":
@@ -172,13 +172,14 @@ func TestFetchWritingCatalogValidatesSourcesAndModels(t *testing.T) {
 	}
 
 	fetched, err := FetchWritingCatalog(context.Background(), WritingCatalogOptions{
-		Client:          server.Client(),
-		URL:             server.URL + "/primary",
-		Now:             func() time.Time { return time.Unix(1, 0).UTC() },
-		ValidateSources: true,
-		ValidateModels:  true,
-		SourceURLs:      sourceURLs,
-		ModelURLs:       modelURLs,
+		Client:               server.Client(),
+		URL:                  server.URL + "/primary",
+		Now:                  func() time.Time { return time.Unix(1, 0).UTC() },
+		ValidateSources:      true,
+		ValidateModels:       true,
+		IncludePromptRecords: true,
+		SourceURLs:           sourceURLs,
+		ModelURLs:            modelURLs,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -197,6 +198,15 @@ func TestFetchWritingCatalogValidatesSourcesAndModels(t *testing.T) {
 	}
 	if check := writingSourceCheckByID(fetched.SourceChecks, "ifeval"); check.Status != "available" || check.Records != 1 {
 		t.Fatalf("unexpected IFEval check: %#v", check)
+	}
+	if len(fetched.PromptRecords) != 5 {
+		t.Fatalf("prompt records = %d, want 5: %#v", len(fetched.PromptRecords), fetched.PromptRecords)
+	}
+	if fetched.PromptRecords[0].BenchmarkID != "writingbench" || fetched.PromptRecords[0].Prompt != "one" || fetched.PromptRecords[0].SourceURL == "" {
+		t.Fatalf("unexpected first normalized prompt: %#v", fetched.PromptRecords[0])
+	}
+	if fetched.PromptRecords[2].BenchmarkID != "eqbench-creative-v3" || fetched.PromptRecords[2].ID != "1" || fetched.PromptRecords[2].Prompt != "creative one" {
+		t.Fatalf("unexpected EQ-Bench normalized prompt: %#v", fetched.PromptRecords[2])
 	}
 	if check := writingModelCheckByID(fetched.OpenModelChecks, "deepseek-ai/DeepSeek-V4-Flash-0731"); check.Status != "available" || check.RemoteLicense != "mit" || !check.LicenseMatch || check.Downloads != 42 {
 		t.Fatalf("unexpected DeepSeek metadata check: %#v", check)

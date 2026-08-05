@@ -53,3 +53,32 @@ func TestExecuteWritingCatalog(t *testing.T) {
 		t.Fatalf("unexpected stderr: %q", errOut.String())
 	}
 }
+
+func TestEncodeWritingPromptRecords(t *testing.T) {
+	records := []evals.WritingPromptRecord{
+		{BenchmarkID: "writingbench", ID: "1", Prompt: "first"},
+		{BenchmarkID: "ifeval", ID: "2", Prompt: "second"},
+	}
+	data, err := encodeWritingPromptRecords(records, "writingbench", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 1 || !strings.Contains(lines[0], `"prompt":"first"`) {
+		t.Fatalf("unexpected JSONL output: %q", string(data))
+	}
+	if _, err := encodeWritingPromptRecords(records, "missing", 0); err == nil || !strings.Contains(err.Error(), "unsupported --prompt-source") {
+		t.Fatalf("unexpected source validation error: %v", err)
+	}
+	if _, err := encodeWritingPromptRecords(records, "eqbench-creative-v3", 0); err == nil || !strings.Contains(err.Error(), "no prompt records") {
+		t.Fatalf("unexpected empty source error: %v", err)
+	}
+}
+
+func TestWritingPromptExportRequiresRefresh(t *testing.T) {
+	var out, errOut bytes.Buffer
+	err := execute(context.Background(), []string{"evals", "writing", "--export-prompts", "/tmp/writing-prompts.jsonl"}, &out, &errOut)
+	if err == nil || !strings.Contains(err.Error(), "requires --refresh") {
+		t.Fatalf("unexpected export validation error: %v", err)
+	}
+}

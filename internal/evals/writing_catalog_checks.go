@@ -82,8 +82,9 @@ func fetchWritingArtifact(ctx context.Context, client *http.Client, sourceURL st
 	return artifact, nil
 }
 
-func fetchWritingSourceChecks(ctx context.Context, client *http.Client, catalog WritingCatalog, opts WritingCatalogOptions, fetchedAt time.Time) []WritingSourceStatus {
+func fetchWritingSourceChecks(ctx context.Context, client *http.Client, catalog WritingCatalog, opts WritingCatalogOptions, fetchedAt time.Time) ([]WritingSourceStatus, []WritingPromptRecord) {
 	checks := make([]WritingSourceStatus, 0, len(catalog.Benchmarks)-1)
+	promptRecords := make([]WritingPromptRecord, 0)
 	for _, benchmark := range catalog.Benchmarks {
 		if benchmark.ID == WritingPrimaryID {
 			continue
@@ -110,34 +111,33 @@ func fetchWritingSourceChecks(ctx context.Context, client *http.Client, catalog 
 			checks = append(checks, check)
 			continue
 		}
-		check.Records, err = inspectWritingArtifact(benchmark.ID, artifact.Body)
+		var records []WritingPromptRecord
+		if writingPromptSourceSupported(benchmark.ID) {
+			records, err = extractWritingPromptRecords(benchmark.ID, sourceURL, artifact.Body)
+			check.Records = len(records)
+		} else {
+			check.Records, err = inspectWritingArtifact(benchmark.ID, artifact.Body)
+		}
 		if err != nil {
 			check.Status = "invalid"
 			check.Error = err.Error()
 		} else {
 			check.Status = "available"
+			if opts.IncludePromptRecords {
+				promptRecords = append(promptRecords, records...)
+			}
 		}
 		checks = append(checks, check)
 	}
-	return checks
+	return checks, promptRecords
 }
 
 func inspectWritingArtifact(benchmarkID string, body []byte) (int, error) {
-	switch benchmarkID {
-	case "writingbench", "ifeval":
-		return countWritingJSONL(body)
-	case "eqbench-creative-v3":
-		var prompts map[string]json.RawMessage
-		if err := json.Unmarshal(body, &prompts); err != nil {
-			return 0, fmt.Errorf("parse prompt JSON: %w", err)
-		}
-		if len(prompts) == 0 {
-			return 0, fmt.Errorf("prompt JSON contained no records")
-		}
-		return len(prompts), nil
-	default:
-		return 0, nil
+	if writingPromptSourceSupported(benchmarkID) {
+		records, err := extractWritingPromptRecords(benchmarkID, "", body)
+		return len(records), err
 	}
+	return 0, nil
 }
 
 func applyWritingPromptCounts(catalog *WritingCatalog) {

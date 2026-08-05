@@ -45,6 +45,10 @@ llambo evals writing --refresh
 
 # Save machine-readable source-native rows for a rerun or review
 llambo evals writing --refresh --format json --output /tmp/llambo-writing.json
+
+# Export normalized prompts for direct model testing
+llambo evals writing --refresh --prompt-source writingbench --prompt-limit 20 \
+  --export-prompts /tmp/writingbench.jsonl
 ```
 
 The catalog keeps scores in the scale used by each upstream benchmark. It does
@@ -69,6 +73,20 @@ The Markdown and JSON outputs also include a **Run plan** for each source. It
 links the prompt artifact, records known prompt counts, names the expected
 generation and judging flow, and calls out reproducibility traps such as judge
 model, temperature, serving mode, and multi-stage context.
+
+Use `--export-prompts` when you need records that can be passed directly to a
+model runner. The exporter writes one normalized JSON object per line with
+`benchmark_id`, `id`, `prompt`, `source_url`, and the original `source_record`.
+Supported machine-readable sources are `writingbench`, `eqbench-creative-v3`,
+and `ifeval`; use `--prompt-source all` to combine them. `--prompt-limit 0`
+exports every parsed record. Export requires `--refresh` because it fetches the
+current public artifact and never silently uses a stale local copy.
+
+The current exporter intentionally does not flatten repository-backed or HTML
+surfaces such as Lech Mazur's prompt directory, EQ-Bench Longform, Arena
+Creative Writing, IFBench, or Writing Styles. Those sources remain listed and
+endpoint-checked in the catalog, but their multi-stage or rendered formats need
+benchmark-specific adapters before they can be treated as reproducible JSONL.
 
 After a live refresh, **Open-weight leaderboard coverage** matches reviewed
 model aliases to the primary leaderboard. `measured` means a public row was
@@ -115,6 +133,9 @@ they never refresh implicitly. Local OMLX discovery is live and is not cached.
 | `--omlx-url` | URL | `http://127.0.0.1:8000` | Loopback OMLX base URL used for live local-model discovery |
 | `--no-omlx` | boolean | `false` | Skips live OMLX discovery and uses the reviewed registry as-is |
 | `--refresh` | boolean | `false` | Fetches and replaces external source snapshots |
+| `--export-prompts` | path | unset | Writes normalized prompt JSONL; writing mode requires `--refresh` |
+| `--prompt-source` | string | `writingbench` | Selects `writingbench`, `eqbench-creative-v3`, `ifeval`, or `all` for prompt export |
+| `--prompt-limit` | integer | `0` | Limits exported prompt records; `0` exports all selected records |
 | `--offline` | boolean | `false` | Uses cached external snapshots and skips live OMLX discovery |
 | `--allow-partial` | boolean | `false` | Allows an LLM Stats-only report when the Artificial Analysis cache or refresh is unavailable |
 

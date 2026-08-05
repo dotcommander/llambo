@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	WritingCatalogVersion = 1
+	WritingCatalogVersion = 2
 	WritingPrimaryID      = "lechmazur-writing"
 	WritingPrimaryURL     = "https://raw.githubusercontent.com/lechmazur/writing/main/README.md"
 	maxWritingSourceBody  = 32 << 20
@@ -30,6 +30,7 @@ type WritingCatalog struct {
 	OpenModelChecks   []WritingModelStatus   `json:"open_model_checks,omitempty"`
 	OpenModelCoverage []WritingModelCoverage `json:"open_model_coverage,omitempty"`
 	Leaderboards      []WritingLeaderboard   `json:"leaderboards,omitempty"`
+	PromptRecords     []WritingPromptRecord  `json:"prompt_records,omitempty"`
 }
 
 type WritingBenchmark struct {
@@ -83,13 +84,14 @@ type WritingLeaderboardRow struct {
 }
 
 type WritingCatalogOptions struct {
-	Client          *http.Client
-	URL             string
-	Now             func() time.Time
-	ValidateSources bool
-	ValidateModels  bool
-	SourceURLs      map[string]string
-	ModelURLs       map[string]string
+	Client               *http.Client
+	URL                  string
+	Now                  func() time.Time
+	ValidateSources      bool
+	ValidateModels       bool
+	IncludePromptRecords bool
+	SourceURLs           map[string]string
+	ModelURLs            map[string]string
 }
 
 // DefaultWritingCatalog returns the offline registry. It intentionally carries
@@ -356,6 +358,9 @@ func DefaultWritingCatalog(now time.Time) WritingCatalog {
 }
 
 func FetchWritingCatalog(ctx context.Context, opts WritingCatalogOptions) (WritingCatalog, error) {
+	if opts.IncludePromptRecords {
+		opts.ValidateSources = true
+	}
 	now := opts.Now
 	if now == nil {
 		now = time.Now
@@ -397,7 +402,11 @@ func FetchWritingCatalog(ctx context.Context, opts WritingCatalogOptions) (Writi
 	}}
 	catalog.OpenModelCoverage = buildWritingModelCoverage(catalog.OpenModels, rows)
 	if opts.ValidateSources {
-		catalog.SourceChecks = append(catalog.SourceChecks, fetchWritingSourceChecks(ctx, client, catalog, opts, fetchedAt)...)
+		checks, promptRecords := fetchWritingSourceChecks(ctx, client, catalog, opts, fetchedAt)
+		catalog.SourceChecks = append(catalog.SourceChecks, checks...)
+		if opts.IncludePromptRecords {
+			catalog.PromptRecords = promptRecords
+		}
 		applyWritingPromptCounts(&catalog)
 	}
 	if opts.ValidateModels {

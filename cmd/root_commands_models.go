@@ -54,6 +54,9 @@ type evalsCommand struct {
 	Refresh        bool                 `help:"fetch fresh source snapshots or scrape the writing leaderboard"`
 	Format         string               `default:"markdown" help:"report/catalog format: markdown, json, or html (writing supports markdown or json)"`
 	Output         string               `short:"o" help:"write the report or catalog to this file instead of stdout"`
+	ExportPrompts  string               `name:"export-prompts" help:"write normalized public writing prompts as JSONL (writing requires --refresh)"`
+	PromptSource   string               `name:"prompt-source" default:"writingbench" help:"prompt export source: writingbench, eqbench-creative-v3, ifeval, or all"`
+	PromptLimit    int                  `name:"prompt-limit" help:"maximum prompt records to export; 0 exports all selected records"`
 	Limit          int                  `default:"50" help:"maximum eligible canonical models; eligible tracked projections are always included; 0 includes all"`
 	AllowPartial   bool                 `name:"allow-partial" help:"continue with an LLM Stats-only report when Artificial Analysis is unavailable"`
 	RankBy         string               `name:"rank-by" default:"overall" help:"ranking profile: overall, general, coding, reasoning, agents, writing, long-context, speed, value, price"`
@@ -72,7 +75,7 @@ func (*evalsWritingCommand) Run(*commandIO) error { return nil }
 
 func (c *evalsCommand) Run(io *commandIO) error {
 	if c.Writing != nil {
-		return runWritingCatalog(io, c.Format, c.Output, c.Refresh)
+		return runWritingCatalog(io, c.Format, c.Output, c.Refresh, c.ExportPrompts, c.PromptSource, c.PromptLimit)
 	}
 	evalsRefresh, evalsFormat, evalsOutput, evalsLimit, evalsPartial, evalsRankBy, evalsOffline, evalsProjections, evalsMinOverall, evalsMaxOutputPrice, evalsOMLXURL, evalsNoOMLX = c.Refresh, c.Format, c.Output, c.Limit, c.AllowPartial, c.RankBy, c.Offline, c.Projections, c.MinOverall, c.MaxOutputPrice, c.OMLXURL, c.NoOMLX
 	return runEvals(io, nil)
