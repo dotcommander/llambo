@@ -1,12 +1,28 @@
 package cmd
 
 import (
+	"bytes"
+	"context"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/dotcommander/llambo/internal/evals"
 )
+
+func TestExecuteEvalsDefaultsToReport(t *testing.T) {
+	previousMinOverall := evalsMinOverall
+	t.Cleanup(func() { evalsMinOverall = previousMinOverall })
+
+	var out, errOut bytes.Buffer
+	err := execute(context.Background(), []string{"evals", "--min-overall", "101"}, &out, &errOut)
+	if err == nil || !strings.Contains(err.Error(), "--min-overall must be between -1 and 100") {
+		t.Fatalf("bare evals did not select the ranking report: %v", err)
+	}
+	if strings.Contains(out.String(), `"benchmarks"`) {
+		t.Fatalf("bare evals unexpectedly rendered the writing catalog: %s", out.String())
+	}
+}
 
 func TestEncodeEvalsReport(t *testing.T) {
 	report := evals.Report{GeneratedAt: time.Unix(1, 0).UTC(), FormulaVersion: "test", RankingProfile: "overall", Models: []evals.ReportModel{

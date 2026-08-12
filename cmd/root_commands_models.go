@@ -50,37 +50,40 @@ func (c *serveCommand) Run(io *commandIO) error {
 }
 
 type evalsCommand struct {
-	Writing        *evalsWritingCommand `cmd:"" help:"List writing benchmarks and open-weight model coverage"`
-	Refresh        bool                 `help:"fetch fresh source snapshots or scrape the writing leaderboard"`
-	Format         string               `default:"markdown" help:"report/catalog format: markdown, json, or html (writing supports markdown or json)"`
-	Output         string               `short:"o" help:"write the report or catalog to this file instead of stdout"`
-	ExportPrompts  string               `name:"export-prompts" help:"write normalized public writing prompts as JSONL (writing requires --refresh)"`
-	PromptSource   string               `name:"prompt-source" default:"writingbench" help:"prompt export source: writingbench, eqbench-creative-v3, ifeval, or all"`
-	PromptLimit    int                  `name:"prompt-limit" help:"maximum prompt records to export; 0 exports all selected records"`
-	DiscoverModels bool                 `name:"discover-open-models" help:"discover fresh public text-generation model candidates from Hugging Face (writing requires --refresh)"`
-	DiscoverLimit  int                  `name:"discover-limit" default:"25" help:"maximum fresh Hugging Face candidates to include"`
-	Limit          int                  `default:"50" help:"maximum eligible canonical models; eligible tracked projections are always included; 0 includes all"`
-	AllowPartial   bool                 `name:"allow-partial" help:"continue with an LLM Stats-only report when Artificial Analysis is unavailable"`
-	RankBy         string               `name:"rank-by" default:"overall" help:"ranking profile: overall, general, coding, reasoning, agents, writing, long-context, speed, value, price"`
-	Offline        bool                 `help:"use cached external snapshots and skip live OMLX discovery"`
-	Projections    string               `help:"replace the built-in tracked local/OSS projection registry with this JSON file"`
-	MinOverall     float64              `name:"min-overall" default:"40" help:"minimum overall score to include; models without overall are excluded; negative disables"`
-	MaxOutputPrice float64              `name:"max-output-price" default:"10" help:"maximum known output price per 1M tokens; unknown and local prices remain eligible; negative disables"`
-	OMLXURL        string               `name:"omlx-url" default:"http://127.0.0.1:8000" help:"loopback OMLX base URL for live local-model discovery"`
-	NoOMLX         bool                 `name:"no-omlx" help:"skip live OMLX discovery and use the reviewed projection registry as-is"`
+	Report         evalsReportCommand  `cmd:"" default:"1" hidden:""`
+	Writing        evalsWritingCommand `cmd:"" help:"List writing benchmarks and open-weight model coverage"`
+	Refresh        bool                `help:"fetch fresh source snapshots or scrape the writing leaderboard"`
+	Format         string              `default:"markdown" help:"report/catalog format: markdown, json, or html (writing supports markdown or json)"`
+	Output         string              `short:"o" help:"write the report or catalog to this file instead of stdout"`
+	ExportPrompts  string              `name:"export-prompts" help:"write normalized public writing prompts as JSONL (writing requires --refresh)"`
+	PromptSource   string              `name:"prompt-source" default:"writingbench" help:"prompt export source: writingbench, eqbench-creative-v3, ifeval, or all"`
+	PromptLimit    int                 `name:"prompt-limit" help:"maximum prompt records to export; 0 exports all selected records"`
+	DiscoverModels bool                `name:"discover-open-models" help:"discover fresh public text-generation model candidates from Hugging Face (writing requires --refresh)"`
+	DiscoverLimit  int                 `name:"discover-limit" default:"25" help:"maximum fresh Hugging Face candidates to include"`
+	Limit          int                 `default:"50" help:"maximum eligible canonical models; eligible tracked projections are always included; 0 includes all"`
+	AllowPartial   bool                `name:"allow-partial" help:"continue with an LLM Stats-only report when Artificial Analysis is unavailable"`
+	RankBy         string              `name:"rank-by" default:"overall" help:"ranking profile: overall, general, coding, reasoning, agents, writing, long-context, speed, value, price"`
+	Offline        bool                `help:"use cached external snapshots and skip live OMLX discovery"`
+	Projections    string              `help:"replace the built-in tracked local/OSS projection registry with this JSON file"`
+	MinOverall     float64             `name:"min-overall" default:"40" help:"minimum overall score to include; models without overall are excluded; negative disables"`
+	MaxOutputPrice float64             `name:"max-output-price" default:"10" help:"maximum known output price per 1M tokens; unknown and local prices remain eligible; negative disables"`
+	OMLXURL        string              `name:"omlx-url" default:"http://127.0.0.1:8000" help:"loopback OMLX base URL for live local-model discovery"`
+	NoOMLX         bool                `name:"no-omlx" help:"skip live OMLX discovery and use the reviewed projection registry as-is"`
+}
+
+type evalsReportCommand struct {
 }
 
 type evalsWritingCommand struct {
 }
 
-func (*evalsWritingCommand) Run(*commandIO) error { return nil }
-
-func (c *evalsCommand) Run(io *commandIO) error {
-	if c.Writing != nil {
-		return runWritingCatalog(io, c.Format, c.Output, c.Refresh, c.ExportPrompts, c.PromptSource, c.PromptLimit, c.DiscoverModels, c.DiscoverLimit)
-	}
+func (*evalsReportCommand) Run(c *evalsCommand, io *commandIO) error {
 	evalsRefresh, evalsFormat, evalsOutput, evalsLimit, evalsPartial, evalsRankBy, evalsOffline, evalsProjections, evalsMinOverall, evalsMaxOutputPrice, evalsOMLXURL, evalsNoOMLX = c.Refresh, c.Format, c.Output, c.Limit, c.AllowPartial, c.RankBy, c.Offline, c.Projections, c.MinOverall, c.MaxOutputPrice, c.OMLXURL, c.NoOMLX
 	return runEvals(io, nil)
+}
+
+func (*evalsWritingCommand) Run(c *evalsCommand, io *commandIO) error {
+	return runWritingCatalog(io, c.Format, c.Output, c.Refresh, c.ExportPrompts, c.PromptSource, c.PromptLimit, c.DiscoverModels, c.DiscoverLimit)
 }
 
 type jobsCommand struct {
