@@ -129,11 +129,14 @@ can finish artifact generation.
 | Paid execution | Requires both `--execute` and a positive `--max-run-cost` |
 | Catalog | Never updated automatically; `quality-import.json` is review-only |
 
-WritingBench generates once per prompt and judges all five source checklist
-criteria. EQ-Bench Creative v3 defaults to three iterations and pins temperature
-`0.7` plus `min_p: 0.1` through existing provider request options. Its result is
-always labeled `eqbench-creative-v3/local-rubric`: it is **not** the official
-pairwise Elo, Glicko, or leaderboard score.
+Both adapters produce local, non-leaderboard-comparable scores. WritingBench
+generates once per prompt, judges all five source checklist criteria, and labels
+the result `writingbench/local-checklist`; it is not an upstream WritingBench
+leaderboard score. EQ-Bench Creative v3 defaults to three iterations and pins
+temperature `0.7` plus `min_p: 0.1` through existing provider request options.
+Its result is labeled `eqbench-creative-v3/local-rubric`; it is **not** the
+official pairwise Elo, Glicko, or leaderboard score. Selecting the same judge as
+an upstream benchmark does not make either local score leaderboard-comparable.
 
 Each output directory contains `manifest.json`, `generations.jsonl`,
 `judgments.jsonl`, `report.json`, `report.md`, `quality-import.json`, and
@@ -158,12 +161,17 @@ The offline registry also points to:
 
 | Source | Best use | Surface |
 | --- | --- | --- |
-| [WritingBench](https://github.com/X-PLUG/WritingBench) | Real-world professional writing across six domains | Public JSONL query corpus and evaluator artifacts |
-| [EQ-Bench Creative Writing v3](https://github.com/EQ-bench/creative-writing-bench) | Creative quality across repeated prompts | Prompt JSON and published result archives |
+| [WritingBench](https://github.com/X-PLUG/WritingBench) | Real-world professional writing across six domains | Apache-2.0 JSONL query corpus and evaluator artifacts |
+| [EQ-Bench Creative Writing v3](https://github.com/EQ-bench/creative-writing-bench) | Creative quality across repeated prompts | Publicly accessible prompt JSON and result archives; upstream currently publishes no license file |
 | [EQ-Bench Longform Writing](https://github.com/EQ-bench/longform-writing-bench) | Planning, revision, and narrative consistency | Prompts, rubrics, reports, and leaderboard HTML |
 | [Arena Creative Writing](https://arena.ai/leaderboard/text/creative-writing) | Human-preference cross-check | Live rendered leaderboard |
 | [IFEval](https://github.com/google-research/google-research/tree/master/instruction_following_eval) and [IFBench](https://github.com/allenai/IFBench) | Strict brief and format adherence | Public prompt data and deterministic checkers |
 | [Lech Mazur Writing Styles](https://github.com/lechmazur/writing_styles) | Style fingerprints and diversity | CSV artifacts and story corpus |
+
+Repository access does not grant redistribution rights. Before publishing
+exported prompts, generated corpora, or result archives, check the upstream
+license and terms for that specific benchmark revision. Llambo stores those
+artifacts locally and does not bundle them in this repository.
 
 The model queue includes the latest reviewed public-weight candidates and marks
 whether each one is already covered by a public leaderboard or still needs a

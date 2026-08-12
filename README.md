@@ -55,7 +55,7 @@ llambo evals --rank-by coding
 # Scrape writing benchmarks and list the latest open-weight model queue
 llambo evals writing --refresh
 
-# Export public writing prompts as normalized JSONL for model reruns
+# Export WritingBench prompts as normalized JSONL for model reruns
 llambo evals writing --refresh --prompt-source writingbench --prompt-limit 20 --export-prompts /tmp/writingbench.jsonl
 
 # Plan a bounded local writing run (zero provider calls without --execute)
