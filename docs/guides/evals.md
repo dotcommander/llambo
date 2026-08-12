@@ -85,6 +85,63 @@ and `ifeval`; use `--prompt-source all` to combine them. `--prompt-limit 0`
 exports every parsed record. Export requires `--refresh` because it fetches the
 current public artifact and never silently uses a stale local copy.
 
+## Run a bounded local writing evaluation
+
+Dry-run first. This validates the sealed prompt file, exact models, benchmark
+records, pricing, call count, and worst-case cost without contacting a provider
+or creating the output directory:
+
+```bash
+llambo evals writing run \
+  --input /tmp/writingbench.jsonl \
+  --benchmark writingbench \
+  --model deepseek/deepseek-v4-pro \
+  --judge-model openrouter/anthropic/claude-sonnet-5 \
+  --output-dir /tmp/writing-run
+```
+
+Execute only after reviewing that JSON plan:
+
+```bash
+llambo evals writing run \
+  --input /tmp/writingbench.jsonl \
+  --benchmark writingbench \
+  --model deepseek/deepseek-v4-pro \
+  --judge-model openrouter/anthropic/claude-sonnet-5 \
+  --output-dir /tmp/writing-run \
+  --execute --max-run-cost 25.00
+```
+
+The run is bound to the prompt-file hash, exact model and judge identities,
+pricing snapshot, adapter version, settings, and limits. Reusing the same output
+directory resumes missing work only; any identity mismatch fails closed.
+Generations and judgments are appended to synced JSONL ledgers as they arrive.
+An interrupted run remains inspectable and gets a partial receipt when the CLI
+can finish artifact generation.
+
+| Safety control | Contract |
+| --- | --- |
+| Prompt limit | Defaults to 5; allowed range is 1–100 |
+| Concurrency | Defaults to 2; maximum 8 and still capped by provider `workers` |
+| Timeout | Defaults to 5 minutes per provider call |
+| Judge output | Defaults to 8,192 tokens; override with `--judge-max-output-tokens` |
+| Pricing | Unknown input or output prices are rejected |
+| Paid execution | Requires both `--execute` and a positive `--max-run-cost` |
+| Catalog | Never updated automatically; `quality-import.json` is review-only |
+
+WritingBench generates once per prompt and judges all five source checklist
+criteria. EQ-Bench Creative v3 defaults to three iterations and pins temperature
+`0.7` plus `min_p: 0.1` through existing provider request options. Its result is
+always labeled `eqbench-creative-v3/local-rubric`: it is **not** the official
+pairwise Elo, Glicko, or leaderboard score.
+
+Each output directory contains `manifest.json`, `generations.jsonl`,
+`judgments.jsonl`, `report.json`, `report.md`, `quality-import.json`, and
+`receipt.json`. Reports are derived locally from the ledgers and can be rebuilt
+without provider calls. Catalog import remains a separate explicit command.
+Run directories and files are written with owner-only permissions because model
+responses and judge reasoning may contain sensitive prompt material.
+
 The current exporter intentionally does not flatten repository-backed or HTML
 surfaces such as Lech Mazur's prompt directory, EQ-Bench Longform, Arena
 Creative Writing, IFBench, or Writing Styles. Those sources remain listed and

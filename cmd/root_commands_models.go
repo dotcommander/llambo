@@ -60,7 +60,7 @@ type evalsCommand struct {
 	PromptLimit    int                 `name:"prompt-limit" help:"maximum prompt records to export; 0 exports all selected records"`
 	DiscoverModels bool                `name:"discover-open-models" help:"discover fresh public text-generation model candidates from Hugging Face (writing requires --refresh)"`
 	DiscoverLimit  int                 `name:"discover-limit" default:"25" help:"maximum fresh Hugging Face candidates to include"`
-	Limit          int                 `default:"50" help:"maximum eligible canonical models; eligible tracked projections are always included; 0 includes all"`
+	Limit          int                 `help:"maximum items (eval report defaults to 50; writing run defaults to 5 and requires 1..100); report value 0 includes all"`
 	AllowPartial   bool                `name:"allow-partial" help:"continue with an LLM Stats-only report when Artificial Analysis is unavailable"`
 	RankBy         string              `name:"rank-by" default:"overall" help:"ranking profile: overall, general, coding, reasoning, agents, writing, long-context, speed, value, price"`
 	Offline        bool                `help:"use cached external snapshots and skip live OMLX discovery"`
@@ -75,14 +75,22 @@ type evalsReportCommand struct {
 }
 
 type evalsWritingCommand struct {
+	Catalog evalsWritingCatalogCommand `cmd:"" default:"1" hidden:""`
+	Run     evalsWritingRunCommand     `cmd:"" help:"Run a bounded local writing evaluation"`
 }
 
+type evalsWritingCatalogCommand struct{}
+
 func (*evalsReportCommand) Run(c *evalsCommand, io *commandIO) error {
-	evalsRefresh, evalsFormat, evalsOutput, evalsLimit, evalsPartial, evalsRankBy, evalsOffline, evalsProjections, evalsMinOverall, evalsMaxOutputPrice, evalsOMLXURL, evalsNoOMLX = c.Refresh, c.Format, c.Output, c.Limit, c.AllowPartial, c.RankBy, c.Offline, c.Projections, c.MinOverall, c.MaxOutputPrice, c.OMLXURL, c.NoOMLX
+	limit := c.Limit
+	if !io.FlagChanged("limit") {
+		limit = 50
+	}
+	evalsRefresh, evalsFormat, evalsOutput, evalsLimit, evalsPartial, evalsRankBy, evalsOffline, evalsProjections, evalsMinOverall, evalsMaxOutputPrice, evalsOMLXURL, evalsNoOMLX = c.Refresh, c.Format, c.Output, limit, c.AllowPartial, c.RankBy, c.Offline, c.Projections, c.MinOverall, c.MaxOutputPrice, c.OMLXURL, c.NoOMLX
 	return runEvals(io, nil)
 }
 
-func (*evalsWritingCommand) Run(c *evalsCommand, io *commandIO) error {
+func (*evalsWritingCatalogCommand) Run(c *evalsCommand, io *commandIO) error {
 	return runWritingCatalog(io, c.Format, c.Output, c.Refresh, c.ExportPrompts, c.PromptSource, c.PromptLimit, c.DiscoverModels, c.DiscoverLimit)
 }
 

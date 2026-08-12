@@ -1,0 +1,230 @@
+package cmd
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/dotcommander/llambo/internal/catalog"
+	"github.com/dotcommander/llambo/internal/costs"
+	"github.com/dotcommander/llambo/internal/evals"
+	"github.com/dotcommander/llambo/providers"
+)
+
+type evalsWritingRunCommand struct {
+	Input       string        `required:"" help:"Sealed writing prompt JSONL exported by llambo"`
+	Benchmark   string        `required:"" enum:"writingbench,eqbench-creative-v3" help:"Benchmark adapter"`
+	Model       []string      `required:"" help:"Exact generation target as provider/model; repeat for multiple targets"`
+	JudgeModel  string        `name:"judge-model" required:"" help:"Exact judge target as provider/model"`
+	OutputDir   string        `name:"output-dir" required:"" help:"Explicit run directory for the manifest, ledgers, reports, and receipt"`
+	Iterations  int           `help:"Iterations: WritingBench requires 1; EQ-Bench defaults to 3 (1..3)"`
+	Concurrency int           `default:"2" help:"Global worker limit (1..8; provider worker limits also apply)"`
+	Timeout     time.Duration `default:"5m" help:"Per-call timeout"`
+	JudgeTokens int           `name:"judge-max-output-tokens" default:"8192" help:"Maximum judge output tokens (1..65536)"`
+	MaxRunCost  float64       `name:"max-run-cost" help:"Required positive worst-case USD budget with --execute"`
+	Execute     bool          `help:"Allow provider-backed generation and judging; omitted means provider-free dry run"`
+}
+
+func (c *evalsWritingRunCommand) Run(parent *evalsCommand, io *commandIO) error {
+	for _, name := range []string{"refresh", "format", "output", "export-prompts", "prompt-source", "prompt-limit", "discover-open-models", "discover-limit", "allow-partial", "rank-by", "offline", "projections", "min-overall", "max-output-price", "omlx-url", "no-omlx"} {
+		if io.FlagChanged(name) {
+			return fmt.Errorf("--%s is not supported with evals writing run", name)
+		}
+	}
+	limit := parent.Limit
+	if !io.FlagChanged("limit") {
+		limit = 5
+	}
+	return runWritingEvaluationCommand(io, c, limit)
+}
+
+func runWritingEvaluationCommand(cmd *commandIO, options *evalsWritingRunCommand, limit int) error {
+	if limit < 1 || limit > 100 {
+		return fmt.Errorf("--limit must be between 1 and 100")
+	}
+	if options.Concurrency < 1 || options.Concurrency > 8 {
+		return fmt.Errorf("--concurrency must be between 1 and 8")
+	}
+	if options.Timeout <= 0 {
+		return fmt.Errorf("--timeout must be positive")
+	}
+	if options.JudgeTokens < 1 || options.JudgeTokens > 65536 {
+		return fmt.Errorf("--judge-max-output-tokens must be between 1 and 65536")
+	}
+	cleanOutputDir := filepath.Clean(options.OutputDir)
+	if cleanOutputDir == "." || strings.TrimSpace(options.OutputDir) == "" || filepath.Dir(cleanOutputDir) == cleanOutputDir {
+		return fmt.Errorf("--output-dir must be an explicit directory")
+	}
+	adapter, err := evals.WritingAdapter(options.Benchmark)
+	if err != nil {
+		return err
+	}
+	iterations, err := writingIterations(adapter.ID(), options.Iterations)
+	if err != nil {
+		return err
+	}
+	records, inputHash, err := evals.LoadWritingPromptFile(options.Input)
+	if err != nil {
+		return err
+	}
+	if len(records) > limit {
+		records = records[:limit]
+	}
+	if err := evals.ValidateWritingPromptRecords(records, adapter); err != nil {
+		return err
+	}
+	models, judge, configs, err := resolveWritingModels(options.Model, options.JudgeModel, options.JudgeTokens)
+	if err != nil {
+		return err
+	}
+	manifest := evals.NewWritingRunManifest(options.Input, inputHash, records, adapter, models, judge, iterations, options.Concurrency, options.Timeout, options.MaxRunCost, time.Now())
+	plan, err := evals.PlanWritingRun(manifest, records, adapter)
+	if err != nil {
+		return err
+	}
+	if !options.Execute {
+		return writeWritingDryRun(cmd.OutOrStdout(), manifest, plan)
+	}
+	if options.MaxRunCost <= 0 {
+		return fmt.Errorf("--execute requires a positive --max-run-cost")
+	}
+	if plan.WorstCaseCostUSD > options.MaxRunCost+1e-12 {
+		return fmt.Errorf("worst-case run estimate $%.6f exceeds --max-run-cost $%.6f", plan.WorstCaseCostUSD, options.MaxRunCost)
+	}
+	store, err := evals.OpenWritingRunStore(options.OutputDir, manifest)
+	if err != nil {
+		return err
+	}
+	executor, err := newCommandWritingExecutor(cmd.ErrOrStderr(), configs, options.Timeout)
+	if err != nil {
+		return errors.Join(err, store.Close())
+	}
+	defer executor.Close()
+	runErr := evals.RunWritingEvaluation(cmd.Context(), manifest, records, adapter, executor, store)
+	generations, judgments := store.Records()
+	closeErr := store.Close()
+	complete := runErr == nil && closeErr == nil
+	receipt, artifactErr := evals.WriteWritingRunArtifacts(options.OutputDir, manifest, adapter, generations, judgments, complete, time.Now())
+	if err := errors.Join(runErr, closeErr, artifactErr); err != nil {
+		return err
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "Writing evaluation %s: %s\nReport: %s\nObserved cost: $%.6f\n", receipt.RunID, receipt.Status, filepath.Join(options.OutputDir, "report.md"), receipt.Report.ObservedCostUSD)
+	return runErr
+}
+
+func writingIterations(benchmark string, requested int) (int, error) {
+	switch benchmark {
+	case "writingbench":
+		if requested == 0 || requested == 1 {
+			return 1, nil
+		}
+		return 0, fmt.Errorf("WritingBench requires --iterations 1")
+	case "eqbench-creative-v3":
+		if requested == 0 {
+			return 3, nil
+		}
+		if requested < 1 || requested > 3 {
+			return 0, fmt.Errorf("EQ-Bench Creative v3 --iterations must be between 1 and 3")
+		}
+		return requested, nil
+	default:
+		return 0, fmt.Errorf("unsupported writing benchmark %q", benchmark)
+	}
+}
+
+func writeWritingDryRun(out io.Writer, manifest evals.WritingRunManifest, plan evals.WritingRunPlan) error {
+	value := struct {
+		Mode          string                   `json:"mode"`
+		ProviderCalls int                      `json:"provider_calls"`
+		Manifest      evals.WritingRunManifest `json:"manifest"`
+		Plan          evals.WritingRunPlan     `json:"plan"`
+	}{Mode: "dry-run", ProviderCalls: 0, Manifest: manifest, Plan: plan}
+	encoder := json.NewEncoder(out)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(value)
+}
+
+func resolveWritingModels(modelSelectors []string, judgeSelector string, judgeMaxOutputTokens int) ([]evals.WritingModelSpec, evals.WritingModelSpec, map[string]providers.Config, error) {
+	if len(modelSelectors) == 0 {
+		return nil, evals.WritingModelSpec{}, nil, fmt.Errorf("at least one exact --model is required")
+	}
+	globalCfg, err := providers.LoadGlobalConfig()
+	if err != nil {
+		return nil, evals.WritingModelSpec{}, nil, err
+	}
+	costMap, err := costs.LoadAll()
+	if err != nil {
+		return nil, evals.WritingModelSpec{}, nil, fmt.Errorf("load model costs: %w", err)
+	}
+	catPath, err := catalog.CatalogPath()
+	if err != nil {
+		return nil, evals.WritingModelSpec{}, nil, err
+	}
+	cat, err := catalog.Load(catPath)
+	if err != nil {
+		return nil, evals.WritingModelSpec{}, nil, fmt.Errorf("load catalog: %w", err)
+	}
+	resolve := func(selector string, judge bool) (evals.WritingModelSpec, providers.Config, error) {
+		if !exactWritingModelSelector(selector) {
+			return evals.WritingModelSpec{}, providers.Config{}, fmt.Errorf("model selector %q must be exact provider/model", selector)
+		}
+		targets, err := catalog.ResolveModels(cat, globalCfg.Providers, costMap, catalog.SelectorOptions{
+			Selector:           selector,
+			IncludeUnknownCost: true,
+			Blocklist:          providers.NewBlocklist(globalCfg.Blocklist),
+		})
+		if err != nil {
+			return evals.WritingModelSpec{}, providers.Config{}, err
+		}
+		if len(targets) != 1 {
+			return evals.WritingModelSpec{}, providers.Config{}, fmt.Errorf("model selector %q resolved to %d targets, want 1", selector, len(targets))
+		}
+		target := targets[0]
+		if target.CostStatus == catalog.CostUnknown {
+			return evals.WritingModelSpec{}, providers.Config{}, fmt.Errorf("model %s/%s has unknown input or output pricing", target.Provider, target.Model)
+		}
+		if ok, reason := catalog.TextChatCapability(target.Provider, target.Model, modelEntryForTarget(cat, target.Provider, target.Model)); !ok {
+			return evals.WritingModelSpec{}, providers.Config{}, fmt.Errorf("model %s/%s is not text-chat capable: %s", target.Provider, target.Model, reason)
+		}
+		maxTokens := target.Config.MaxTokens
+		if judge {
+			maxTokens = judgeMaxOutputTokens
+		} else if maxTokens <= 0 {
+			maxTokens = 4096
+		}
+		spec := evals.WritingModelSpec{Provider: target.Provider, Model: target.Model, InputPer1M: target.InputPer1M, OutputPer1M: target.OutputPer1M, MaxOutputTokens: maxTokens, Workers: target.Config.GetWorkers()}
+		cfg := target.Config
+		cfg.MaxTokens = maxTokens
+		return spec, cfg, nil
+	}
+	models := make([]evals.WritingModelSpec, 0, len(modelSelectors))
+	configs := make(map[string]providers.Config)
+	seen := make(map[string]struct{})
+	for _, selector := range modelSelectors {
+		spec, cfg, err := resolve(selector, false)
+		if err != nil {
+			return nil, evals.WritingModelSpec{}, nil, err
+		}
+		if _, ok := seen[spec.ID()]; ok {
+			return nil, evals.WritingModelSpec{}, nil, fmt.Errorf("duplicate generation model %q", spec.ID())
+		}
+		seen[spec.ID()] = struct{}{}
+		models = append(models, spec)
+		configs[spec.ID()] = cfg
+	}
+	judge, judgeConfig, err := resolve(judgeSelector, true)
+	if err != nil {
+		return nil, evals.WritingModelSpec{}, nil, err
+	}
+	configs[judge.ID()] = judgeConfig
+	return models, judge, configs, nil
+}
+
+func exactWritingModelSelector(selector string) bool {
+	provider, model, ok := strings.Cut(strings.TrimSpace(selector), "/")
+	return ok && strings.TrimSpace(provider) != "" && strings.TrimSpace(model) != ""
+}

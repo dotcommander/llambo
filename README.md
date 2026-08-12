@@ -58,6 +58,11 @@ llambo evals writing --refresh
 # Export public writing prompts as normalized JSONL for model reruns
 llambo evals writing --refresh --prompt-source writingbench --prompt-limit 20 --export-prompts /tmp/writingbench.jsonl
 
+# Plan a bounded local writing run (zero provider calls without --execute)
+llambo evals writing run --input /tmp/writingbench.jsonl --benchmark writingbench \
+  --model deepseek/deepseek-v4-pro --judge-model openrouter/anthropic/claude-sonnet-5 \
+  --output-dir /tmp/writing-run
+
 # Find newly updated public text-generation candidates for review
 llambo evals writing --refresh --discover-open-models --discover-limit 25
 
