@@ -137,16 +137,18 @@ type modelsCommand struct {
 
 type modelsListCommand struct {
 	All            bool     `help:"Include disabled providers"`
-	CSV            bool     `help:"Output CSV (provider,enabled,model,primary)"`
+	CSV            bool     `help:"Output CSV (use --metrics to add score,speed,latency)"`
 	Available      bool     `help:"Fetch all available models from provider APIs"`
 	Provider       string   `short:"P" help:"Limit --available to providers (comma-separated), for example omlx"`
 	TimeoutSeconds int      `name:"timeout-seconds" default:"10" help:"HTTP timeout for --available"`
+	Metrics        bool     `help:"Show cached score, speed, and latency from catalog.json without provider calls"`
 	Grouped        bool     `default:"true" negatable:"" help:"Group models per provider (model1, model2, model3)"`
 	Ignored        []string `arg:"" optional:"" hidden:""`
 }
 
 func (c *modelsListCommand) Run(io *commandIO) error {
-	modelsAll, modelsCSV, modelsAvailable, modelsTimeoutSec, modelsGrouped, modelsProviderFilter = c.All, c.CSV, c.Available, c.TimeoutSeconds, c.Grouped, c.Provider
+	modelsAll, modelsCSV, modelsAvailable, modelsTimeoutSec, modelsProviderFilter, modelsMetrics = c.All, c.CSV, c.Available, c.TimeoutSeconds, c.Provider, c.Metrics
+	modelsGrouped = c.Grouped && !c.Metrics
 	return runModels(io, nil)
 }
 

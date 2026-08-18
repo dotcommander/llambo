@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dotcommander/llambo/internal/catalog"
 	"github.com/dotcommander/llambo/providers"
 )
 
@@ -20,12 +21,16 @@ var modelsAvailable bool
 var modelsTimeoutSec int
 var modelsGrouped = true
 var modelsProviderFilter string
+var modelsMetrics bool
 
 type modelRow struct {
 	Provider string
 	Enabled  bool
 	Model    string
 	Primary  bool
+	Score    string
+	Speed    string
+	Latency  string
 }
 
 func runModels(cmd *commandIO, args []string) error {
@@ -33,6 +38,18 @@ func runModels(cmd *commandIO, args []string) error {
 	cfg, err := providers.LoadGlobalConfig()
 	if err != nil {
 		return err
+	}
+
+	var metricsCatalog *catalog.Catalog
+	if modelsMetrics {
+		catPath, err := catalog.CatalogPath()
+		if err != nil {
+			return err
+		}
+		metricsCatalog, err = catalog.Load(catPath)
+		if err != nil {
+			return err
+		}
 	}
 
 	rows := make([]modelRow, 0)
@@ -53,16 +70,20 @@ func runModels(cmd *commandIO, args []string) error {
 		}
 
 		for i, model := range models {
-			rows = append(rows, modelRow{
+			row := modelRow{
 				Provider: name,
 				Enabled:  pcfg.Enabled,
 				Model:    model,
 				Primary:  i == 0 && !modelsAvailable,
-			})
+			}
+			if modelsMetrics {
+				row.Score, row.Speed, row.Latency = modelMetricLabels(metricsCatalog, name, model)
+			}
+			rows = append(rows, row)
 		}
 	}
 
-	if modelsCSV && modelsGrouped {
+	if modelsCSV && modelsGrouped && !modelsMetrics {
 		w := csv.NewWriter(out)
 		if err := w.Write([]string{"provider", "enabled", "models"}); err != nil {
 			return err
@@ -83,12 +104,20 @@ func runModels(cmd *commandIO, args []string) error {
 	}
 
 	if modelsCSV {
+		header := []string{"provider", "enabled", "model", "primary"}
+		if modelsMetrics {
+			header = append(header, "score", "speed", "latency")
+		}
 		w := csv.NewWriter(out)
-		if err := w.Write([]string{"provider", "enabled", "model", "primary"}); err != nil {
+		if err := w.Write(header); err != nil {
 			return err
 		}
 		for _, row := range rows {
-			if err := w.Write([]string{row.Provider, fmt.Sprintf("%t", row.Enabled), row.Model, fmt.Sprintf("%t", row.Primary)}); err != nil {
+			values := []string{row.Provider, fmt.Sprintf("%t", row.Enabled), row.Model, fmt.Sprintf("%t", row.Primary)}
+			if modelsMetrics {
+				values = append(values, row.Score, row.Speed, row.Latency)
+			}
+			if err := w.Write(values); err != nil {
 				return err
 			}
 		}
@@ -102,11 +131,17 @@ func runModels(cmd *commandIO, args []string) error {
 		return nil
 	}
 
-	if modelsGrouped {
+	if modelsGrouped && !modelsMetrics {
 		fmt.Fprintf(out, "%-12s %-8s %s\n", "PROVIDER", "ENABLED", "MODELS")
 		fmt.Fprintln(out, "--------------------------------------------------------------------------------")
 		for _, grouped := range groupRows(rows) {
 			fmt.Fprintf(out, "%-12s %-8t %s\n", grouped.Provider, grouped.Enabled, strings.Join(grouped.Models, ", "))
+		}
+	} else if modelsMetrics {
+		fmt.Fprintf(out, "%-12s %-8s %-20s %-14s %-12s %s\n", "PROVIDER", "ENABLED", "SCORE", "SPEED", "LATENCY", "MODEL")
+		fmt.Fprintln(out, strings.Repeat("-", 120))
+		for _, row := range rows {
+			fmt.Fprintf(out, "%-12s %-8t %-20s %-14s %-12s %s\n", row.Provider, row.Enabled, row.Score, row.Speed, row.Latency, row.Model)
 		}
 	} else {
 		fmt.Fprintf(out, "%-12s %-8s %-8s %s\n", "PROVIDER", "ENABLED", "PRIMARY", "MODEL")
@@ -138,6 +173,31 @@ func modelProviderAllowed(name string) bool {
 		}
 	}
 	return false
+}
+
+func modelMetricLabels(cat *catalog.Catalog, provider, model string) (score, speed, latency string) {
+	score, speed, latency = "—", "—", "—"
+	if cat == nil {
+		return score, speed, latency
+	}
+	pc := cat.Providers[provider]
+	if pc == nil {
+		return score, speed, latency
+	}
+	entry := pc.Models[model]
+	if entry == nil {
+		return score, speed, latency
+	}
+	if task, evidence, ok := catalog.BestQualityEvidence(entry); ok {
+		score = fmt.Sprintf("%s %.3f", task, evidence.Score)
+	}
+	if entry.LastPing.LatencyMS > 0 {
+		latency = fmt.Sprintf("%dms", entry.LastPing.LatencyMS)
+		if entry.LastPing.Success && entry.LastPing.TokensOut > 0 {
+			speed = fmt.Sprintf("%.1f tok/s", float64(entry.LastPing.TokensOut)*1000/float64(entry.LastPing.LatencyMS))
+		}
+	}
+	return score, speed, latency
 }
 
 type groupedModelRow struct {

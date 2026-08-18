@@ -10,7 +10,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/dotcommander/llambo/internal/catalog"
 	"github.com/dotcommander/llambo/providers"
 )
 
@@ -121,6 +123,63 @@ func TestModelsListAvailableCanTargetOneProvider(t *testing.T) {
 	}
 	if strings.Contains(out.String(), "configured-other") {
 		t.Fatalf("targeted model list included unselected provider:\n%s", out.String())
+	}
+}
+
+func TestModelsListMetricsUsesCatalogWithoutProviderCalls(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	var calls int
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		calls++
+	}))
+	defer server.Close()
+
+	configPath := writeModelsTestConfig(t, fmt.Sprintf(`{
+		"default_provider":"local",
+		"providers":{
+			"local":{
+				"base_url":%q,
+				"model":"measured-model",
+				"models":["unmeasured-model"],
+				"enabled":true,
+				"requires_key":false
+			}
+		}
+	}`, server.URL))
+	oldConfig := providers.ConfigFile()
+	t.Cleanup(func() { providers.SetConfigFile(oldConfig) })
+	now := time.Now().UTC()
+	catPath := filepath.Join(home, ".config", "llambo", "catalog.json")
+	if err := catalog.Save(catPath, &catalog.Catalog{
+		Version: 1,
+		Providers: map[string]*catalog.ProviderCatalog{
+			"local": {
+				Models: map[string]*catalog.ModelEntry{
+					"measured-model": {
+						Quality: map[string]catalog.QualityEvidence{
+							"writing": {Score: 0.98, Source: "test", UpdatedAt: now},
+						},
+						LastPing: catalog.PingState{Success: true, LatencyMS: 200, TokensOut: 40, CheckedAt: now},
+					},
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, errOut bytes.Buffer
+	if err := execute(context.Background(), []string{"--config", configPath, "models", "list", "--metrics"}, &out, &errOut); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 0 {
+		t.Fatalf("metrics model list called provider API %d time(s)", calls)
+	}
+	for _, want := range []string{"SCORE", "SPEED", "LATENCY", "writing 0.980", "200.0 tok/s", "200ms", "unmeasured-model", "—"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("metrics model list output missing %q:\n%s", want, out.String())
+		}
 	}
 }
 

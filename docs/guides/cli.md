@@ -10,6 +10,8 @@ llambo models catalog --free --json
 names from `config.json` and never calls provider APIs. Add `--available` only
 when you want live discovery. Use `-P omlx` to query just the local OMLX
 inventory instead of waiting on every configured provider.
+Add `--metrics` to show cached score, completion speed, and latency from the
+local catalog without rerunning providers. Missing values are shown as `—`.
 
 Use the CLI to inspect providers, discover working models, run health checks,
 fan out prompts, replay routing events, and test the gateway.
@@ -35,6 +37,7 @@ llambo providers refresh [provider...]
 
 llambo models list
 llambo models list --available -P omlx
+llambo models list --metrics
 llambo models list --available --timeout-seconds 5
 llambo models catalog [provider] --free --json
 llambo models catalog openrouter --metadata
