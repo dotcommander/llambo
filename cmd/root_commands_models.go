@@ -129,7 +129,7 @@ func (c *jobsStressCommand) Run(io *commandIO) error {
 }
 
 type modelsCommand struct {
-	List         modelsListCommand         `cmd:"" hidden:""`
+	List         modelsListCommand         `cmd:"" help:"List configured models immediately without provider discovery"`
 	Catalog      modelsCatalogCommand      `cmd:"" help:"List models from the local catalog"`
 	DiscoverFree modelsDiscoverFreeCommand `cmd:"" name:"discover-free" help:"Discover and health-check zero-price catalog models"`
 	SyncPricing  modelsSyncPricingCommand  `cmd:"" name:"sync-pricing" help:"Sync model pricing from models.dev into the local pricing cache"`
@@ -139,13 +139,14 @@ type modelsListCommand struct {
 	All            bool     `help:"Include disabled providers"`
 	CSV            bool     `help:"Output CSV (provider,enabled,model,primary)"`
 	Available      bool     `help:"Fetch all available models from provider APIs"`
+	Provider       string   `short:"P" help:"Limit --available to providers (comma-separated), for example omlx"`
 	TimeoutSeconds int      `name:"timeout-seconds" default:"10" help:"HTTP timeout for --available"`
 	Grouped        bool     `default:"true" negatable:"" help:"Group models per provider (model1, model2, model3)"`
 	Ignored        []string `arg:"" optional:"" hidden:""`
 }
 
 func (c *modelsListCommand) Run(io *commandIO) error {
-	modelsAll, modelsCSV, modelsAvailable, modelsTimeoutSec, modelsGrouped = c.All, c.CSV, c.Available, c.TimeoutSeconds, c.Grouped
+	modelsAll, modelsCSV, modelsAvailable, modelsTimeoutSec, modelsGrouped, modelsProviderFilter = c.All, c.CSV, c.Available, c.TimeoutSeconds, c.Grouped, c.Provider
 	return runModels(io, nil)
 }
 

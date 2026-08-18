@@ -6,6 +6,11 @@ llambo prompt --models tag:smart "Explain this in one paragraph"
 llambo models catalog --free --json
 ```
 
+`llambo models list` is the instant local snapshot. It reads configured model
+names from `config.json` and never calls provider APIs. Add `--available` only
+when you want live discovery. Use `-P omlx` to query just the local OMLX
+inventory instead of waiting on every configured provider.
+
 Use the CLI to inspect providers, discover working models, run health checks,
 fan out prompts, replay routing events, and test the gateway.
 
@@ -28,8 +33,9 @@ llambo config show
 llambo providers
 llambo providers refresh [provider...]
 
-llambo models
-llambo models --available --timeout-seconds 5
+llambo models list
+llambo models list --available -P omlx
+llambo models list --available --timeout-seconds 5
 llambo models catalog [provider] --free --json
 llambo models catalog openrouter --metadata
 llambo models catalog import-quality ./quality.json

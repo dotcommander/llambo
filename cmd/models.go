@@ -19,6 +19,7 @@ var modelsCSV bool
 var modelsAvailable bool
 var modelsTimeoutSec int
 var modelsGrouped = true
+var modelsProviderFilter string
 
 type modelRow struct {
 	Provider string
@@ -36,6 +37,9 @@ func runModels(cmd *commandIO, args []string) error {
 
 	rows := make([]modelRow, 0)
 	for _, name := range sortedProviderNames(cfg.Providers) {
+		if !modelProviderAllowed(name) {
+			continue
+		}
 		pcfg := cfg.Providers[name]
 		if !modelsAll && !pcfg.Enabled {
 			continue
@@ -121,6 +125,19 @@ func runModels(cmd *commandIO, args []string) error {
 	}
 
 	return nil
+}
+
+func modelProviderAllowed(name string) bool {
+	filter := strings.TrimSpace(modelsProviderFilter)
+	if filter == "" {
+		return true
+	}
+	for _, candidate := range strings.Split(filter, ",") {
+		if strings.EqualFold(strings.TrimSpace(candidate), name) {
+			return true
+		}
+	}
+	return false
 }
 
 type groupedModelRow struct {
