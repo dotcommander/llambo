@@ -67,6 +67,8 @@ func runModels(cmd *commandIO, args []string) error {
 			if avail := fetchAvailableModelsContext(cmd.Context(), name, pcfg, modelsTimeoutSec); len(avail) > 0 {
 				models = avail
 			}
+		} else {
+			models = appendCatalogMetricModels(metricsCatalog, name, models)
 		}
 
 		for i, model := range models {
@@ -218,6 +220,43 @@ func modelMetricLabels(cat *catalog.Catalog, provider, model string) (score, spe
 		}
 	}
 	return score, speed, latency
+}
+
+// appendCatalogMetricModels adds catalog-only models that have saved benchmark
+// or quality evidence. The normal list remains immediate and config-driven for
+// unmeasured models, while saved metrics are not hidden just because a model is
+// no longer in the provider's preferred config model list.
+func appendCatalogMetricModels(cat *catalog.Catalog, provider string, models []string) []string {
+	if cat == nil {
+		return models
+	}
+	pc := cat.Providers[provider]
+	if pc == nil || len(pc.Models) == 0 {
+		return models
+	}
+
+	seen := make(map[string]struct{}, len(models))
+	for _, model := range models {
+		seen[model] = struct{}{}
+	}
+	additional := make([]string, 0)
+	for model, entry := range pc.Models {
+		if model == "" {
+			continue
+		}
+		if _, ok := seen[model]; ok {
+			continue
+		}
+		if benchmarkName, benchmark, ok := catalog.BestBenchmarkEvidence(entry); ok && benchmarkName != "" && (benchmark.Score > 0 || benchmark.LatencyMS > 0 || benchmark.SpeedTokensPerSecond > 0) {
+			additional = append(additional, model)
+			continue
+		}
+		if _, quality, ok := catalog.BestQualityEvidence(entry); ok && quality.Score > 0 {
+			additional = append(additional, model)
+		}
+	}
+	sort.Strings(additional)
+	return append(models, additional...)
 }
 
 type groupedModelRow struct {

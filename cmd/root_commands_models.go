@@ -129,7 +129,7 @@ func (c *jobsStressCommand) Run(io *commandIO) error {
 }
 
 type modelsCommand struct {
-	List         modelsListCommand         `cmd:"" help:"List configured models immediately with cached metrics"`
+	List         modelsListCommand         `cmd:"" help:"List configured and scored catalog models immediately with cached metrics"`
 	Catalog      modelsCatalogCommand      `cmd:"" help:"List models from the local catalog"`
 	DiscoverFree modelsDiscoverFreeCommand `cmd:"" name:"discover-free" help:"Discover and health-check zero-price catalog models"`
 	SyncPricing  modelsSyncPricingCommand  `cmd:"" name:"sync-pricing" help:"Sync model pricing from models.dev into the local pricing cache"`

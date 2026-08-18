@@ -198,6 +198,65 @@ func TestModelsListMetricsUsesCatalogWithoutProviderCalls(t *testing.T) {
 	}
 }
 
+func TestModelsListIncludesCatalogOnlyScoredModels(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	var calls int
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		calls++
+	}))
+	defer server.Close()
+
+	configPath := writeModelsTestConfig(t, fmt.Sprintf(`{
+		"default_provider":"local",
+		"providers":{
+			"local":{
+				"base_url":%q,
+				"model":"configured-model",
+				"enabled":true,
+				"requires_key":false
+			}
+		}
+	}`, server.URL))
+	oldConfig := providers.ConfigFile()
+	t.Cleanup(func() { providers.SetConfigFile(oldConfig) })
+
+	catPath := filepath.Join(home, ".config", "llambo", "catalog.json")
+	if err := catalog.Save(catPath, &catalog.Catalog{
+		Version: 1,
+		Providers: map[string]*catalog.ProviderCatalog{
+			"local": {
+				Models: map[string]*catalog.ModelEntry{
+					"catalog-scored-model": {
+						Benchmarks: map[string]catalog.BenchmarkEvidence{
+							"saved": {Score: 0.91, UpdatedAt: time.Now().UTC()},
+						},
+					},
+					"catalog-unmeasured-model": {},
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, errOut bytes.Buffer
+	if err := execute(context.Background(), []string{"--config", configPath, "models", "list"}, &out, &errOut); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 0 {
+		t.Fatalf("catalog-only model list called provider API %d time(s)", calls)
+	}
+	for _, want := range []string{"configured-model", "catalog-scored-model", "saved 91.0/100"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("catalog metric list output missing %q:\n%s", want, out.String())
+		}
+	}
+	if strings.Contains(out.String(), "catalog-unmeasured-model") {
+		t.Fatalf("catalog-only unmeasured model was unexpectedly listed:\n%s", out.String())
+	}
+}
+
 func writeModelsTestConfig(t *testing.T, data string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "config.json")
