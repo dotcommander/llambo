@@ -188,14 +188,32 @@ func modelMetricLabels(cat *catalog.Catalog, provider, model string) (score, spe
 	if entry == nil {
 		return score, speed, latency
 	}
-	if task, evidence, ok := catalog.BestQualityEvidence(entry); ok {
+	benchmarkName, benchmark, hasBenchmark := catalog.BestBenchmarkEvidence(entry)
+	if hasBenchmark && benchmark.Score > 0 {
+		// Benchmark scores are stored in [0,1]. Present them on the same
+		// 0-100 scale used by the external evaluation reports. Benchmark
+		// evidence stays separate from routing quality evidence.
+		score = fmt.Sprintf("%s %.1f/100", benchmarkName, benchmark.Score*100)
+	} else if task, evidence, ok := catalog.BestQualityEvidence(entry); ok {
 		// Catalog quality evidence is stored in [0,1]. Present it on the
 		// same 0-100 scale used by the external evaluation reports.
 		score = fmt.Sprintf("%s %.1f/100", task, evidence.Score*100)
 	}
+	if hasBenchmark {
+		if benchmark.LatencyMS > 0 {
+			latency = fmt.Sprintf("%dms", benchmark.LatencyMS)
+		}
+		if benchmark.SpeedTokensPerSecond > 0 {
+			speed = fmt.Sprintf("%.1f tok/s", benchmark.SpeedTokensPerSecond)
+		} else if benchmark.LatencyMS > 0 && benchmark.TokensOut > 0 {
+			speed = fmt.Sprintf("%.1f tok/s", float64(benchmark.TokensOut)*1000/float64(benchmark.LatencyMS))
+		}
+	}
 	if entry.LastPing.LatencyMS > 0 {
-		latency = fmt.Sprintf("%dms", entry.LastPing.LatencyMS)
-		if entry.LastPing.Success && entry.LastPing.TokensOut > 0 {
+		if latency == "—" {
+			latency = fmt.Sprintf("%dms", entry.LastPing.LatencyMS)
+		}
+		if speed == "—" && entry.LastPing.Success && entry.LastPing.TokensOut > 0 {
 			speed = fmt.Sprintf("%.1f tok/s", float64(entry.LastPing.TokensOut)*1000/float64(entry.LastPing.LatencyMS))
 		}
 	}

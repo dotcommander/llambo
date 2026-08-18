@@ -28,20 +28,21 @@ type ProviderCatalog struct {
 // ModelEntry tracks a single upstream model across refreshes.
 // Models that disappear upstream are NOT deleted — they just stop getting last_seen updates.
 type ModelEntry struct {
-	FirstSeen       time.Time                  `json:"first_seen"`
-	LastSeen        time.Time                  `json:"last_seen"`
-	UpstreamCreated time.Time                  `json:"upstream_created,omitzero"`
-	OwnedBy         string                     `json:"owned_by,omitempty"`
-	Metadata        ModelMetadata              `json:"metadata,omitzero"`
-	Pinned          bool                       `json:"pinned,omitempty"`
-	Avoid           bool                       `json:"avoid,omitempty"`
-	AvoidReason     string                     `json:"avoid_reason,omitempty"`
-	AvoidSince      time.Time                  `json:"avoid_since,omitzero"`
-	Tags            []string                   `json:"tags,omitempty"`
-	Quality         map[string]QualityEvidence `json:"quality,omitempty"`
-	LastPing        PingState                  `json:"last_ping,omitzero"`
-	QuarantineUntil time.Time                  `json:"quarantine_until,omitzero"`
-	FailureCount    int                        `json:"failure_count,omitempty"`
+	FirstSeen       time.Time                    `json:"first_seen"`
+	LastSeen        time.Time                    `json:"last_seen"`
+	UpstreamCreated time.Time                    `json:"upstream_created,omitzero"`
+	OwnedBy         string                       `json:"owned_by,omitempty"`
+	Metadata        ModelMetadata                `json:"metadata,omitzero"`
+	Pinned          bool                         `json:"pinned,omitempty"`
+	Avoid           bool                         `json:"avoid,omitempty"`
+	AvoidReason     string                       `json:"avoid_reason,omitempty"`
+	AvoidSince      time.Time                    `json:"avoid_since,omitzero"`
+	Tags            []string                     `json:"tags,omitempty"`
+	Quality         map[string]QualityEvidence   `json:"quality,omitempty"`
+	Benchmarks      map[string]BenchmarkEvidence `json:"benchmarks,omitempty"`
+	LastPing        PingState                    `json:"last_ping,omitzero"`
+	QuarantineUntil time.Time                    `json:"quarantine_until,omitzero"`
+	FailureCount    int                          `json:"failure_count,omitempty"`
 }
 
 // ModelMetadata stores optional provider-supplied model facts. It is additive
@@ -93,6 +94,18 @@ type QualityEvidence struct {
 	Source    string    `json:"source,omitempty"`
 	Notes     string    `json:"notes,omitempty"`
 	UpdatedAt time.Time `json:"updated_at,omitzero"`
+}
+
+// BenchmarkEvidence stores measured benchmark transport metrics separately
+// from LastPing, which is reserved for lightweight health checks.
+type BenchmarkEvidence struct {
+	Score                float64   `json:"score,omitempty"`
+	LatencyMS            int64     `json:"latency_ms,omitempty"`
+	TokensOut            int       `json:"tokens_out,omitempty"`
+	SpeedTokensPerSecond float64   `json:"speed_tokens_per_second,omitempty"`
+	Source               string    `json:"source,omitempty"`
+	Notes                string    `json:"notes,omitempty"`
+	UpdatedAt            time.Time `json:"updated_at,omitzero"`
 }
 
 // PingState stores the latest lightweight health check for a model.

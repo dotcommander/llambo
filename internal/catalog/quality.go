@@ -89,3 +89,24 @@ func BestQualityEvidence(entry *ModelEntry) (string, QualityEvidence, bool) {
 	}
 	return bestTask, best, true
 }
+
+func BestBenchmarkEvidence(entry *ModelEntry) (string, BenchmarkEvidence, bool) {
+	if entry == nil || len(entry.Benchmarks) == 0 {
+		return "", BenchmarkEvidence{}, false
+	}
+	keys := make([]string, 0, len(entry.Benchmarks))
+	for key := range entry.Benchmarks {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	bestKey := ""
+	var best BenchmarkEvidence
+	for _, key := range keys {
+		evidence := entry.Benchmarks[key]
+		if bestKey == "" || evidence.UpdatedAt.After(best.UpdatedAt) || (evidence.UpdatedAt.Equal(best.UpdatedAt) && key < bestKey) {
+			bestKey = key
+			best = evidence
+		}
+	}
+	return bestKey, best, true
+}

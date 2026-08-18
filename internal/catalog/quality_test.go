@@ -56,3 +56,18 @@ func TestBestQualityEvidence(t *testing.T) {
 	require.Equal(t, "extraction", task)
 	require.Equal(t, 0.92, evidence.Score)
 }
+
+func TestBestBenchmarkEvidenceUsesLatestMeasurement(t *testing.T) {
+	t.Parallel()
+	older := time.Date(2026, 6, 24, 12, 0, 0, 0, time.UTC)
+	later := older.Add(time.Hour)
+	entry := &ModelEntry{Benchmarks: map[string]BenchmarkEvidence{
+		"older":  {LatencyMS: 100, UpdatedAt: older},
+		"latest": {LatencyMS: 200, UpdatedAt: later},
+	}}
+
+	name, evidence, ok := BestBenchmarkEvidence(entry)
+	require.True(t, ok)
+	require.Equal(t, "latest", name)
+	require.Equal(t, int64(200), evidence.LatencyMS)
+}
