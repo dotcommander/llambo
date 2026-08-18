@@ -138,10 +138,10 @@ func runModels(cmd *commandIO, args []string) error {
 			fmt.Fprintf(out, "%-12s %-8t %s\n", grouped.Provider, grouped.Enabled, strings.Join(grouped.Models, ", "))
 		}
 	} else if modelsMetrics {
-		fmt.Fprintf(out, "%-12s %-8s %-20s %-14s %-12s %s\n", "PROVIDER", "ENABLED", "SCORE", "SPEED", "LATENCY", "MODEL")
+		fmt.Fprintf(out, "%-12s %-8s %-28s %-14s %-12s %s\n", "PROVIDER", "ENABLED", "SCORE", "SPEED", "LATENCY", "MODEL")
 		fmt.Fprintln(out, strings.Repeat("-", 120))
 		for _, row := range rows {
-			fmt.Fprintf(out, "%-12s %-8t %-20s %-14s %-12s %s\n", row.Provider, row.Enabled, row.Score, row.Speed, row.Latency, row.Model)
+			fmt.Fprintf(out, "%-12s %-8t %-28s %-14s %-12s %s\n", row.Provider, row.Enabled, row.Score, row.Speed, row.Latency, row.Model)
 		}
 	} else {
 		fmt.Fprintf(out, "%-12s %-8s %-8s %s\n", "PROVIDER", "ENABLED", "PRIMARY", "MODEL")
