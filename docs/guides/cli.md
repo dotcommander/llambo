@@ -6,15 +6,13 @@ llambo prompt --models tag:smart "Explain this in one paragraph"
 llambo models catalog --free --json
 ```
 
-`llambo models list` is the instant local snapshot. It reads configured model
-names from `config.json` and never calls provider APIs. Add `--available` only
-when you want live discovery. Use `-P omlx` to query just the local OMLX
-inventory instead of waiting on every configured provider.
-Add `--metrics` to show cached score, completion speed, and latency from the
-local catalog without rerunning providers. Scores are displayed on a
-standardized 0-100 scale, while catalog quality remains stored as 0-1. The
-task label is included because task scores are not interchangeable. Missing
-values are shown as `—`.
+`llambo models list` is the instant local snapshot with cached score, completion
+speed, and latency. It reads configured model names from `config.json` and
+never calls provider APIs. Add `--available` only when you want live discovery.
+Use `-P omlx` to query just the local OMLX inventory instead of waiting on every
+configured provider. Scores are displayed on a standardized 0-100 scale, while
+catalog quality remains stored as 0-1. The task label is included because task
+scores are not interchangeable. Missing values are shown as `—`.
 
 Use the CLI to inspect providers, discover working models, run health checks,
 fan out prompts, replay routing events, and test the gateway.
@@ -40,7 +38,7 @@ llambo providers refresh [provider...]
 
 llambo models list
 llambo models list --available -P omlx
-llambo models list --metrics
+llambo models list --csv
 llambo models list --available --timeout-seconds 5
 llambo models catalog [provider] --free --json
 llambo models catalog openrouter --metadata

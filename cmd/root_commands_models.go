@@ -129,7 +129,7 @@ func (c *jobsStressCommand) Run(io *commandIO) error {
 }
 
 type modelsCommand struct {
-	List         modelsListCommand         `cmd:"" help:"List configured models immediately without provider discovery"`
+	List         modelsListCommand         `cmd:"" help:"List configured models immediately with cached metrics"`
 	Catalog      modelsCatalogCommand      `cmd:"" help:"List models from the local catalog"`
 	DiscoverFree modelsDiscoverFreeCommand `cmd:"" name:"discover-free" help:"Discover and health-check zero-price catalog models"`
 	SyncPricing  modelsSyncPricingCommand  `cmd:"" name:"sync-pricing" help:"Sync model pricing from models.dev into the local pricing cache"`
@@ -137,18 +137,21 @@ type modelsCommand struct {
 
 type modelsListCommand struct {
 	All            bool     `help:"Include disabled providers"`
-	CSV            bool     `help:"Output CSV (use --metrics to add score,speed,latency)"`
+	CSV            bool     `help:"Output CSV with score,speed,latency columns"`
 	Available      bool     `help:"Fetch all available models from provider APIs"`
 	Provider       string   `short:"P" help:"Limit --available to providers (comma-separated), for example omlx"`
 	TimeoutSeconds int      `name:"timeout-seconds" default:"10" help:"HTTP timeout for --available"`
-	Metrics        bool     `help:"Show cached score, speed, and latency from catalog.json without provider calls"`
+	Metrics        bool     `help:"Compatibility flag; cached score, speed, and latency are shown by default"`
 	Grouped        bool     `default:"true" negatable:"" help:"Group models per provider (model1, model2, model3)"`
 	Ignored        []string `arg:"" optional:"" hidden:""`
 }
 
 func (c *modelsListCommand) Run(io *commandIO) error {
-	modelsAll, modelsCSV, modelsAvailable, modelsTimeoutSec, modelsProviderFilter, modelsMetrics = c.All, c.CSV, c.Available, c.TimeoutSeconds, c.Provider, c.Metrics
-	modelsGrouped = c.Grouped && !c.Metrics
+	modelsAll, modelsCSV, modelsAvailable, modelsTimeoutSec, modelsProviderFilter = c.All, c.CSV, c.Available, c.TimeoutSeconds, c.Provider
+	// Metrics are the default listing contract. Keep --metrics accepted so
+	// existing scripts remain valid, but do not require callers to pass it.
+	modelsMetrics = true
+	modelsGrouped = false
 	return runModels(io, nil)
 }
 

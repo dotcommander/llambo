@@ -25,6 +25,7 @@ func TestModelsListHelpDescribesInstantPath(t *testing.T) {
 	for _, want := range []string{
 		"immediately",
 		"never calls provider APIs unless --available is set",
+		"always includes cached metrics",
 		"standardized to 0-100",
 		"--available -P omlx",
 	} {
@@ -35,6 +36,7 @@ func TestModelsListHelpDescribesInstantPath(t *testing.T) {
 }
 
 func TestModelsListSkipsProviderAPIsByDefault(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	var calls int
 	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		calls++
@@ -63,7 +65,7 @@ func TestModelsListSkipsProviderAPIsByDefault(t *testing.T) {
 	if calls != 0 {
 		t.Fatalf("instant model list called provider API %d time(s)", calls)
 	}
-	for _, want := range []string{"local", "configured-model", "second-model"} {
+	for _, want := range []string{"SCORE", "SPEED", "LATENCY", "local", "configured-model", "second-model"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("model list output missing %q:\n%s", want, out.String())
 		}
@@ -171,7 +173,7 @@ func TestModelsListMetricsUsesCatalogWithoutProviderCalls(t *testing.T) {
 	}
 
 	var out, errOut bytes.Buffer
-	if err := execute(context.Background(), []string{"--config", configPath, "models", "list", "--metrics"}, &out, &errOut); err != nil {
+	if err := execute(context.Background(), []string{"--config", configPath, "models", "list"}, &out, &errOut); err != nil {
 		t.Fatal(err)
 	}
 	if calls != 0 {
