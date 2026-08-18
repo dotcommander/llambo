@@ -25,6 +25,7 @@ func TestModelsListHelpDescribesInstantPath(t *testing.T) {
 	for _, want := range []string{
 		"immediately",
 		"never calls provider APIs unless --available is set",
+		"standardized to 0-100",
 		"--available -P omlx",
 	} {
 		if !strings.Contains(out.String(), want) {
@@ -176,9 +177,19 @@ func TestModelsListMetricsUsesCatalogWithoutProviderCalls(t *testing.T) {
 	if calls != 0 {
 		t.Fatalf("metrics model list called provider API %d time(s)", calls)
 	}
-	for _, want := range []string{"SCORE", "SPEED", "LATENCY", "writing 0.980", "200.0 tok/s", "200ms", "unmeasured-model", "—"} {
+	for _, want := range []string{"SCORE", "SPEED", "LATENCY", "writing 98.0/100", "200.0 tok/s", "200ms", "unmeasured-model", "—"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("metrics model list output missing %q:\n%s", want, out.String())
+		}
+	}
+
+	var csvOut bytes.Buffer
+	if err := execute(context.Background(), []string{"--config", configPath, "models", "list", "--metrics", "--csv"}, &csvOut, &errOut); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"provider,enabled,model,primary,score,speed,latency", "writing 98.0/100"} {
+		if !strings.Contains(csvOut.String(), want) {
+			t.Errorf("metrics CSV output missing %q:\n%s", want, csvOut.String())
 		}
 	}
 }

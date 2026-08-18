@@ -189,7 +189,9 @@ func modelMetricLabels(cat *catalog.Catalog, provider, model string) (score, spe
 		return score, speed, latency
 	}
 	if task, evidence, ok := catalog.BestQualityEvidence(entry); ok {
-		score = fmt.Sprintf("%s %.3f", task, evidence.Score)
+		// Catalog quality evidence is stored in [0,1]. Present it on the
+		// same 0-100 scale used by the external evaluation reports.
+		score = fmt.Sprintf("%s %.1f/100", task, evidence.Score*100)
 	}
 	if entry.LastPing.LatencyMS > 0 {
 		latency = fmt.Sprintf("%dms", entry.LastPing.LatencyMS)

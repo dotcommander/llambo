@@ -11,7 +11,10 @@ names from `config.json` and never calls provider APIs. Add `--available` only
 when you want live discovery. Use `-P omlx` to query just the local OMLX
 inventory instead of waiting on every configured provider.
 Add `--metrics` to show cached score, completion speed, and latency from the
-local catalog without rerunning providers. Missing values are shown as `—`.
+local catalog without rerunning providers. Scores are displayed on a
+standardized 0-100 scale, while catalog quality remains stored as 0-1. The
+task label is included because task scores are not interchangeable. Missing
+values are shown as `—`.
 
 Use the CLI to inspect providers, discover working models, run health checks,
 fan out prompts, replay routing events, and test the gateway.
