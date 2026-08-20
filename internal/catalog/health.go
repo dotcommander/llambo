@@ -6,6 +6,10 @@ import (
 )
 
 func RecordPing(cat *Catalog, providerName, modelID string, success bool, latency time.Duration, tokensIn, tokensOut int, errText string, checkedAt time.Time) {
+	RecordPingWithMetrics(cat, providerName, modelID, success, latency, 0, 0, 0, tokensIn, tokensOut, errText, checkedAt)
+}
+
+func RecordPingWithMetrics(cat *Catalog, providerName, modelID string, success bool, latency, ttfb, generation time.Duration, speedTokensPerSecond float64, tokensIn, tokensOut int, errText string, checkedAt time.Time) {
 	if cat == nil {
 		return
 	}
@@ -27,13 +31,16 @@ func RecordPing(cat *Catalog, providerName, modelID string, success bool, latenc
 	}
 
 	entry.LastPing = PingState{
-		Success:       success,
-		LatencyMS:     latency.Milliseconds(),
-		ErrorCategory: ClassifyError(errText),
-		Error:         errText,
-		TokensIn:      tokensIn,
-		TokensOut:     tokensOut,
-		CheckedAt:     checkedAt,
+		Success:              success,
+		LatencyMS:            latency.Milliseconds(),
+		TTFBMS:               ttfb.Milliseconds(),
+		GenerationMS:         generation.Milliseconds(),
+		SpeedTokensPerSecond: speedTokensPerSecond,
+		ErrorCategory:        ClassifyError(errText),
+		Error:                errText,
+		TokensIn:             tokensIn,
+		TokensOut:            tokensOut,
+		CheckedAt:            checkedAt,
 	}
 	if success {
 		entry.FailureCount = 0

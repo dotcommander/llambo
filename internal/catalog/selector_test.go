@@ -85,6 +85,32 @@ func TestResolveModelsTagCategoryAndQuarantine(t *testing.T) {
 	require.Len(t, speed, 1)
 	require.Equal(t, "speed", speed[0].Model)
 
+	cat.Providers["openai"].Models["measured"] = &ModelEntry{
+		Benchmarks: map[string]BenchmarkEvidence{
+			"ping": {SpeedTokensPerSecond: 12.5},
+		},
+	}
+	cat.Providers["openai"].Models["live-measured"] = &ModelEntry{
+		LastPing: PingState{SpeedTokensPerSecond: 8.5},
+	}
+	cat.Providers["openai"].Models["stale-catalog"] = &ModelEntry{}
+	missingCfgs := testSelectorConfigs()
+	missingCfg := missingCfgs["openai"]
+	missingCfg.Models = []string{"slow", "measured", "live-measured"}
+	missingCfgs["openai"] = missingCfg
+
+	missingSpeed, err := ResolveModels(cat, missingCfgs, nil, SelectorOptions{Selector: "category:missing_speed", Now: now})
+	require.NoError(t, err)
+	require.Contains(t, modelNames(missingSpeed), "free")
+	require.Contains(t, modelNames(missingSpeed), "slow")
+	require.NotContains(t, modelNames(missingSpeed), "measured")
+	require.NotContains(t, modelNames(missingSpeed), "live-measured")
+	require.NotContains(t, modelNames(missingSpeed), "stale-catalog")
+
+	missingSpeedAlias, err := ResolveModels(cat, missingCfgs, nil, SelectorOptions{Selector: "category:missing-speed", Now: now})
+	require.NoError(t, err)
+	require.Equal(t, modelNames(missingSpeed), modelNames(missingSpeedAlias))
+
 	all, err := ResolveModels(cat, testSelectorConfigs(), nil, SelectorOptions{Selector: "all", Now: now})
 	require.NoError(t, err)
 	for _, target := range all {

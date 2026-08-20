@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	whgemini "github.com/garyblankenship/wormhole/v3/providers/gemini"
 	whtypes "github.com/garyblankenship/wormhole/v3/types"
@@ -15,10 +16,12 @@ type pingGeminiClient struct {
 }
 
 type pingGeminiResult struct {
-	Content   string
-	Model     string
-	TokensIn  int
-	TokensOut int
+	Content    string
+	Model      string
+	TokensIn   int
+	TokensOut  int
+	TTFB       time.Duration
+	Generation time.Duration
 }
 
 func newPingGeminiClient(apiKey, baseURL, model string) *pingGeminiClient {
@@ -32,18 +35,7 @@ func newPingGeminiClient(apiKey, baseURL, model string) *pingGeminiClient {
 }
 
 func (c *pingGeminiClient) Chat(ctx context.Context, systemPrompt, userContent string, maxTokens int) (*pingGeminiResult, error) {
-	req := whtypes.TextRequest{
-		BaseRequest: whtypes.BaseRequest{
-			Model: c.model,
-		},
-		SystemPrompt: systemPrompt,
-		Messages: []whtypes.Message{
-			whtypes.NewUserMessage(userContent),
-		},
-	}
-	if maxTokens > 0 {
-		req.MaxTokens = &maxTokens
-	}
+	req := c.textRequest(systemPrompt, userContent, maxTokens)
 
 	resp, err := c.provider.Text(ctx, req)
 	if err != nil {
@@ -59,4 +51,40 @@ func (c *pingGeminiClient) Chat(ctx context.Context, systemPrompt, userContent s
 		result.TokensOut = resp.Usage.CompletionTokens
 	}
 	return result, nil
+}
+
+func (c *pingGeminiClient) ChatStream(ctx context.Context, systemPrompt, userContent string, maxTokens int) (*pingGeminiResult, error) {
+	started := time.Now()
+	stream, err := c.provider.Stream(ctx, c.textRequest(systemPrompt, userContent, maxTokens))
+	if err != nil {
+		return nil, err
+	}
+	stats, err := consumePingStream(stream, started)
+	if err != nil {
+		return nil, err
+	}
+	return &pingGeminiResult{
+		Content:    stats.Content,
+		Model:      c.model,
+		TokensIn:   stats.TokensIn,
+		TokensOut:  stats.TokensOut,
+		TTFB:       stats.TTFB,
+		Generation: stats.Generation,
+	}, nil
+}
+
+func (c *pingGeminiClient) textRequest(systemPrompt, userContent string, maxTokens int) whtypes.TextRequest {
+	req := whtypes.TextRequest{
+		BaseRequest: whtypes.BaseRequest{
+			Model: c.model,
+		},
+		SystemPrompt: systemPrompt,
+		Messages: []whtypes.Message{
+			whtypes.NewUserMessage(userContent),
+		},
+	}
+	if maxTokens > 0 {
+		req.MaxTokens = &maxTokens
+	}
+	return req
 }

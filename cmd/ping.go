@@ -22,6 +22,8 @@ type PingResult struct {
 	Error           string            `json:"error,omitempty"`
 	Latency         time.Duration     `json:"latency_ms"`
 	TTFB            time.Duration     `json:"ttfb_ms,omitempty"` // time to first byte (if streaming)
+	Generation      time.Duration     `json:"generation_duration_ms,omitempty"`
+	SpeedTokensPS   float64           `json:"speed_tokens_per_second,omitempty"`
 	Response        string            `json:"response,omitempty"`
 	TokensIn        int               `json:"tokens_in,omitempty"`
 	TokensOut       int               `json:"tokens_out,omitempty"`
@@ -30,6 +32,45 @@ type PingResult struct {
 	CostStatus      string            `json:"cost_status,omitempty"`
 	InputCostPer1M  float64           `json:"input_cost_per_1m,omitempty"`
 	OutputCostPer1M float64           `json:"output_cost_per_1m,omitempty"`
+}
+
+func (r PingResult) MarshalJSON() ([]byte, error) {
+	type pingResultJSON struct {
+		Provider        string            `json:"provider"`
+		Model           string            `json:"model"`
+		Success         bool              `json:"success"`
+		Error           string            `json:"error,omitempty"`
+		LatencyMS       int64             `json:"latency_ms"`
+		TTFBMS          int64             `json:"ttfb_ms,omitempty"`
+		GenerationMS    int64             `json:"generation_duration_ms,omitempty"`
+		SpeedTokensPS   float64           `json:"speed_tokens_per_second,omitempty"`
+		Response        string            `json:"response,omitempty"`
+		TokensIn        int               `json:"tokens_in,omitempty"`
+		TokensOut       int               `json:"tokens_out,omitempty"`
+		Headers         map[string]string `json:"headers,omitempty"`
+		RawResponse     json.RawMessage   `json:"raw_response,omitempty"`
+		CostStatus      string            `json:"cost_status,omitempty"`
+		InputCostPer1M  float64           `json:"input_cost_per_1m,omitempty"`
+		OutputCostPer1M float64           `json:"output_cost_per_1m,omitempty"`
+	}
+	return json.Marshal(pingResultJSON{
+		Provider:        r.Provider,
+		Model:           r.Model,
+		Success:         r.Success,
+		Error:           r.Error,
+		LatencyMS:       r.Latency.Milliseconds(),
+		TTFBMS:          r.TTFB.Milliseconds(),
+		GenerationMS:    r.Generation.Milliseconds(),
+		SpeedTokensPS:   r.SpeedTokensPS,
+		Response:        r.Response,
+		TokensIn:        r.TokensIn,
+		TokensOut:       r.TokensOut,
+		Headers:         r.Headers,
+		RawResponse:     r.RawResponse,
+		CostStatus:      r.CostStatus,
+		InputCostPer1M:  r.InputCostPer1M,
+		OutputCostPer1M: r.OutputCostPer1M,
+	})
 }
 
 type pingTarget struct {

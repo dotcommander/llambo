@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/dotcommander/llambo/internal/catalog"
+	"github.com/dotcommander/llambo/internal/costs"
 	"github.com/dotcommander/llambo/providers"
 )
 
@@ -24,13 +25,14 @@ var modelsProviderFilter string
 var modelsMetrics bool
 
 type modelRow struct {
-	Provider string
-	Enabled  bool
-	Model    string
-	Primary  bool
-	Score    string
-	Speed    string
-	Latency  string
+	Provider   string
+	Enabled    bool
+	Model      string
+	Primary    bool
+	Score      string
+	Speed      string
+	Latency    string
+	OutputCost string
 }
 
 func runModels(cmd *commandIO, args []string) error {
@@ -41,12 +43,17 @@ func runModels(cmd *commandIO, args []string) error {
 	}
 
 	var metricsCatalog *catalog.Catalog
+	var costMap map[string]costs.ModelCost
 	if modelsMetrics {
 		catPath, err := catalog.CatalogPath()
 		if err != nil {
 			return err
 		}
 		metricsCatalog, err = catalog.Load(catPath)
+		if err != nil {
+			return err
+		}
+		costMap, err = costs.LoadAll()
 		if err != nil {
 			return err
 		}
@@ -80,6 +87,7 @@ func runModels(cmd *commandIO, args []string) error {
 			}
 			if modelsMetrics {
 				row.Score, row.Speed, row.Latency = modelMetricLabels(metricsCatalog, name, model)
+				row.OutputCost = modelOutputCostLabel(costMap, metricsCatalog, name, model)
 			}
 			rows = append(rows, row)
 		}
@@ -108,7 +116,7 @@ func runModels(cmd *commandIO, args []string) error {
 	if modelsCSV {
 		header := []string{"provider", "enabled", "model", "primary"}
 		if modelsMetrics {
-			header = append(header, "score", "speed", "latency")
+			header = append(header, "score", "speed", "latency", "output_cost_per_1m_usd")
 		}
 		w := csv.NewWriter(out)
 		if err := w.Write(header); err != nil {
@@ -117,7 +125,7 @@ func runModels(cmd *commandIO, args []string) error {
 		for _, row := range rows {
 			values := []string{row.Provider, fmt.Sprintf("%t", row.Enabled), row.Model, fmt.Sprintf("%t", row.Primary)}
 			if modelsMetrics {
-				values = append(values, row.Score, row.Speed, row.Latency)
+				values = append(values, row.Score, row.Speed, row.Latency, row.OutputCost)
 			}
 			if err := w.Write(values); err != nil {
 				return err
@@ -140,10 +148,10 @@ func runModels(cmd *commandIO, args []string) error {
 			fmt.Fprintf(out, "%-12s %-8t %s\n", grouped.Provider, grouped.Enabled, strings.Join(grouped.Models, ", "))
 		}
 	} else if modelsMetrics {
-		fmt.Fprintf(out, "%-12s %-8s %-28s %-14s %-12s %s\n", "PROVIDER", "ENABLED", "SCORE", "SPEED", "LATENCY", "MODEL")
-		fmt.Fprintln(out, strings.Repeat("-", 120))
+		fmt.Fprintf(out, "%-12s %-8s %-28s %-14s %-12s %-14s %s\n", "PROVIDER", "ENABLED", "SCORE", "SPEED", "LATENCY", "OUTPUT $/1M", "MODEL")
+		fmt.Fprintln(out, strings.Repeat("-", 136))
 		for _, row := range rows {
-			fmt.Fprintf(out, "%-12s %-8t %-28s %-14s %-12s %s\n", row.Provider, row.Enabled, row.Score, row.Speed, row.Latency, row.Model)
+			fmt.Fprintf(out, "%-12s %-8t %-28s %-14s %-12s %-14s %s\n", row.Provider, row.Enabled, row.Score, row.Speed, row.Latency, row.OutputCost, row.Model)
 		}
 	} else {
 		fmt.Fprintf(out, "%-12s %-8s %-8s %s\n", "PROVIDER", "ENABLED", "PRIMARY", "MODEL")
@@ -162,6 +170,25 @@ func runModels(cmd *commandIO, args []string) error {
 	}
 
 	return nil
+}
+
+func modelOutputCostLabel(costMap map[string]costs.ModelCost, cat *catalog.Catalog, provider, model string) string {
+	var entry *catalog.ModelEntry
+	if cat != nil {
+		if pc := cat.Providers[provider]; pc != nil {
+			entry = pc.Models[model]
+		}
+	}
+
+	status, _, output := catalog.CostForEntry(costMap, provider, model, entry)
+	switch status {
+	case catalog.CostFree:
+		return "free"
+	case catalog.CostPaid:
+		return fmt.Sprintf("$%.4g", output)
+	default:
+		return "—"
+	}
 }
 
 func modelProviderAllowed(name string) bool {
@@ -207,16 +234,24 @@ func modelMetricLabels(cat *catalog.Catalog, provider, model string) (score, spe
 		}
 		if benchmark.SpeedTokensPerSecond > 0 {
 			speed = fmt.Sprintf("%.1f tok/s", benchmark.SpeedTokensPerSecond)
-		} else if benchmark.LatencyMS > 0 && benchmark.TokensOut > 0 {
-			speed = fmt.Sprintf("%.1f tok/s", float64(benchmark.TokensOut)*1000/float64(benchmark.LatencyMS))
+		}
+	}
+	lastPingIsNewer := entry.LastPing.Success && !entry.LastPing.CheckedAt.IsZero() &&
+		(!hasBenchmark || entry.LastPing.CheckedAt.After(benchmark.UpdatedAt))
+	if lastPingIsNewer {
+		if entry.LastPing.LatencyMS > 0 {
+			latency = fmt.Sprintf("%dms", entry.LastPing.LatencyMS)
+		}
+		if entry.LastPing.SpeedTokensPerSecond > 0 {
+			speed = fmt.Sprintf("%.1f tok/s", entry.LastPing.SpeedTokensPerSecond)
 		}
 	}
 	if entry.LastPing.LatencyMS > 0 {
 		if latency == "—" {
 			latency = fmt.Sprintf("%dms", entry.LastPing.LatencyMS)
 		}
-		if speed == "—" && entry.LastPing.Success && entry.LastPing.TokensOut > 0 {
-			speed = fmt.Sprintf("%.1f tok/s", float64(entry.LastPing.TokensOut)*1000/float64(entry.LastPing.LatencyMS))
+		if speed == "—" && entry.LastPing.SpeedTokensPerSecond > 0 {
+			speed = fmt.Sprintf("%.1f tok/s", entry.LastPing.SpeedTokensPerSecond)
 		}
 	}
 	return score, speed, latency

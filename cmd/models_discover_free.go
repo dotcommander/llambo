@@ -80,7 +80,7 @@ func runModelsDiscoverFree(cmd *commandIO, args []string) error {
 
 	now := time.Now().UTC()
 	for _, result := range resultsPing {
-		catalog.RecordPing(cat, result.Provider, result.Model, result.Success, result.Latency, result.TokensIn, result.TokensOut, result.Error, now)
+		catalog.RecordPingWithMetrics(cat, result.Provider, result.Model, result.Success, result.Latency, result.TTFB, result.Generation, result.SpeedTokensPS, result.TokensIn, result.TokensOut, result.Error, now)
 		if discoverFreePin && result.Success {
 			if entry := findCatalogEntry(cat, result.Provider, result.Model); entry != nil {
 				entry.Pinned = true

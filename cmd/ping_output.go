@@ -40,8 +40,14 @@ func pingProviderContext(parent context.Context, name string, cfg providers.Conf
 			return result
 		}
 		client := newPingGeminiClient(apiKey, cfg.BaseURL, cfg.Model)
-		resp, err := client.Chat(ctx, "", prompt, cfg.MaxTokens)
+		start := time.Now()
+		resp, err := client.ChatStream(ctx, "", prompt, pingMaxTokens(cfg.MaxTokens))
 		result.Latency = time.Since(start)
+		if pingShouldFallbackToNonStreaming(err) {
+			fallbackStart := time.Now()
+			resp, err = client.Chat(ctx, "", prompt, pingMaxTokens(cfg.MaxTokens))
+			result.Latency = time.Since(fallbackStart)
+		}
 
 		if err != nil {
 			result.Error = err.Error()
@@ -52,6 +58,9 @@ func pingProviderContext(parent context.Context, name string, cfg providers.Conf
 		result.Response = resp.Content
 		result.TokensIn = resp.TokensIn
 		result.TokensOut = resp.TokensOut
+		result.TTFB = resp.TTFB
+		result.Generation = resp.Generation
+		result.SpeedTokensPS = pingSpeedTokensPerSecond(resp.TokensOut, resp.Generation)
 		return result
 	}
 
@@ -61,13 +70,15 @@ func pingProviderContext(parent context.Context, name string, cfg providers.Conf
 		return result
 	}
 
-	maxTok := cfg.MaxTokens
-	if maxTok <= 0 || maxTok > 50 {
-		maxTok = 50
-	}
+	maxTok := pingMaxTokens(cfg.MaxTokens)
 
-	resp, err := client.Chat(ctx, "", prompt, maxTok)
+	resp, err := client.ChatStream(ctx, "", prompt, maxTok)
 	result.Latency = time.Since(start)
+	if pingShouldFallbackToNonStreaming(err) {
+		fallbackStart := time.Now()
+		resp, err = client.Chat(ctx, "", prompt, maxTok)
+		result.Latency = time.Since(fallbackStart)
+	}
 
 	if err != nil {
 		result.Error = err.Error()
@@ -78,8 +89,19 @@ func pingProviderContext(parent context.Context, name string, cfg providers.Conf
 	result.Response = resp.Content
 	result.TokensIn = resp.TokensIn
 	result.TokensOut = resp.TokensOut
+	result.TTFB = resp.TTFB
+	result.Generation = resp.Generation
+	result.SpeedTokensPS = pingSpeedTokensPerSecond(resp.TokensOut, resp.Generation)
 
 	return result
+}
+
+func pingMaxTokens(configured int) int {
+	const benchmarkMaxTokens = 256
+	if configured <= 0 || configured > benchmarkMaxTokens {
+		return benchmarkMaxTokens
+	}
+	return configured
 }
 
 func printResult(out io.Writer, r PingResult) {

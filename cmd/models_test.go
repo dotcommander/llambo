@@ -160,6 +160,7 @@ func TestModelsListMetricsUsesCatalogWithoutProviderCalls(t *testing.T) {
 			"local": {
 				Models: map[string]*catalog.ModelEntry{
 					"measured-model": {
+						Metadata: catalog.ModelMetadata{Pricing: catalog.ModelPricing{Prompt: "0.000001", Completion: "0.000002"}},
 						Quality: map[string]catalog.QualityEvidence{
 							"writing": {Score: 0.98, Source: "test", UpdatedAt: now},
 						},
@@ -181,7 +182,7 @@ func TestModelsListMetricsUsesCatalogWithoutProviderCalls(t *testing.T) {
 	if calls != 0 {
 		t.Fatalf("metrics model list called provider API %d time(s)", calls)
 	}
-	for _, want := range []string{"SCORE", "SPEED", "LATENCY", "saved 98.0/100", "200.0 tok/s", "200ms", "unmeasured-model", "—"} {
+	for _, want := range []string{"SCORE", "SPEED", "LATENCY", "OUTPUT $/1M", "saved 98.0/100", "200.0 tok/s", "200ms", "unmeasured-model", "$2", "—"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("metrics model list output missing %q:\n%s", want, out.String())
 		}
@@ -191,7 +192,7 @@ func TestModelsListMetricsUsesCatalogWithoutProviderCalls(t *testing.T) {
 	if err := execute(context.Background(), []string{"--config", configPath, "models", "list", "--metrics", "--csv"}, &csvOut, &errOut); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"provider,enabled,model,primary,score,speed,latency", "saved 98.0/100"} {
+	for _, want := range []string{"provider,enabled,model,primary,score,speed,latency,output_cost_per_1m_usd", "saved 98.0/100", "$2"} {
 		if !strings.Contains(csvOut.String(), want) {
 			t.Errorf("metrics CSV output missing %q:\n%s", want, csvOut.String())
 		}
@@ -254,6 +255,62 @@ func TestModelsListIncludesCatalogOnlyScoredModels(t *testing.T) {
 	}
 	if strings.Contains(out.String(), "catalog-unmeasured-model") {
 		t.Fatalf("catalog-only unmeasured model was unexpectedly listed:\n%s", out.String())
+	}
+}
+
+func TestModelMetricLabelsDoesNotInferSpeedFromTotalLatency(t *testing.T) {
+	cat := &catalog.Catalog{Providers: map[string]*catalog.ProviderCatalog{
+		"openai": {Models: map[string]*catalog.ModelEntry{
+			"slow-looking": {
+				LastPing: catalog.PingState{
+					Success:   true,
+					LatencyMS: 2000,
+					TokensOut: 2,
+				},
+			},
+			"measured": {
+				LastPing: catalog.PingState{
+					Success:              true,
+					LatencyMS:            2000,
+					TokensOut:            2,
+					SpeedTokensPerSecond: 25,
+				},
+			},
+		}},
+	}}
+
+	_, speed, latency := modelMetricLabels(cat, "openai", "slow-looking")
+	if speed != "—" || latency != "2000ms" {
+		t.Fatalf("legacy speed fallback = %q with latency %q, want em dash and 2000ms", speed, latency)
+	}
+	_, speed, _ = modelMetricLabels(cat, "openai", "measured")
+	if speed != "25.0 tok/s" {
+		t.Fatalf("persisted speed = %q, want 25.0 tok/s", speed)
+	}
+}
+
+func TestModelMetricLabelsPrefersFreshLiveTiming(t *testing.T) {
+	benchmarkAt := time.Now().UTC().Add(-time.Hour)
+	liveAt := benchmarkAt.Add(time.Minute)
+	cat := &catalog.Catalog{Providers: map[string]*catalog.ProviderCatalog{
+		"omlx": {Models: map[string]*catalog.ModelEntry{
+			"model": {
+				Benchmarks: map[string]catalog.BenchmarkEvidence{
+					"local": {LatencyMS: 215528, SpeedTokensPerSecond: 3, UpdatedAt: benchmarkAt},
+				},
+				LastPing: catalog.PingState{
+					Success:              true,
+					LatencyMS:            10156,
+					SpeedTokensPerSecond: 12.5,
+					CheckedAt:            liveAt,
+				},
+			},
+		}},
+	}}
+
+	_, speed, latency := modelMetricLabels(cat, "omlx", "model")
+	if speed != "12.5 tok/s" || latency != "10156ms" {
+		t.Fatalf("metrics = speed %q, latency %q, want 12.5 tok/s and 10156ms", speed, latency)
 	}
 }
 

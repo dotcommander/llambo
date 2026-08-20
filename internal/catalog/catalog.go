@@ -110,13 +110,16 @@ type BenchmarkEvidence struct {
 
 // PingState stores the latest lightweight health check for a model.
 type PingState struct {
-	Success       bool      `json:"success"`
-	LatencyMS     int64     `json:"latency_ms,omitempty"`
-	ErrorCategory string    `json:"error_category,omitempty"`
-	Error         string    `json:"error,omitempty"`
-	TokensIn      int       `json:"tokens_in,omitempty"`
-	TokensOut     int       `json:"tokens_out,omitempty"`
-	CheckedAt     time.Time `json:"checked_at"`
+	Success              bool      `json:"success"`
+	LatencyMS            int64     `json:"latency_ms,omitempty"`
+	TTFBMS               int64     `json:"ttfb_ms,omitempty"`
+	GenerationMS         int64     `json:"generation_duration_ms,omitempty"`
+	SpeedTokensPerSecond float64   `json:"speed_tokens_per_second,omitempty"`
+	ErrorCategory        string    `json:"error_category,omitempty"`
+	Error                string    `json:"error,omitempty"`
+	TokensIn             int       `json:"tokens_in,omitempty"`
+	TokensOut            int       `json:"tokens_out,omitempty"`
+	CheckedAt            time.Time `json:"checked_at"`
 }
 
 // CatalogPath returns ~/.config/llambo/catalog.json (platform-equivalent via $HOME).

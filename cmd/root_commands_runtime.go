@@ -3,7 +3,7 @@ package cmd
 import "fmt"
 
 type pingCommand struct {
-	Prompt               string   `short:"p" default:"What is 2+2? Reply with just the number." help:"Prompt to send to all providers"`
+	Prompt               string   `short:"p" default:"Write three short sentences about the sky. Output only the sentences." help:"Prompt to send to all providers"`
 	Output               string   `short:"o" help:"Output file for JSON results"`
 	TimeoutSeconds       int      `name:"timeout-seconds" default:"30" help:"Per-provider timeout in seconds"`
 	Provider             string   `short:"P" help:"Filter to specific providers (comma-separated)"`

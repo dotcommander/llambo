@@ -65,7 +65,7 @@ func recordPingCatalogHealth(results []PingResult) error {
 	}
 	now := time.Now().UTC()
 	for _, result := range results {
-		catalog.RecordPing(cat, result.Provider, result.Model, result.Success, result.Latency, result.TokensIn, result.TokensOut, result.Error, now)
+		catalog.RecordPingWithMetrics(cat, result.Provider, result.Model, result.Success, result.Latency, result.TTFB, result.Generation, result.SpeedTokensPS, result.TokensIn, result.TokensOut, result.Error, now)
 	}
 	if err := catalog.Save(catPath, cat); err != nil {
 		return fmt.Errorf("save catalog health: %w", err)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/dotcommander/llambo/providers"
 	whopenai "github.com/garyblankenship/wormhole/v3/providers/openai"
@@ -18,11 +19,13 @@ type pingOpenAIClient struct {
 }
 
 type pingOpenAIResult struct {
-	Content   string
-	Model     string
-	TokensIn  int
-	TokensOut int
-	ID        string
+	Content    string
+	Model      string
+	TokensIn   int
+	TokensOut  int
+	ID         string
+	TTFB       time.Duration
+	Generation time.Duration
 }
 
 func newPingOpenAIClientForConfig(name string, cfg providers.Config) (*pingOpenAIClient, error) {
@@ -47,6 +50,46 @@ func newPingOpenAIClientForConfig(name string, cfg providers.Config) (*pingOpenA
 }
 
 func (c *pingOpenAIClient) Chat(ctx context.Context, systemPrompt, userContent string, maxTokens int) (*pingOpenAIResult, error) {
+	req := c.textRequest(systemPrompt, userContent, maxTokens)
+
+	resp, err := c.provider.Text(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("openai API: %w", err)
+	}
+
+	result := &pingOpenAIResult{
+		ID:      resp.ID,
+		Model:   resp.Model,
+		Content: strings.TrimSpace(resp.Text),
+	}
+	if resp.Usage != nil {
+		result.TokensIn = resp.Usage.PromptTokens
+		result.TokensOut = resp.Usage.CompletionTokens
+	}
+	return result, nil
+}
+
+func (c *pingOpenAIClient) ChatStream(ctx context.Context, systemPrompt, userContent string, maxTokens int) (*pingOpenAIResult, error) {
+	started := time.Now()
+	stream, err := c.provider.Stream(ctx, c.textRequest(systemPrompt, userContent, maxTokens))
+	if err != nil {
+		return nil, err
+	}
+	stats, err := consumePingStream(stream, started)
+	if err != nil {
+		return nil, err
+	}
+	return &pingOpenAIResult{
+		Content:    stats.Content,
+		Model:      c.model,
+		TokensIn:   stats.TokensIn,
+		TokensOut:  stats.TokensOut,
+		TTFB:       stats.TTFB,
+		Generation: stats.Generation,
+	}, nil
+}
+
+func (c *pingOpenAIClient) textRequest(systemPrompt, userContent string, maxTokens int) whtypes.TextRequest {
 	messages := make([]whtypes.Message, 0, 2)
 	if systemPrompt != "" {
 		messages = append(messages, whtypes.NewSystemMessage(systemPrompt))
@@ -64,22 +107,7 @@ func (c *pingOpenAIClient) Chat(ctx context.Context, systemPrompt, userContent s
 	if maxTokens > 0 {
 		req.MaxTokens = &maxTokens
 	}
-
-	resp, err := c.provider.Text(ctx, req)
-	if err != nil {
-		return nil, fmt.Errorf("openai API: %w", err)
-	}
-
-	result := &pingOpenAIResult{
-		ID:      resp.ID,
-		Model:   resp.Model,
-		Content: strings.TrimSpace(resp.Text),
-	}
-	if resp.Usage != nil {
-		result.TokensIn = resp.Usage.PromptTokens
-		result.TokensOut = resp.Usage.CompletionTokens
-	}
-	return result, nil
+	return req
 }
 
 func (c *pingOpenAIClient) providerOptions() map[string]any {

@@ -19,6 +19,9 @@ func candidateModels(cat *Catalog, providerName string, cfg providers.Config, se
 	if selector == "configured" {
 		return configModels(cfg)
 	}
+	if selector == "category:missing_speed" || selector == "category:missing-speed" {
+		return configModels(cfg)
+	}
 	pc := providerCatalog(cat, providerName)
 	if pc == nil || len(pc.Models) == 0 {
 		return configModels(cfg)
@@ -98,6 +101,8 @@ func matchesCategory(category, providerName, modelID string, m *ModelEntry, cost
 		return m != nil && m.LastPing.Success && !m.QuarantineUntil.After(now)
 	case "speed":
 		return m != nil && m.LastPing.Success && m.LastPing.LatencyMS > 0 && time.Duration(m.LastPing.LatencyMS)*time.Millisecond <= SlowPingThreshold && !m.QuarantineUntil.After(now)
+	case "missing_speed", "missing-speed":
+		return !hasSpeedMeasurement(m)
 	case "long_context":
 		return HasTag(m, category) || metadataContextLength(m) >= 128_000
 	case "tools":
@@ -109,6 +114,21 @@ func matchesCategory(category, providerName, modelID string, m *ModelEntry, cost
 	default:
 		return HasTag(m, category)
 	}
+}
+
+func hasSpeedMeasurement(m *ModelEntry) bool {
+	if m == nil {
+		return false
+	}
+	if m.LastPing.SpeedTokensPerSecond > 0 {
+		return true
+	}
+	for _, benchmark := range m.Benchmarks {
+		if benchmark.SpeedTokensPerSecond > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func metadataContextLength(m *ModelEntry) int {

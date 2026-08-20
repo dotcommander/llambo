@@ -142,11 +142,11 @@ type modelsCommand struct {
 
 type modelsListCommand struct {
 	All            bool     `help:"Include disabled providers"`
-	CSV            bool     `help:"Output CSV with score,speed,latency columns"`
+	CSV            bool     `help:"Output CSV with score,speed,latency,output cost columns"`
 	Available      bool     `help:"Fetch all available models from provider APIs"`
 	Provider       string   `short:"P" help:"Limit --available to providers (comma-separated), for example omlx"`
 	TimeoutSeconds int      `name:"timeout-seconds" default:"10" help:"HTTP timeout for --available"`
-	Metrics        bool     `help:"Compatibility flag; cached score, speed, and latency are shown by default"`
+	Metrics        bool     `help:"Compatibility flag; cached score, speed, latency, and output cost are shown by default"`
 	Grouped        bool     `default:"true" negatable:"" help:"Group models per provider (model1, model2, model3)"`
 	Ignored        []string `arg:"" optional:"" hidden:""`
 }
