@@ -23,12 +23,12 @@ func TestWormholeChat_ProviderOptionsReachWire(t *testing.T) {
 			t.Fatalf("decode request: %v", err)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"chatcmpl-test","created":1,"model":"gpt-5-mini","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":4,"total_tokens":7}}`))
+		_, _ = w.Write([]byte(`{"id":"chatcmpl-test","created":1,"provider":"wire-provider","model":"served-gpt-5-mini","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":4,"total_tokens":7}}`))
 	}))
 	t.Cleanup(srv.Close)
 
 	provider, err := NewOpenAI(map[string]Config{
-		"openai": {
+		"omlx": {
 			BaseURL: srv.URL,
 			Model:   "gpt-5-mini",
 			Enabled: true,
@@ -61,6 +61,9 @@ func TestWormholeChat_ProviderOptionsReachWire(t *testing.T) {
 	}
 	if result.Content != "ok" || result.Usage == nil || result.Usage.TotalTokens != 7 {
 		t.Fatalf("unexpected result: %+v", result)
+	}
+	if result.Model != "served-gpt-5-mini" || result.Provider != "omlx" {
+		t.Fatalf("served response identity = %s/%s", result.Provider, result.Model)
 	}
 
 	if got["max_completion_tokens"] != nil {

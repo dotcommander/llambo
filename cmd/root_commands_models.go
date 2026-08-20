@@ -52,6 +52,7 @@ func (c *serveCommand) Run(io *commandIO) error {
 type evalsCommand struct {
 	Report         evalsReportCommand  `cmd:"" default:"1" hidden:""`
 	Writing        evalsWritingCommand `cmd:"" help:"List writing benchmarks and open-weight model coverage"`
+	Local          evalsLocalCommand   `cmd:"" help:"Run sealed task-specific local model evaluations"`
 	Refresh        bool                `help:"fetch fresh source snapshots or scrape the writing leaderboard"`
 	Format         string              `default:"markdown" help:"report/catalog format: markdown, json, or html (writing supports markdown or json)"`
 	Output         string              `short:"o" help:"write the report or catalog to this file instead of stdout"`
@@ -77,6 +78,10 @@ type evalsReportCommand struct {
 type evalsWritingCommand struct {
 	Catalog evalsWritingCatalogCommand `cmd:"" default:"1" hidden:""`
 	Run     evalsWritingRunCommand     `cmd:"" help:"Run a bounded local writing evaluation"`
+}
+
+type evalsLocalCommand struct {
+	Run evalsLocalRunCommand `cmd:"" help:"Run one sealed task-specific model evaluation"`
 }
 
 type evalsWritingCatalogCommand struct{}

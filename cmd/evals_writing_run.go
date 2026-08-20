@@ -16,17 +16,19 @@ import (
 )
 
 type evalsWritingRunCommand struct {
-	Input       string        `required:"" help:"Sealed writing prompt JSONL exported by llambo"`
-	Benchmark   string        `required:"" enum:"writingbench,eqbench-creative-v3" help:"Benchmark adapter"`
-	Model       []string      `required:"" help:"Exact generation target as provider/model; repeat for multiple targets"`
-	JudgeModel  string        `name:"judge-model" required:"" help:"Exact judge target as provider/model"`
-	OutputDir   string        `name:"output-dir" required:"" help:"Explicit run directory for the manifest, ledgers, reports, and receipt"`
-	Iterations  int           `help:"Iterations: WritingBench requires 1; EQ-Bench defaults to 3 (1..3)"`
-	Concurrency int           `default:"2" help:"Global worker limit (1..8; provider worker limits also apply)"`
-	Timeout     time.Duration `default:"5m" help:"Per-call timeout"`
-	JudgeTokens int           `name:"judge-max-output-tokens" default:"8192" help:"Maximum judge output tokens (1..65536)"`
-	MaxRunCost  float64       `name:"max-run-cost" help:"Required positive worst-case USD budget with --execute"`
-	Execute     bool          `help:"Allow provider-backed generation and judging; omitted means provider-free dry run"`
+	Input          string        `required:"" help:"Sealed writing prompt JSONL exported by llambo"`
+	Benchmark      string        `required:"" enum:"writingbench,eqbench-creative-v3" help:"Benchmark adapter"`
+	Model          string        `required:"" help:"One exact generation target as provider/model"`
+	JudgeModel     string        `name:"judge-model" required:"" help:"Exact judge target as provider/model"`
+	OutputDir      string        `name:"output-dir" required:"" help:"Explicit run directory for the manifest, ledgers, reports, and receipt"`
+	CampaignLedger string        `name:"campaign-ledger" required:"" help:"Shared campaign budget ledger JSON"`
+	PricingFile    string        `name:"pricing-file" help:"Run-scoped explicit pricing CSV overlay; does not mutate the live catalog"`
+	Iterations     int           `help:"Iterations: WritingBench requires 1; EQ-Bench defaults to 3 (1..3)"`
+	Concurrency    int           `default:"2" help:"Global worker limit (1..8; provider worker limits also apply)"`
+	Timeout        time.Duration `default:"5m" help:"Per-call timeout"`
+	JudgeTokens    int           `name:"judge-max-output-tokens" default:"8192" help:"Maximum judge output tokens (1..65536)"`
+	MaxRunCost     float64       `name:"max-run-cost" help:"Required positive worst-case USD budget with --execute"`
+	Execute        bool          `help:"Allow provider-backed generation and judging; omitted means provider-free dry run"`
 }
 
 func (c *evalsWritingRunCommand) Run(parent *evalsCommand, io *commandIO) error {
@@ -43,6 +45,11 @@ func (c *evalsWritingRunCommand) Run(parent *evalsCommand, io *commandIO) error 
 }
 
 func runWritingEvaluationCommand(cmd *commandIO, options *evalsWritingRunCommand, limit int) error {
+	for _, selector := range []string{options.Model, options.JudgeModel} {
+		if isGPTProModel(selector) {
+			return fmt.Errorf("local evaluation of GPT Pro models is prohibited by user policy: %s", selector)
+		}
+	}
 	if limit < 1 || limit > 100 {
 		return fmt.Errorf("--limit must be between 1 and 100")
 	}
@@ -77,7 +84,7 @@ func runWritingEvaluationCommand(cmd *commandIO, options *evalsWritingRunCommand
 	if err := evals.ValidateWritingPromptRecords(records, adapter); err != nil {
 		return err
 	}
-	models, judge, configs, err := resolveWritingModels(options.Model, options.JudgeModel, options.JudgeTokens)
+	models, judge, configs, err := resolveWritingModels([]string{options.Model}, options.JudgeModel, options.JudgeTokens, options.PricingFile)
 	if err != nil {
 		return err
 	}
@@ -95,13 +102,24 @@ func runWritingEvaluationCommand(cmd *commandIO, options *evalsWritingRunCommand
 	if plan.WorstCaseCostUSD > options.MaxRunCost+1e-12 {
 		return fmt.Errorf("worst-case run estimate $%.6f exceeds --max-run-cost $%.6f", plan.WorstCaseCostUSD, options.MaxRunCost)
 	}
+	ledger, err := evals.OpenCampaignLedger(options.CampaignLedger, 10)
+	if err != nil {
+		return err
+	}
 	store, err := evals.OpenWritingRunStore(options.OutputDir, manifest)
 	if err != nil {
 		return err
 	}
-	executor, err := newCommandWritingExecutor(cmd.ErrOrStderr(), configs, options.Timeout)
+	owner, err := evals.NewCampaignReservationOwner(manifest.RunID, evals.WritingRunIdentityHash(manifest), options.OutputDir)
 	if err != nil {
 		return errors.Join(err, store.Close())
+	}
+	if _, err := ledger.Reserve(owner, plan.WorstCaseCostUSD, options.MaxRunCost); err != nil {
+		return errors.Join(err, store.Close())
+	}
+	executor, err := newCommandWritingExecutor(cmd.ErrOrStderr(), configs, options.Timeout)
+	if err != nil {
+		return errors.Join(err, store.Close(), ledger.RecordOwned(owner, nil, "partial"))
 	}
 	defer executor.Close()
 	runErr := evals.RunWritingEvaluation(cmd.Context(), manifest, records, adapter, executor, store)
@@ -109,11 +127,51 @@ func runWritingEvaluationCommand(cmd *commandIO, options *evalsWritingRunCommand
 	closeErr := store.Close()
 	complete := runErr == nil && closeErr == nil
 	receipt, artifactErr := evals.WriteWritingRunArtifacts(options.OutputDir, manifest, adapter, generations, judgments, complete, time.Now())
-	if err := errors.Join(runErr, closeErr, artifactErr); err != nil {
+	status := receipt.Status
+	if runErr != nil || closeErr != nil || artifactErr != nil {
+		status = "partial"
+	}
+	observedPtr := writingObservedCost(manifest, generations, judgments)
+	ledgerErr := ledger.RecordOwned(owner, observedPtr, status)
+	if err := errors.Join(runErr, closeErr, artifactErr, ledgerErr); err != nil {
 		return err
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "Writing evaluation %s: %s\nReport: %s\nObserved cost: $%.6f\n", receipt.RunID, receipt.Status, filepath.Join(options.OutputDir, "report.md"), receipt.Report.ObservedCostUSD)
 	return runErr
+}
+
+func writingObservedCost(manifest evals.WritingRunManifest, generations []evals.WritingGenerationRecord, judgments []evals.WritingJudgmentRecord) *float64 {
+	observed := 0.0
+	for _, record := range generations {
+		observed += record.Usage.CostUSD
+		if !record.Usage.Known && writingModelIsPaid(manifest.Identity.Models, record.Provider, record.Model) {
+			return nil
+		}
+	}
+	for _, record := range judgments {
+		observed += record.Usage.CostUSD
+		if !record.Usage.Known && (manifest.Identity.Judge.InputPer1M > 0 || manifest.Identity.Judge.OutputPer1M > 0) {
+			return nil
+		}
+	}
+	return &observed
+}
+
+func writingModelIsPaid(models []evals.WritingModelSpec, provider, model string) bool {
+	for _, spec := range models {
+		if spec.Provider == provider && spec.Model == model {
+			return spec.InputPer1M > 0 || spec.OutputPer1M > 0
+		}
+	}
+	return true
+}
+
+func isGPTProModel(selector string) bool {
+	provider, model, ok := strings.Cut(strings.ToLower(strings.TrimSpace(selector)), "/")
+	if !ok || provider != "openai" || !strings.HasPrefix(model, "gpt-") {
+		return false
+	}
+	return strings.HasSuffix(model, "-pro") || strings.Contains(model, "-pro-")
 }
 
 func writingIterations(benchmark string, requested int) (int, error) {
@@ -148,7 +206,7 @@ func writeWritingDryRun(out io.Writer, manifest evals.WritingRunManifest, plan e
 	return encoder.Encode(value)
 }
 
-func resolveWritingModels(modelSelectors []string, judgeSelector string, judgeMaxOutputTokens int) ([]evals.WritingModelSpec, evals.WritingModelSpec, map[string]providers.Config, error) {
+func resolveWritingModels(modelSelectors []string, judgeSelector string, judgeMaxOutputTokens int, pricingFile string) ([]evals.WritingModelSpec, evals.WritingModelSpec, map[string]providers.Config, error) {
 	if len(modelSelectors) == 0 {
 		return nil, evals.WritingModelSpec{}, nil, fmt.Errorf("at least one exact --model is required")
 	}
@@ -159,6 +217,18 @@ func resolveWritingModels(modelSelectors []string, judgeSelector string, judgeMa
 	costMap, err := costs.LoadAll()
 	if err != nil {
 		return nil, evals.WritingModelSpec{}, nil, fmt.Errorf("load model costs: %w", err)
+	}
+	if strings.TrimSpace(pricingFile) != "" {
+		overlay, err := costs.Load(pricingFile)
+		if err != nil {
+			return nil, evals.WritingModelSpec{}, nil, fmt.Errorf("load run pricing overlay: %w", err)
+		}
+		if costMap == nil {
+			costMap = make(map[string]costs.ModelCost)
+		}
+		for key, value := range overlay {
+			costMap[key] = value
+		}
 	}
 	catPath, err := catalog.CatalogPath()
 	if err != nil {

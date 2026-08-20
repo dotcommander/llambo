@@ -57,6 +57,18 @@ type WritingUsage struct {
 	CompletionTokens int     `json:"completion_tokens,omitempty"`
 	TotalTokens      int     `json:"total_tokens,omitempty"`
 	CostUSD          float64 `json:"cost_usd,omitempty"`
+	Known            bool    `json:"known,omitempty"`
+}
+
+// WritingDispatchIntent is fsynced before each provider call. If a process
+// stops after this record but before its matching result ledger entry, the
+// attempt is intentionally in doubt and must never be replayed.
+type WritingDispatchIntent struct {
+	Kind         string    `json:"kind"`
+	Key          string    `json:"key"`
+	Attempt      int       `json:"attempt"`
+	CallSHA256   string    `json:"call_sha256"`
+	DispatchedAt time.Time `json:"dispatched_at"`
 }
 
 type WritingGenerationRecord struct {
@@ -198,12 +210,18 @@ type WritingRunReport struct {
 }
 
 type WritingRunReceipt struct {
-	SchemaVersion int               `json:"schema_version"`
-	RunID         string            `json:"run_id"`
-	CompletedAt   time.Time         `json:"completed_at"`
-	Status        string            `json:"status"`
-	Report        WritingRunReport  `json:"report"`
-	Artifacts     map[string]string `json:"artifacts"`
+	SchemaVersion   int               `json:"schema_version"`
+	RunID           string            `json:"run_id"`
+	IdentitySHA256  string            `json:"identity_sha256"`
+	InputSHA256     string            `json:"input_sha256"`
+	RequestedModels []string          `json:"requested_models"`
+	ServedModels    []string          `json:"served_models"`
+	RequestedJudge  string            `json:"requested_judge"`
+	ServedJudges    []string          `json:"served_judges"`
+	CompletedAt     time.Time         `json:"completed_at"`
+	Status          string            `json:"status"`
+	Report          WritingRunReport  `json:"report"`
+	Artifacts       map[string]string `json:"artifacts"`
 }
 
 type WritingQualityImportRecord struct {

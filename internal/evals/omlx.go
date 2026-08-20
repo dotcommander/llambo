@@ -76,6 +76,39 @@ func DiscoverOMLXModels(ctx context.Context, baseURL, apiKey string, client *htt
 	return discovery, fmt.Errorf("OMLX discovery failed: admin: %v; fallback: %v", adminErr, fallbackErr)
 }
 
+// VerifyOMLXExactModel proves an exact ID is present in the unfiltered live
+// admin inventory, including audio, embedding, and helper model types.
+func VerifyOMLXExactModel(ctx context.Context, baseURL, apiKey, exactID string, client *http.Client) (string, error) {
+	if err := ValidateOMLXLoopbackBaseURL(baseURL); err != nil {
+		return "", err
+	}
+	root, err := normalizeOMLXBaseURL(baseURL)
+	if err != nil {
+		return "", err
+	}
+	if client == nil {
+		client = &http.Client{Timeout: 10 * time.Second}
+	}
+	body, err := fetchOMLXJSON(ctx, omlxNoRedirectClient(client), root+"/admin/api/models", apiKey)
+	if err != nil {
+		return "", err
+	}
+	var payload struct {
+		Models []struct {
+			ID string `json:"id"`
+		} `json:"models"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return "", fmt.Errorf("parse OMLX admin response: %w", err)
+	}
+	for _, model := range payload.Models {
+		if strings.TrimSpace(model.ID) == exactID {
+			return "omlx/" + exactID, nil
+		}
+	}
+	return "", fmt.Errorf("exact OMLX model %q is absent from live admin inventory", exactID)
+}
+
 func omlxNoRedirectClient(client *http.Client) *http.Client {
 	clone := *client
 	clone.CheckRedirect = func(*http.Request, []*http.Request) error {

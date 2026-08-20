@@ -206,10 +206,18 @@ func (p *OpenAIProvider) executeStreamAttempt(ctx context.Context, info provider
 }
 
 func (p *OpenAIProvider) chatResultFromOutcome(outcome chatExecutionOutcome) ChatResult {
+	// Wormhole's response Provider identifies the wire protocol implementation
+	// (for example "openai"), not Llambo's configured backend. Preserve the
+	// routed backend here while still using the provider-reported served model.
+	providerName := outcome.provider.name
+	modelName := outcome.result.actualModel
+	if modelName == "" {
+		modelName = outcome.provider.cfg.Model
+	}
 	return ChatResult{
 		Content:      outcome.result.content,
-		Provider:     outcome.provider.name,
-		Model:        outcome.provider.cfg.Model,
+		Provider:     providerName,
+		Model:        modelName,
 		Usage:        outcome.result.usage,
 		FinishReason: outcome.result.finishReason,
 		ToolCalls:    outcome.result.toolCalls,
@@ -241,6 +249,8 @@ type chatRequestResult struct {
 	usage            *LLMUsage
 	finishReason     string
 	toolCalls        []ToolCall
+	actualProvider   string
+	actualModel      string
 	duration         time.Duration
 	clientKey        string
 	clientGeneration *clientGeneration
@@ -255,8 +265,10 @@ func (p *OpenAIProvider) chatRequest(ctx context.Context, backendName string, cf
 	}
 	defer p.oc.releaseAttempt(backendName, lease)
 
-	content, usage, finishReason, toolCalls, err := ExecuteChatRequest(ctx, lease.Client(), cfg, systemPrompt, userContent, DefaultChatConfig)
+	content, usage, finishReason, toolCalls, identity, err := executeChatRequestWithIdentity(ctx, lease.Client(), cfg, systemPrompt, userContent, DefaultChatConfig)
 	result, err := finalizeChatRequest(backendName, cfg, start, content, usage, finishReason, toolCalls, err)
+	result.actualProvider = identity.provider
+	result.actualModel = identity.model
 	result.clientKey = lease.keyForRotation()
 	result.clientGeneration = lease.generationForRotation()
 	return result, err
@@ -271,8 +283,10 @@ func (p *OpenAIProvider) chatStreamRequest(ctx context.Context, backendName stri
 	}
 	defer p.oc.releaseAttempt(backendName, lease)
 
-	content, usage, finishReason, toolCalls, emitted, err := ExecuteChatStreamRequest(ctx, lease.Client(), cfg, systemPrompt, userContent, onChunk, DefaultChatConfig)
+	content, usage, finishReason, toolCalls, emitted, identity, err := executeChatStreamRequestWithIdentity(ctx, lease.Client(), cfg, systemPrompt, userContent, onChunk, DefaultChatConfig)
 	result, reqErr := finalizeChatRequest(backendName, cfg, start, content, usage, finishReason, toolCalls, err)
+	result.actualProvider = identity.provider
+	result.actualModel = identity.model
 	result.clientKey = lease.keyForRotation()
 	result.clientGeneration = lease.generationForRotation()
 	return result, emitted, reqErr

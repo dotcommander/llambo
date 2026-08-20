@@ -103,6 +103,18 @@ func TestExtractContentFromTextResponse_ToolCallOnly(t *testing.T) {
 	}
 }
 
+func TestExtractContentFromTextResponsePreservesServedIdentity(t *testing.T) {
+	t.Parallel()
+	resp := &whtypes.TextResponse{Provider: "wire-provider", Model: "served-model", Text: "ok", FinishReason: whtypes.FinishReasonStop}
+	_, _, _, _, identity, err := extractContentFromTextResponseWithIdentity(resp, "requested-model")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if identity.provider != "wire-provider" || identity.model != "served-model" {
+		t.Fatalf("response identity = %#v", identity)
+	}
+}
+
 func TestBuildTextRequest_AttachesToolsAndToolChoice(t *testing.T) {
 	t.Parallel()
 	ctx := WithTools(context.Background(), []ToolDefinition{{

@@ -7,22 +7,31 @@ import (
 	whtypes "github.com/garyblankenship/wormhole/v3/types"
 )
 
-func consumeTextStream(stream <-chan whtypes.TextChunk, model string, onChunk ChatStreamHandler) (string, *LLMUsage, string, []ToolCall, bool, error) {
+func consumeTextStream(stream <-chan whtypes.TextChunk, model string, onChunk ChatStreamHandler) (string, *LLMUsage, string, []ToolCall, bool, chatResponseIdentity, error) {
 	var contentBuilder strings.Builder
 	toolCalls := make([]ToolCall, 0)
 	finishReason := ""
 	var usage *LLMUsage
 	emitted := false
+	identity := chatResponseIdentity{}
 
 	for chunk := range stream {
 		if chunk.Error != nil {
-			return "", usage, finishReason, compactToolCalls(toolCalls), emitted, chunk.Error
+			return "", usage, finishReason, compactToolCalls(toolCalls), emitted, identity, chunk.Error
+		}
+		if chunk.Provider != "" {
+			identity.provider = chunk.Provider
+		}
+		if chunk.Model != "" {
+			identity.model = chunk.Model
 		}
 		if chunk.Usage != nil {
 			usage = usageFromWormhole(chunk.Usage)
 		}
 
 		out := ChatStreamChunk{}
+		out.Provider = chunk.Provider
+		out.Model = chunk.Model
 		if delta := chunk.Content(); delta != "" {
 			contentBuilder.WriteString(delta)
 			out.ContentDelta = delta
@@ -51,7 +60,7 @@ func consumeTextStream(stream <-chan whtypes.TextChunk, model string, onChunk Ch
 			emitted = true
 			if onChunk != nil {
 				if err := onChunk(out); err != nil {
-					return "", usage, finishReason, compactToolCalls(toolCalls), emitted, err
+					return "", usage, finishReason, compactToolCalls(toolCalls), emitted, identity, err
 				}
 			}
 		}
@@ -59,10 +68,10 @@ func consumeTextStream(stream <-chan whtypes.TextChunk, model string, onChunk Ch
 
 	content := strings.TrimSpace(contentBuilder.String())
 	if content == "" && len(toolCalls) == 0 {
-		return "", usage, finishReason, nil, emitted, fmt.Errorf("%s: no content in streaming response", model)
+		return "", usage, finishReason, nil, emitted, identity, fmt.Errorf("%s: no content in streaming response", model)
 	}
 
-	return content, usage, finishReason, compactToolCalls(toolCalls), emitted, nil
+	return content, usage, finishReason, compactToolCalls(toolCalls), emitted, identity, nil
 }
 
 func compactToolCalls(in []ToolCall) []ToolCall {

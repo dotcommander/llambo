@@ -6,6 +6,7 @@ import (
 	"io"
 	"maps"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dotcommander/llambo/internal/evals"
@@ -13,9 +14,11 @@ import (
 )
 
 type commandWritingExecutor struct {
-	run     *promptRun
-	configs map[string]providers.Config
-	timeout time.Duration
+	run      *promptRun
+	configs  map[string]providers.Config
+	timeout  time.Duration
+	mu       sync.Mutex
+	identity map[string]*evals.IdentityTracker
 }
 
 func newCommandWritingExecutor(errOut io.Writer, configs map[string]providers.Config, timeout time.Duration) (*commandWritingExecutor, error) {
@@ -23,7 +26,7 @@ func newCommandWritingExecutor(errOut io.Writer, configs map[string]providers.Co
 	if err != nil {
 		return nil, err
 	}
-	return &commandWritingExecutor{run: run, configs: configs, timeout: timeout}, nil
+	return &commandWritingExecutor{run: run, configs: configs, timeout: timeout, identity: make(map[string]*evals.IdentityTracker)}, nil
 }
 
 func (e *commandWritingExecutor) Execute(parent context.Context, call evals.WritingExecutionCall) (evals.WritingExecutionResult, error) {
@@ -63,6 +66,7 @@ func (e *commandWritingExecutor) Execute(parent context.Context, call evals.Writ
 		FinishReason: result.FinishReason,
 	}
 	if result.Usage != nil {
+		output.Usage.Known = true
 		output.Usage.PromptTokens = result.Usage.PromptTokens
 		output.Usage.CompletionTokens = result.Usage.CompletionTokens
 		output.Usage.TotalTokens = result.Usage.TotalTokens
@@ -72,16 +76,33 @@ func (e *commandWritingExecutor) Execute(parent context.Context, call evals.Writ
 			output.Usage.CostUSD = float64(output.Usage.PromptTokens)*call.Model.InputPer1M/1_000_000 + float64(output.Usage.CompletionTokens)*call.Model.OutputPer1M/1_000_000
 		}
 	}
+	if call.Model.InputPer1M == 0 && call.Model.OutputPer1M == 0 {
+		output.Usage.Known = true
+	}
 	if result.Route != nil {
 		output.Route = result.Route.Chosen
 	}
 	if callErr != nil {
 		return output, callErr
 	}
-	if err := validateWritingExecutionResult(call.Model, result.Provider, result.Model, result.Content); err != nil {
+	if err := e.validateExecutionResult(call.Model, result.Provider, result.Model, result.Content); err != nil {
 		return output, err
 	}
 	return output, nil
+}
+
+func (e *commandWritingExecutor) validateExecutionResult(requested evals.WritingModelSpec, provider, model, content string) error {
+	if strings.TrimSpace(content) == "" {
+		return fmt.Errorf("%s returned an empty response", requested.ID())
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	tracker := e.identity[requested.ID()]
+	if tracker == nil {
+		tracker = evals.NewIdentityTracker(requested.ID())
+		e.identity[requested.ID()] = tracker
+	}
+	return tracker.Record(provider + "/" + model)
 }
 
 func validateWritingExecutionResult(requested evals.WritingModelSpec, provider, model, content string) error {

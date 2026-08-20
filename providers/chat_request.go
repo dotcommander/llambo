@@ -34,6 +34,20 @@ func ExecuteChatRequest(
 	systemPrompt, userContent string,
 	reqConfig ChatRequestConfig,
 ) (string, *LLMUsage, string, []ToolCall, error) {
+	content, usage, finishReason, toolCalls, _, err := executeChatRequestWithIdentity(ctx, client, cfg, systemPrompt, userContent, reqConfig)
+	return content, usage, finishReason, toolCalls, err
+}
+
+// executeChatRequestWithIdentity preserves the provider/model declared by
+// wormhole's response. The public compatibility wrapper above intentionally
+// retains the pre-existing return shape for non-evaluation callers.
+func executeChatRequestWithIdentity(
+	ctx context.Context,
+	client whtypes.Provider,
+	cfg Config,
+	systemPrompt, userContent string,
+	reqConfig ChatRequestConfig,
+) (string, *LLMUsage, string, []ToolCall, chatResponseIdentity, error) {
 	request := buildTextRequest(ctx, cfg, systemPrompt, userContent)
 	usedNativeStops := len(request.Stop) > 0
 	start := time.Now()
@@ -43,13 +57,13 @@ func ExecuteChatRequest(
 	for attempt := 0; attempt <= reqConfig.MaxRetries; attempt++ {
 		resp, err := client.Text(ctx, request)
 		if err == nil {
-			content, usage, model, toolCalls, err := extractContentFromTextResponse(resp, cfg.Model)
+			content, usage, finishReason, toolCalls, identity, err := extractContentFromTextResponseWithIdentity(resp, cfg.Model)
 			outcome := "success"
 			if err != nil {
 				outcome = "error"
 			}
 			slog.Debug("provider chat request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", outcome)
-			return content, usageOrEstimate(usage, systemPrompt, userContent, content), model, toolCalls, err
+			return content, usageOrEstimate(usage, systemPrompt, userContent, content), finishReason, toolCalls, identity, err
 		}
 
 		if usedNativeStops && isUnsupportedStopError(err) {
@@ -65,12 +79,12 @@ func ExecuteChatRequest(
 		}
 		if err := waitChatBackoff(ctx, reqConfig, attempt); err != nil {
 			slog.Debug("provider chat request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "error")
-			return "", nil, "", nil, err
+			return "", nil, "", nil, chatResponseIdentity{}, err
 		}
 	}
 
 	slog.Debug("provider chat request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", reqConfig.MaxRetries, "outcome", "error")
-	return "", nil, "", nil, lastErr
+	return "", nil, "", nil, chatResponseIdentity{}, lastErr
 }
 
 // ExecuteChatStreamRequest sends a streaming chat request and forwards deltas.
@@ -83,6 +97,18 @@ func ExecuteChatStreamRequest(
 	onChunk ChatStreamHandler,
 	reqConfig ChatRequestConfig,
 ) (string, *LLMUsage, string, []ToolCall, bool, error) {
+	content, usage, finishReason, toolCalls, emitted, _, err := executeChatStreamRequestWithIdentity(ctx, client, cfg, systemPrompt, userContent, onChunk, reqConfig)
+	return content, usage, finishReason, toolCalls, emitted, err
+}
+
+func executeChatStreamRequestWithIdentity(
+	ctx context.Context,
+	client whtypes.Provider,
+	cfg Config,
+	systemPrompt, userContent string,
+	onChunk ChatStreamHandler,
+	reqConfig ChatRequestConfig,
+) (string, *LLMUsage, string, []ToolCall, bool, chatResponseIdentity, error) {
 	request := buildTextRequest(ctx, cfg, systemPrompt, userContent)
 	usedNativeStops := len(request.Stop) > 0
 	start := time.Now()
@@ -101,19 +127,19 @@ func ExecuteChatStreamRequest(
 			lastErr = wrapProviderError(err, cfg)
 			if !IsRetryable(lastErr) || attempt >= reqConfig.MaxRetries {
 				slog.Debug("provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "error")
-				return "", nil, "", nil, false, lastErr
+				return "", nil, "", nil, false, chatResponseIdentity{}, lastErr
 			}
 			if err := waitChatBackoff(ctx, reqConfig, attempt); err != nil {
 				slog.Debug("provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "error")
-				return "", nil, "", nil, false, err
+				return "", nil, "", nil, false, chatResponseIdentity{}, err
 			}
 			continue
 		}
 
-		content, usage, finishReason, toolCalls, emitted, err := consumeTextStream(stream, cfg.Model, onChunk)
+		content, usage, finishReason, toolCalls, emitted, identity, err := consumeTextStream(stream, cfg.Model, onChunk)
 		if err == nil {
 			slog.Debug("provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "success")
-			return content, usageOrEstimate(usage, systemPrompt, userContent, content), finishReason, toolCalls, emitted, nil
+			return content, usageOrEstimate(usage, systemPrompt, userContent, content), finishReason, toolCalls, emitted, identity, nil
 		}
 
 		if usedNativeStops && !emitted && isUnsupportedStopError(err) {
@@ -126,14 +152,14 @@ func ExecuteChatStreamRequest(
 		lastErr = wrapProviderError(err, cfg)
 		if emitted || !IsRetryable(lastErr) || attempt >= reqConfig.MaxRetries {
 			slog.Debug("provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "error")
-			return "", nil, "", nil, emitted, lastErr
+			return "", nil, "", nil, emitted, chatResponseIdentity{}, lastErr
 		}
 		if err := waitChatBackoff(ctx, reqConfig, attempt); err != nil {
 			slog.Debug("provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "error")
-			return "", nil, "", nil, emitted, err
+			return "", nil, "", nil, emitted, chatResponseIdentity{}, err
 		}
 	}
 
 	slog.Debug("provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", reqConfig.MaxRetries, "outcome", "error")
-	return "", nil, "", nil, false, lastErr
+	return "", nil, "", nil, false, chatResponseIdentity{}, lastErr
 }

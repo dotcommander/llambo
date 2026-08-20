@@ -90,6 +90,12 @@ func NewWritingRunManifest(inputPath, inputHash string, records []WritingPromptR
 	return manifest
 }
 
+func WritingRunIdentityHash(manifest WritingRunManifest) string {
+	identityJSON, _ := json.Marshal(manifest.Identity)
+	runHash := sha256.Sum256(identityJSON)
+	return hex.EncodeToString(runHash[:])
+}
+
 func PlanWritingRun(manifest WritingRunManifest, records []WritingPromptRecord, adapter WritingBenchmarkAdapter) (WritingRunPlan, error) {
 	if err := ValidateWritingPromptRecords(records, adapter); err != nil {
 		return WritingRunPlan{}, err
@@ -152,14 +158,13 @@ func writingHash(value string) string {
 }
 
 func estimateWritingTokens(text string) int {
-	runes := len([]rune(text))
-	if runes == 0 {
+	bytes := len([]byte(text))
+	if bytes == 0 {
 		return 0
 	}
-	if runes < 4 {
-		return 1
-	}
-	return runes / 4
+	// This is a budget ceiling, not a tokenizer estimate. A byte-count bound is
+	// deliberately conservative; runes/4 could under-reserve paid calls.
+	return bytes
 }
 
 func estimateWritingCallCost(prompt string, maxOutputTokens int, model WritingModelSpec) float64 {

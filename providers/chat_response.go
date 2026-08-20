@@ -10,20 +10,31 @@ import (
 	whtypes "github.com/garyblankenship/wormhole/v3/types"
 )
 
+type chatResponseIdentity struct {
+	provider string
+	model    string
+}
+
 func extractContentFromTextResponse(resp *whtypes.TextResponse, model string) (string, *LLMUsage, string, []ToolCall, error) {
+	content, usage, finishReason, toolCalls, _, err := extractContentFromTextResponseWithIdentity(resp, model)
+	return content, usage, finishReason, toolCalls, err
+}
+
+func extractContentFromTextResponseWithIdentity(resp *whtypes.TextResponse, model string) (string, *LLMUsage, string, []ToolCall, chatResponseIdentity, error) {
 	if resp == nil {
-		return "", nil, "", nil, fmt.Errorf("%s: empty response", model)
+		return "", nil, "", nil, chatResponseIdentity{}, fmt.Errorf("%s: empty response", model)
 	}
+	identity := chatResponseIdentity{provider: strings.TrimSpace(resp.Provider), model: strings.TrimSpace(resp.Model)}
 	toolCalls := convertWormholeToolCalls(resp.ToolCalls)
 	if resp.Text == "" && len(toolCalls) == 0 {
 		usage := usageFromWormhole(resp.Usage)
-		return "", usage, string(resp.FinishReason), nil, &NoContentResponseError{
+		return "", usage, string(resp.FinishReason), nil, identity, &NoContentResponseError{
 			Model:        model,
 			FinishReason: string(resp.FinishReason),
 			Usage:        usage,
 		}
 	}
-	return strings.TrimSpace(resp.Text), usageFromWormhole(resp.Usage), string(resp.FinishReason), toolCalls, nil
+	return strings.TrimSpace(resp.Text), usageFromWormhole(resp.Usage), string(resp.FinishReason), toolCalls, identity, nil
 }
 
 func usageFromWormhole(usage *whtypes.Usage) *LLMUsage {

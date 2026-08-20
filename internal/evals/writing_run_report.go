@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -136,7 +137,14 @@ func domainLabel(level, value string) string {
 func generationByKey(records []WritingGenerationRecord, key string) WritingGenerationRecord {
 	for i := len(records) - 1; i >= 0; i-- {
 		if records[i].Key == key && records[i].Status == "success" {
-			return records[i]
+			record := records[i]
+			if record.ActualProvider != "" {
+				record.Provider = record.ActualProvider
+			}
+			if record.ActualModel != "" {
+				record.Model = record.ActualModel
+			}
+			return record
 		}
 	}
 	return WritingGenerationRecord{}
@@ -173,6 +181,18 @@ func RenderWritingRunMarkdown(report WritingRunReport) string {
 }
 
 func WriteWritingRunArtifacts(dir string, manifest WritingRunManifest, adapter WritingBenchmarkAdapter, generations []WritingGenerationRecord, judgments []WritingJudgmentRecord, complete bool, now time.Time) (WritingRunReceipt, error) {
+	if _, err := os.Stat(filepath.Join(dir, "receipt.json")); err == nil {
+		return WritingRunReceipt{}, fmt.Errorf("completed writing output is immutable; use a new --output-dir")
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return WritingRunReceipt{}, err
+	}
+	for _, name := range []string{"report.json", "report.md", "quality-import.json"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
+			return WritingRunReceipt{}, fmt.Errorf("writing output has %s without a receipt; preserve it and use a new --output-dir", name)
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return WritingRunReceipt{}, err
+		}
+	}
 	report := BuildWritingRunReport(manifest, adapter, generations, judgments, complete)
 	reportJSON, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {
@@ -211,7 +231,7 @@ func WriteWritingRunArtifacts(dir string, manifest WritingRunManifest, adapter W
 		sum := sha256.Sum256(data)
 		hashes[name] = hex.EncodeToString(sum[:])
 	}
-	for _, name := range []string{"manifest.json", "generations.jsonl", "judgments.jsonl"} {
+	for _, name := range []string{"manifest.json", "intents.jsonl", "generations.jsonl", "judgments.jsonl"} {
 		data, err := os.ReadFile(filepath.Join(dir, name))
 		if err != nil {
 			return WritingRunReceipt{}, fmt.Errorf("hash %s: %w", name, err)
@@ -221,9 +241,31 @@ func WriteWritingRunArtifacts(dir string, manifest WritingRunManifest, adapter W
 	}
 	status := "partial"
 	if complete {
-		status = "complete"
+		status = "complete_quality"
 	}
-	receipt := WritingRunReceipt{SchemaVersion: WritingRunSchemaVersion, RunID: manifest.RunID, CompletedAt: now.UTC(), Status: status, Report: report, Artifacts: hashes}
+	requested, served, servedJudges := make([]string, 0, len(manifest.Identity.Models)), []string{}, []string{}
+	for _, model := range manifest.Identity.Models {
+		requested = append(requested, model.ID())
+	}
+	for _, record := range generations {
+		if record.Status == "success" {
+			if record.ActualProvider != "" && record.ActualModel != "" {
+				served = append(served, record.ActualProvider+"/"+record.ActualModel)
+			} else {
+				served = append(served, record.Provider+"/"+record.Model)
+			}
+		}
+	}
+	for _, record := range judgments {
+		if record.Status == "success" {
+			if record.ActualProvider != "" && record.ActualModel != "" {
+				servedJudges = append(servedJudges, record.ActualProvider+"/"+record.ActualModel)
+			} else {
+				servedJudges = append(servedJudges, record.JudgeProvider+"/"+record.JudgeModel)
+			}
+		}
+	}
+	receipt := WritingRunReceipt{SchemaVersion: WritingRunSchemaVersion, RunID: manifest.RunID, IdentitySHA256: WritingRunIdentityHash(manifest), InputSHA256: manifest.Identity.InputSHA256, RequestedModels: sortedUnique(requested), ServedModels: sortedUnique(served), RequestedJudge: manifest.Identity.Judge.ID(), ServedJudges: sortedUnique(servedJudges), CompletedAt: now.UTC(), Status: status, Report: report, Artifacts: hashes}
 	if err := writeSyncedJSON(filepath.Join(dir, "receipt.json"), receipt); err != nil {
 		return WritingRunReceipt{}, fmt.Errorf("write receipt: %w", err)
 	}

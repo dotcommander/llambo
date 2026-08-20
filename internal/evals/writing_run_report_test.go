@@ -36,8 +36,8 @@ func TestWritingRunReportDeterministic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := WriteWritingRunArtifacts(dir, manifest, adapter, generations, judgments, true, time.Unix(20, 0)); err != nil {
-		t.Fatal(err)
+	if _, err := WriteWritingRunArtifacts(dir, manifest, adapter, generations, judgments, true, time.Unix(20, 0)); err == nil {
+		t.Fatal("immutable completed output accepted a rewrite")
 	}
 	second, err := os.ReadFile(filepath.Join(dir, "report.json"))
 	if err != nil {

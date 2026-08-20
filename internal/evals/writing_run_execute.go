@@ -2,6 +2,7 @@ package evals
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -14,6 +15,9 @@ func RunWritingEvaluation(ctx context.Context, manifest WritingRunManifest, reco
 		return fmt.Errorf("writing executor and store are required")
 	}
 	if err := ValidateWritingPromptRecords(records, adapter); err != nil {
+		return err
+	}
+	if err := store.CheckNoInDoubtDispatch(); err != nil {
 		return err
 	}
 	budget := newWritingBudget(manifest.Identity.MaxRunCostUSD, store)
@@ -84,11 +88,13 @@ func executeWritingGeneration(ctx context.Context, manifest WritingRunManifest, 
 	if err := budget.reserve(estimate); err != nil {
 		return err
 	}
+	if err := store.AppendDispatchIntent(WritingDispatchIntent{Kind: "generation", Key: key, Attempt: attempt, CallSHA256: writingExecutionCallHash(call), DispatchedAt: time.Now().UTC()}); err != nil {
+		return err
+	}
 	started := time.Now().UTC()
 	result, callErr := executor.Execute(ctx, call)
 	completed := time.Now().UTC()
-	result.Usage.CostUSD = observedWritingCost(result.Usage.CostUSD, estimate)
-	budget.complete(estimate, result.Usage.CostUSD)
+	budget.complete(estimate, writingAccountingCost(result.Usage, estimate))
 	recordOut := WritingGenerationRecord{
 		Key: key, Attempt: attempt, BenchmarkID: adapter.ID(), PromptID: record.ID,
 		Provider: model.Provider, Model: model.Model, Iteration: iteration,
@@ -118,11 +124,13 @@ func executeWritingJudgment(ctx context.Context, manifest WritingRunManifest, ex
 		if err := budget.reserve(estimate); err != nil {
 			return err
 		}
+		if err := store.AppendDispatchIntent(WritingDispatchIntent{Kind: "judgment", Key: key, Attempt: attempt, CallSHA256: writingExecutionCallHash(call), DispatchedAt: time.Now().UTC()}); err != nil {
+			return err
+		}
 		started := time.Now().UTC()
 		result, callErr := executor.Execute(ctx, call)
 		completed := time.Now().UTC()
-		result.Usage.CostUSD = observedWritingCost(result.Usage.CostUSD, estimate)
-		budget.complete(estimate, result.Usage.CostUSD)
+		budget.complete(estimate, writingAccountingCost(result.Usage, estimate))
 		judgment := WritingJudgmentRecord{
 			Key: key, Attempt: attempt, GenerationKey: generation.Key, ResponseSHA256: generation.ContentSHA256,
 			CriterionID: criterion.ID, Criterion: criterion.Description,
@@ -152,6 +160,17 @@ func executeWritingJudgment(ctx context.Context, manifest WritingRunManifest, ex
 		}
 	}
 	return nil
+}
+
+func writingExecutionCallHash(call WritingExecutionCall) string {
+	data, err := json.Marshal(call)
+	if err != nil {
+		// All fields are controlled values, so this only guards a future type
+		// change. A stable sentinel still makes the intent visibly invalid to a
+		// reviewer rather than omitting the request fingerprint.
+		return writingHash("marshal-error:" + err.Error())
+	}
+	return writingHash(string(data))
 }
 
 func runWritingJobs[T any](ctx context.Context, concurrency int, jobs []T, fn func(context.Context, T) error) error {
@@ -279,9 +298,9 @@ func (b *writingBudget) complete(estimate, actual float64) {
 	b.spent += actual
 }
 
-func observedWritingCost(actual, estimate float64) float64 {
-	if actual > 0 {
-		return actual
+func writingAccountingCost(usage WritingUsage, estimate float64) float64 {
+	if usage.Known {
+		return usage.CostUSD
 	}
 	return estimate
 }

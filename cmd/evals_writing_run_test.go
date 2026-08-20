@@ -84,6 +84,20 @@ func TestExactWritingModelSelector(t *testing.T) {
 	}
 }
 
+func TestGPTProLocalEvalPolicy(t *testing.T) {
+	t.Parallel()
+	for _, selector := range []string{"openai/gpt-5.4-pro", "OPENAI/gpt-5-pro-2026-08-20"} {
+		if !isGPTProModel(selector) {
+			t.Fatalf("expected GPT Pro selector %q to be prohibited", selector)
+		}
+	}
+	for _, selector := range []string{"openai/gpt-5.4", "openrouter/openai/gpt-5.4-pro", "omlx/gpt-5.4-pro"} {
+		if isGPTProModel(selector) {
+			t.Fatalf("unexpected GPT Pro policy match for %q", selector)
+		}
+	}
+}
+
 func TestWriteWritingDryRunHasZeroProviderCalls(t *testing.T) {
 	t.Parallel()
 	manifest := evals.WritingRunManifest{SchemaVersion: 1, RunID: "run", CreatedAt: time.Unix(1, 0)}
@@ -101,5 +115,20 @@ func TestWriteWritingDryRunHasZeroProviderCalls(t *testing.T) {
 	}
 	if decoded.Mode != "dry-run" || decoded.ProviderCalls != 0 {
 		t.Fatalf("dry run = %#v", decoded)
+	}
+}
+
+func TestWritingObservedCostFailsClosedWhenPaidUsageIsMissing(t *testing.T) {
+	t.Parallel()
+	paid := evals.WritingModelSpec{Provider: "synthetic", Model: "hf:openai/gpt-oss-120b", InputPer1M: 0.1, OutputPer1M: 0.1}
+	manifest := evals.WritingRunManifest{Identity: evals.WritingRunIdentity{Models: []evals.WritingModelSpec{paid}}}
+	record := evals.WritingGenerationRecord{Provider: paid.Provider, Model: paid.Model}
+	if got := writingObservedCost(manifest, []evals.WritingGenerationRecord{record}, nil); got != nil {
+		t.Fatalf("unknown paid usage settled as $%v", *got)
+	}
+	record.Usage = evals.WritingUsage{Known: true, CostUSD: 0.002}
+	got := writingObservedCost(manifest, []evals.WritingGenerationRecord{record}, nil)
+	if got == nil || *got != 0.002 {
+		t.Fatalf("known paid usage = %v, want 0.002", got)
 	}
 }

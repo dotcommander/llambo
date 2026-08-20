@@ -3,6 +3,7 @@ package evals
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -81,6 +82,32 @@ func TestWritingRunCancellationStopsDispatch(t *testing.T) {
 	}
 }
 
+func TestWritingRunRefusesInDoubtDispatchIntent(t *testing.T) {
+	t.Parallel()
+	records := []WritingPromptRecord{writingBenchFixture()}
+	adapter := WritingBenchAdapter{}
+	model := WritingModelSpec{Provider: "p", Model: "writer", MaxOutputTokens: 64}
+	judge := WritingModelSpec{Provider: "p", Model: "judge", MaxOutputTokens: 32}
+	manifest := NewWritingRunManifest("input", "hash", records, adapter, []WritingModelSpec{model}, judge, 1, 1, time.Minute, 1, time.Unix(1, 0))
+	store, err := OpenWritingRunStore(t.TempDir(), manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	key := writingGenerationKey(adapter.ID(), records[0].ID, model.ID(), 1)
+	if err := store.AppendDispatchIntent(WritingDispatchIntent{Kind: "generation", Key: key, Attempt: 1, CallSHA256: writingHash("call"), DispatchedAt: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
+	executor := &fixtureWritingExecutor{}
+	err = RunWritingEvaluation(t.Context(), manifest, records, adapter, executor, store)
+	if err == nil || !strings.Contains(err.Error(), "in doubt") {
+		t.Fatalf("run error = %v, want in-doubt refusal", err)
+	}
+	if calls, _ := executor.stats(); calls != 0 {
+		t.Fatalf("in-doubt resume dispatched %d calls", calls)
+	}
+}
+
 func TestWritingRunBoundedAndResumable(t *testing.T) {
 	t.Parallel()
 	records := []WritingPromptRecord{writingBenchFixture()}
@@ -105,14 +132,14 @@ func TestWritingRunBoundedAndResumable(t *testing.T) {
 		t.Fatalf("calls = %d, want 1 generation + 5 judgments", calls)
 	}
 	generations, judgments := store.Records()
-	for _, cost := range generations {
-		if cost.Usage.CostUSD <= 0 {
-			t.Fatal("generation without provider usage did not persist its conservative cost estimate")
+	for _, record := range generations {
+		if record.Usage.Known || record.Usage.CostUSD != 0 {
+			t.Fatal("generation without provider usage was misreported as observed cost")
 		}
 	}
-	for _, cost := range judgments {
-		if cost.Usage.CostUSD <= 0 {
-			t.Fatal("judgment without provider usage did not persist its conservative cost estimate")
+	for _, record := range judgments {
+		if record.Usage.Known || record.Usage.CostUSD != 0 {
+			t.Fatal("judgment without provider usage was misreported as observed cost")
 		}
 	}
 	if err := RunWritingEvaluation(t.Context(), manifest, records, adapter, executor, store); err != nil {
@@ -149,12 +176,15 @@ func TestWritingJudgmentKeyIncludesGenerationIdentity(t *testing.T) {
 	}
 }
 
-func TestObservedWritingCostUsesEstimateWhenUsageMissing(t *testing.T) {
+func TestWritingAccountingCostUsesEstimateOnlyForAdmissionAccounting(t *testing.T) {
 	t.Parallel()
-	if got := observedWritingCost(0, 1.25); got != 1.25 {
+	if got := writingAccountingCost(WritingUsage{}, 1.25); got != 1.25 {
 		t.Fatalf("observed cost = %v, want 1.25", got)
 	}
-	if got := observedWritingCost(0.5, 1.25); got != 0.5 {
+	if got := writingAccountingCost(WritingUsage{CostUSD: 0.5, Known: true}, 1.25); got != 0.5 {
 		t.Fatalf("observed cost = %v, want 0.5", got)
+	}
+	if got := writingAccountingCost(WritingUsage{Known: true}, 1.25); got != 0 {
+		t.Fatalf("known zero cost = %v, want 0", got)
 	}
 }
