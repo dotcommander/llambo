@@ -21,6 +21,9 @@ func mean(values []float64) float64 {
 }
 
 func minValue(values []float64) float64 {
+	if len(values) == 0 {
+		return 0
+	}
 	result := values[0]
 	for _, value := range values[1:] {
 		result = math.Min(result, value)
@@ -29,6 +32,9 @@ func minValue(values []float64) float64 {
 }
 
 func maxValue(values []float64) float64 {
+	if len(values) == 0 {
+		return 0
+	}
 	result := values[0]
 	for _, value := range values[1:] {
 		result = math.Max(result, value)

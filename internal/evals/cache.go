@@ -85,9 +85,25 @@ func writeSnapshot(path string, snapshot sourceSnapshot) error {
 	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+	// O_EXCL temp file + rename: a predictable ".tmp" suffix would let
+	// concurrent writers clobber each other and symlink attacks target a
+	// known path.
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*.tmp")
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	if err := tmp.Chmod(0o600); err != nil {
+		tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(append(b, '\n')); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, path)
 }
