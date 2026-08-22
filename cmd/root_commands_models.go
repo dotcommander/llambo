@@ -50,26 +50,30 @@ func (c *serveCommand) Run(io *commandIO) error {
 }
 
 type evalsCommand struct {
-	Report         evalsReportCommand  `cmd:"" default:"1" hidden:""`
-	Writing        evalsWritingCommand `cmd:"" help:"List writing benchmarks and open-weight model coverage"`
-	Local          evalsLocalCommand   `cmd:"" help:"Run sealed task-specific local model evaluations"`
-	Refresh        bool                `help:"fetch fresh source snapshots or scrape the writing leaderboard"`
-	Format         string              `default:"markdown" help:"report/catalog format: markdown, json, or html (writing supports markdown or json)"`
-	Output         string              `short:"o" help:"write the report or catalog to this file instead of stdout"`
-	ExportPrompts  string              `name:"export-prompts" help:"write normalized public writing prompts as JSONL (writing requires --refresh)"`
-	PromptSource   string              `name:"prompt-source" default:"writingbench" help:"prompt export source: writingbench, eqbench-creative-v3, ifeval, or all"`
-	PromptLimit    int                 `name:"prompt-limit" help:"maximum prompt records to export; 0 exports all selected records"`
-	DiscoverModels bool                `name:"discover-open-models" help:"discover fresh public text-generation model candidates from Hugging Face (writing requires --refresh)"`
-	DiscoverLimit  int                 `name:"discover-limit" default:"25" help:"maximum fresh Hugging Face candidates to include"`
-	Limit          int                 `help:"maximum items (eval report defaults to 50; writing run defaults to 5 and requires 1..100); report value 0 includes all"`
-	AllowPartial   bool                `name:"allow-partial" help:"continue with an LLM Stats-only report when Artificial Analysis is unavailable"`
-	RankBy         string              `name:"rank-by" default:"overall" help:"ranking profile: overall, general, coding, reasoning, agents, writing, long-context, speed, value, price"`
-	Offline        bool                `help:"use cached external snapshots and skip live OMLX discovery"`
-	Projections    string              `help:"replace the built-in tracked local/OSS projection registry with this JSON file"`
-	MinOverall     float64             `name:"min-overall" default:"40" help:"minimum overall score to include; models without overall are excluded; negative disables"`
-	MaxOutputPrice float64             `name:"max-output-price" default:"10" help:"maximum known output price per 1M tokens; unknown and local prices remain eligible; negative disables"`
-	OMLXURL        string              `name:"omlx-url" default:"http://127.0.0.1:8000" help:"loopback OMLX base URL for live local-model discovery"`
-	NoOMLX         bool                `name:"no-omlx" help:"skip live OMLX discovery and use the reviewed projection registry as-is"`
+	Report               evalsReportCommand  `cmd:"" default:"1" hidden:""`
+	Writing              evalsWritingCommand `cmd:"" help:"List writing benchmarks and open-weight model coverage"`
+	Local                evalsLocalCommand   `cmd:"" help:"Run sealed task-specific local model evaluations"`
+	Refresh              bool                `help:"fetch fresh source snapshots or scrape the writing leaderboard"`
+	RefreshOfficialCards bool                `name:"refresh-official-model-cards" help:"fetch only the five pinned LiquidAI, Qwen, OpenAI, and Google model cards; all other sources stay cache-only"`
+	Format               string              `default:"markdown" help:"report/catalog format: markdown, json, or html (writing supports markdown or json)"`
+	Output               string              `short:"o" help:"write the report or catalog to this file instead of stdout"`
+	ExportPrompts        string              `name:"export-prompts" help:"write normalized public writing prompts as JSONL (writing requires --refresh)"`
+	PromptSource         string              `name:"prompt-source" default:"writingbench" help:"prompt export source: writingbench, eqbench-creative-v3, ifeval, or all"`
+	PromptLimit          int                 `name:"prompt-limit" help:"maximum prompt records to export; 0 exports all selected records"`
+	DiscoverModels       bool                `name:"discover-open-models" help:"discover fresh public text-generation model candidates from Hugging Face (writing requires --refresh)"`
+	DiscoverLimit        int                 `name:"discover-limit" default:"25" help:"maximum fresh Hugging Face candidates to include"`
+	Limit                int                 `help:"maximum items (eval report defaults to 50; writing run defaults to 5 and requires 1..100); report value 0 includes all"`
+	AllowPartial         bool                `name:"allow-partial" help:"continue with an LLM Stats-only report when Artificial Analysis is unavailable"`
+	RankBy               string              `name:"rank-by" default:"matrix" help:"ranking profile: coding, agents, reasoning, writing, instruction-following, long-context, speed, or price (default: matrix)"`
+	Offline              bool                `help:"use cached external snapshots (LLAMBO-6 score generation is cache-only by default)"`
+	LiveOMLX             bool                `name:"live-omlx" help:"query the OMLX admin inventory and restrict local score publication to those live model IDs"`
+	Projections          string              `help:"replace the built-in tracked local/OSS projection registry with this JSON file"`
+	ValidationReceipts   string              `name:"validation-receipts" help:"read sealed exact-ID local receipt JSON for a diagnostic only; never changes scores"`
+	MinScore             float64             `name:"min-score" default:"-1" help:"minimum score for the selected capability category; negative disables"`
+	MaxOutputPrice       float64             `name:"max-output-price" default:"10" help:"maximum known output price per 1M tokens; unknown and local prices remain eligible; negative disables"`
+	OMLXURL              string              `name:"omlx-url" default:"http://127.0.0.1:8000" help:"loopback OMLX base URL for live local-model discovery"`
+	NoOMLX               bool                `name:"no-omlx" hidden:"" help:"disable live OMLX inventory discovery"`
+	CacheDir             string              `name:"cache-dir" type:"path" help:"use an isolated evaluation cache directory"`
 }
 
 type evalsReportCommand struct {
@@ -91,11 +95,15 @@ func (*evalsReportCommand) Run(c *evalsCommand, io *commandIO) error {
 	if !io.FlagChanged("limit") {
 		limit = 50
 	}
-	evalsRefresh, evalsFormat, evalsOutput, evalsLimit, evalsPartial, evalsRankBy, evalsOffline, evalsProjections, evalsMinOverall, evalsMaxOutputPrice, evalsOMLXURL, evalsNoOMLX = c.Refresh, c.Format, c.Output, limit, c.AllowPartial, c.RankBy, c.Offline, c.Projections, c.MinOverall, c.MaxOutputPrice, c.OMLXURL, c.NoOMLX
+	evalsRefresh, evalsRefreshOfficialCards, evalsFormat, evalsOutput, evalsLimit, evalsPartial, evalsRankBy, evalsOffline, evalsProjections, evalsValidationReceipts, evalsMinScore, evalsMaxOutputPrice, evalsOMLXURL, evalsNoOMLX = c.Refresh, c.RefreshOfficialCards, c.Format, c.Output, limit, c.AllowPartial, c.RankBy, c.Offline, c.Projections, c.ValidationReceipts, c.MinScore, c.MaxOutputPrice, c.OMLXURL, c.NoOMLX || !c.LiveOMLX
+	evalsCacheDir = c.CacheDir
 	return runEvals(io, nil)
 }
 
 func (*evalsWritingCatalogCommand) Run(c *evalsCommand, io *commandIO) error {
+	if io.FlagChanged("refresh-official-model-cards") {
+		return fmt.Errorf("--refresh-official-model-cards is not supported with evals writing")
+	}
 	return runWritingCatalog(io, c.Format, c.Output, c.Refresh, c.ExportPrompts, c.PromptSource, c.PromptLimit, c.DiscoverModels, c.DiscoverLimit)
 }
 

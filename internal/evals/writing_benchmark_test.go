@@ -66,6 +66,30 @@ func TestParseWritingJudgmentStrict(t *testing.T) {
 	}
 }
 
+func TestCombinedWritingJudgmentAndSettings(t *testing.T) {
+	t.Parallel()
+	criteria := []WritingCriterion{{ID: "one", Description: "First"}, {ID: "two", Description: "Second"}}
+	payload, err := json.Marshal(map[string]any{"results": []map[string]any{
+		{"criterion_id": "one", "score": 8, "reason": "clear"},
+		{"criterion_id": "two", "score": 7, "reason": "specific"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	results, err := ParseCombinedWritingJudgment(string(payload), criteria)
+	if err != nil || len(results) != 2 {
+		t.Fatalf("combined parse = %#v, %v", results, err)
+	}
+	settings, err := CombinedWritingJudgeSettings("medium")
+	if err != nil {
+		t.Fatal(err)
+	}
+	generation, ok := settings.ExtraBody["generationConfig"].(map[string]any)
+	if !ok || generation["responseMimeType"] != "application/json" || generation["responseSchema"] == nil {
+		t.Fatalf("combined judge settings = %#v", settings)
+	}
+}
+
 func TestEQCreativeLocalRubricIdentity(t *testing.T) {
 	t.Parallel()
 	adapter := EQCreativeLocalRubricAdapter{}

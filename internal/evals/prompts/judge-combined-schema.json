@@ -1,0 +1,18 @@
+{
+  "type": "OBJECT",
+  "properties": {
+    "results": {
+      "type": "ARRAY",
+      "items": {
+        "type": "OBJECT",
+        "properties": {
+          "criterion_id": {"type": "STRING"},
+          "score": {"type": "INTEGER", "minimum": 1, "maximum": 10},
+          "reason": {"type": "STRING"}
+        },
+        "required": ["criterion_id", "score", "reason"]
+      }
+    }
+  },
+  "required": ["results"]
+}

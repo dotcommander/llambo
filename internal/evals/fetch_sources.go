@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path/filepath"
 	"sort"
 	"strconv"
 )
@@ -52,12 +53,38 @@ func fetchLLMStats(ctx context.Context, opts Options) (sourceSnapshot, error) {
 	var identities []llmIdentity
 	var full []llmFull
 	indexes := map[string]indexEnvelope{}
-	errCh := make(chan error, 3)
-	go func() { errCh <- getJSON(ctx, opts.Client, opts.LLMModelsURL, "", &identities) }()
-	go func() { errCh <- getJSON(ctx, opts.Client, opts.LLMFullURL, "", &full) }()
-	go func() { errCh <- getJSON(ctx, opts.Client, opts.LLMIndexURL, "", &indexes) }()
+	type payload struct {
+		name string
+		data []byte
+		err  error
+	}
+	payloads := make(chan payload, 3)
+	for name, endpoint := range map[string]string{"models": opts.LLMModelsURL, "full-results": opts.LLMFullURL, "indexes": opts.LLMIndexURL} {
+		go func() {
+			data, err := getBytes(ctx, opts.Client, endpoint)
+			payloads <- payload{name: name, data: data, err: err}
+		}()
+	}
+	raw := make(map[string][]byte, 3)
 	for range 3 {
-		if err := <-errCh; err != nil {
+		result := <-payloads
+		if result.err != nil {
+			return sourceSnapshot{}, result.err
+		}
+		raw[result.name] = result.data
+	}
+	if err := json.Unmarshal(raw["models"], &identities); err != nil {
+		return sourceSnapshot{}, fmt.Errorf("decode LLM Stats models: %w", err)
+	}
+	if err := json.Unmarshal(raw["full-results"], &full); err != nil {
+		return sourceSnapshot{}, fmt.Errorf("decode LLM Stats full results: %w", err)
+	}
+	if err := json.Unmarshal(raw["indexes"], &indexes); err != nil {
+		return sourceSnapshot{}, fmt.Errorf("decode LLM Stats indexes: %w", err)
+	}
+	sealedRoot := filepath.Join(opts.CacheDir, "sealed", "llm-stats")
+	for _, name := range []string{"models", "full-results", "indexes"} {
+		if err := writeSealed(sealedRevisionPath(sealedRoot, name, raw[name], ".json"), raw[name]); err != nil {
 			return sourceSnapshot{}, err
 		}
 	}
@@ -95,8 +122,18 @@ func fetchLLMStats(ctx context.Context, opts Options) (sourceSnapshot, error) {
 		models = append(models, Model{Key: identity.ModelID, Name: identity.Name, Organization: identity.Organization, License: identity.License, Open: boolPtr(identity.IsOpen), Context: context,
 			LLMStats: &LLMStatsMetrics{InputPrice: input, OutputPrice: output, Throughput: f.Throughput, Latency: f.Latency, GPQA: f.GPQA, SWEVerified: f.SWEVerified, SWEPro: f.SWEPro, SciCode: f.SciCode, MCPAtlas: f.MCPAtlas, Indexes: indexByID[identity.ModelID]}})
 	}
+	observationCount := 0
+	if opts.IngestLLMBenchmarks {
+		observations, err := fetchLLMStatsBenchmarkLeads(ctx, opts)
+		if err != nil {
+			return sourceSnapshot{}, err
+		}
+		attachLLMStatsBenchmarkLeads(models, observations)
+		observationCount = len(observations)
+	}
 	sort.Slice(models, func(i, j int) bool { return models[i].Key < models[j].Key })
-	return sourceSnapshot{Models: models}, nil
+	fingerprintInput := append(append(append([]byte(nil), raw["models"]...), raw["full-results"]...), raw["indexes"]...)
+	return sourceSnapshot{Models: models, ContentSHA: SealBytes(fingerprintInput), Method: "LLM Stats public discovery feeds; published benchmark rows use graded verification evidence", Observations: observationCount, RegistryVersion: SourceRegistryVersion, EvidenceGrade: "graded_aggregator"}, nil
 }
 
 type aaEnvelope struct {

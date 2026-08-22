@@ -6,93 +6,45 @@ import (
 	"time"
 )
 
-func TestRenderHTMLIsAccessibleSortableEscapedAndSelfContained(t *testing.T) {
-	score := &ExternalScore{Score: 88.5, Low: 80, High: 95, Coverage: .75, Confidence: "high"}
+func TestRenderHTMLExposesMatrixEvidenceAndEscapes(t *testing.T) {
+	raw, percentile, agreement := 8.7, 84.2, 91.0
 	unsafeName := `Model <script>alert("x")</script> & friends`
-	unsafeError := `source failed <img src=x onerror=alert(1)>`
-	projection := &ProjectionInfo{SourceKey: "upstream/model", Confidence: "medium", Basis: "reviewed", ReviewedAt: "2026-01-01T00:00:00Z"}
 	report := Report{
-		GeneratedAt:    time.Date(2026, time.August, 5, 3, 20, 0, 0, time.UTC),
-		FormulaVersion: FormulaVersion,
-		RankingProfile: "overall",
-		AAVersion:      4.1,
-		Sources: []SourceStatus{
-			{Name: "safe", URL: "https://example.test/feed?a=1&b=2", Cache: "cached", Models: 2, FetchedAt: time.Unix(1, 0).UTC()},
-			{Name: "unsafe", URL: "javascript:alert(1)", Cache: "unavailable", Error: unsafeError},
-		},
-		Eligibility: &EligibilityDiagnostics{MinOverall: 40, MaxOutputPrice: 2, InputModels: 3, IncludedModels: 2, ExcludedModels: 1, BelowOverall: 1, UnknownPriceKept: 1},
-		Projections: ProjectionDiagnostics{RegistrySource: "embedded", Version: 1, Configured: 1, Applied: 1},
-		OMLX:        &OMLXDiagnostics{Status: "unavailable", Error: "not configured"},
-		Formula: FormulaDiagnostics{
-			Method: "percentiles < neutral >", Population: 3, DualSourceModels: 2,
-			Reference: FormulaReferenceSummary{CreatedAt: time.Unix(2, 0).UTC(), SourceModelCounts: map[string]int{"llm_stats": 10, "artificial_analysis": 11}},
-			Drift:     DriftDiagnostics{Status: "stable", MaxKS: .012, Reasons: []string{"reason < one >"}},
-			Stability: StabilityDiagnostics{Status: "stable", Variants: 4, MeanKendall: .9, MinTop20Overlap: .8},
-			Profiles:  []ProfileDiagnostic{{Name: "overall", Weights: map[string]float64{"z": .2, "a": .8}}},
-			Metrics:   []MetricDiagnostic{{Name: "metric <a>", Dimension: "coding", Source: "llm_stats", Weight: .5, Population: 2, ReferencePopulation: 10, Direction: "higher"}},
-		},
-		Models: []ReportModel{
-			{Name: unsafeName, Organization: "Org & Co", Scores: map[string]*ExternalScore{"overall": score}},
-			{Name: "Second canonical", Scores: map[string]*ExternalScore{"overall": {Score: 20}}},
-			{Name: "Projected local", Projection: projection, Scores: map[string]*ExternalScore{"overall": score}},
-		},
+		GeneratedAt: time.Unix(1, 0).UTC(), FormulaVersion: FormulaVersion, RankingProfile: "matrix",
+		Models: []ReportModel{{Name: unsafeName, LlamboScores: map[string]*LlamboScore{"writing": {
+			Score: 84.2, Primary: &benchmarkEvidence{Benchmark: "writingbench", RawScore: &raw, Percentile: &percentile, ReferencePopulation: 17, SourceVersion: "v1", ContentSHA: "abc"},
+			Checks: []benchmarkEvidence{{Benchmark: "eqbench-creative-v3", RawScore: &raw, Percentile: &percentile}}, Agreement: &agreement, Confidence: "high",
+		}}}},
 	}
-
-	got := RenderHTML(report, 1)
-	for _, want := range []string{
-		"<!doctype html>", "<main", "<section", "<caption>Canonical model rankings</caption>",
-		"data-sortable=\"true\"", "data-sort-key=\"overall\"", "data-type=\"number\"", "aria-sort=\"none\"", "<button type=\"button\"",
-		"role=\"status\"", "aria-live=\"polite\"", "Formula and diagnostics", "Source status", "Tracked local/OSS projections", FormulaVersion,
-	} {
+	got := RenderHTML(report, 0)
+	for _, want := range []string{"<!doctype html>", "data-sortable=\"true\"", "Llambo Score Matrix", "writingbench", "84.2", "frozen population 17", "high", FormulaVersion} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("HTML missing %q:\n%s", want, got)
 		}
 	}
-	if strings.Contains(got, unsafeName) || strings.Contains(got, unsafeError) {
-		t.Fatalf("HTML contains unescaped user content:\n%s", got)
+	if strings.Contains(got, unsafeName) || !strings.Contains(got, "&lt;script&gt;") {
+		t.Fatalf("HTML did not escape model identity:\n%s", got)
 	}
-	for _, want := range []string{"Model &lt;script&gt;alert(&#34;x&#34;)&lt;/script&gt; &amp; friends", "source failed &lt;img src=x onerror=alert(1)&gt;", `href="https://example.test/feed?a=1&amp;b=2"`} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("HTML missing escaped content %q:\n%s", want, got)
+}
+
+func TestRenderEvidenceIncludesFrozenPopulationAcrossFormats(t *testing.T) {
+	raw, percentile := 0.61, 70.0
+	report := Report{Models: []ReportModel{{Name: "target", LlamboScores: map[string]*LlamboScore{"long-context": {
+		Score: 70, Contributions: []benchmarkEvidence{{Benchmark: "longbench-v2", Family: "multi-document-reasoning", RawScore: &raw, Percentile: &percentile, ReferencePopulation: 17}},
+	}}}}}
+	for name, rendered := range map[string]string{"markdown": RenderMarkdown(report, 0), "html": RenderHTML(report, 0)} {
+		if !strings.Contains(rendered, "frozen population 17") {
+			t.Fatalf("%s omitted the frozen reference population:\n%s", name, rendered)
 		}
-	}
-	if strings.Contains(got, `href="javascript:`) {
-		t.Fatal("unsafe source URL was emitted as a link")
-	}
-	if strings.Contains(got, "Second canonical") {
-		t.Fatal("canonical limit did not exclude the second row")
-	}
-	if !strings.Contains(got, "Projected local") {
-		t.Fatal("projected rows should remain visible outside the canonical limit")
-	}
-	if !strings.Contains(got, "addEventListener(\"click\"") || !strings.Contains(got, "Array.prototype.slice.call(table.tBodies[0].rows)") {
-		t.Fatal("inline sortable vanilla JS is missing")
 	}
 }
 
 func TestRenderHTMLIsDeterministic(t *testing.T) {
-	report := Report{
-		GeneratedAt: time.Unix(123, 0).UTC(), FormulaVersion: FormulaVersion, RankingProfile: "overall",
-		Formula: FormulaDiagnostics{Profiles: []ProfileDiagnostic{{Name: "overall", Weights: map[string]float64{"z": .2, "a": .8}}}},
-		Models:  []ReportModel{{Name: "one", Scores: map[string]*ExternalScore{"overall": {Score: 1}}}},
-	}
+	report := Report{GeneratedAt: time.Unix(123, 0).UTC(), FormulaVersion: FormulaVersion, RankingProfile: "matrix", Models: []ReportModel{{Name: "one"}}}
 	baseline := RenderHTML(report, 0)
 	for i := 0; i < 20; i++ {
 		if got := RenderHTML(report, 0); got != baseline {
 			t.Fatalf("identical input produced different HTML on iteration %d", i)
-		}
-	}
-}
-
-func TestRenderHTMLEmptyRankingKeepsSortHandlersSafe(t *testing.T) {
-	got := RenderHTML(Report{FormulaVersion: FormulaVersion, RankingProfile: "overall"}, 0)
-	for _, want := range []string{
-		`<tr data-empty="true">`,
-		`.filter(row => row.dataset.empty !== "true" && row.cells.length > index);`,
-		`return Number(left.dataset.originalIndex) - Number(right.dataset.originalIndex);`,
-	} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("empty ranking HTML missing safety marker %q:\n%s", want, got)
 		}
 	}
 }

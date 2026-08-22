@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/dotcommander/llambo/internal/catalog"
+	"github.com/dotcommander/llambo/internal/evals"
 	"github.com/dotcommander/llambo/providers"
 )
 
@@ -73,6 +74,7 @@ func TestModelsListSkipsProviderAPIsByDefault(t *testing.T) {
 }
 
 func TestModelsListAvailableCanTargetOneProvider(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	var omlxCalls, otherCalls int
 	omlx := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		omlxCalls++
@@ -182,7 +184,7 @@ func TestModelsListMetricsUsesCatalogWithoutProviderCalls(t *testing.T) {
 	if calls != 0 {
 		t.Fatalf("metrics model list called provider API %d time(s)", calls)
 	}
-	for _, want := range []string{"SCORE", "SPEED", "LATENCY", "OUTPUT $/1M", "saved 98.0/100", "200.0 tok/s", "200ms", "unmeasured-model", "$2", "—"} {
+	for _, want := range []string{"LLAMBO SCORE", "TASK SCORE", "SPEED", "LATENCY", "OUTPUT $/1M", "writing 98.0/100", "200.0 tok/s", "200ms", "unmeasured-model", "$2", "—"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("metrics model list output missing %q:\n%s", want, out.String())
 		}
@@ -192,7 +194,7 @@ func TestModelsListMetricsUsesCatalogWithoutProviderCalls(t *testing.T) {
 	if err := execute(context.Background(), []string{"--config", configPath, "models", "list", "--metrics", "--csv"}, &csvOut, &errOut); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"provider,enabled,model,primary,score,speed,latency,output_cost_per_1m_usd", "saved 98.0/100", "$2"} {
+	for _, want := range []string{"provider,enabled,model,primary,llambo_score,llambo_provenance,task_score,speed,latency,output_cost_per_1m_usd", "writing 98.0/100", "$2"} {
 		if !strings.Contains(csvOut.String(), want) {
 			t.Errorf("metrics CSV output missing %q:\n%s", want, csvOut.String())
 		}
@@ -248,7 +250,7 @@ func TestModelsListIncludesCatalogOnlyScoredModels(t *testing.T) {
 	if calls != 0 {
 		t.Fatalf("catalog-only model list called provider API %d time(s)", calls)
 	}
-	for _, want := range []string{"configured-model", "catalog-scored-model", "saved 91.0/100"} {
+	for _, want := range []string{"configured-model", "catalog-scored-model"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("catalog metric list output missing %q:\n%s", want, out.String())
 		}
@@ -279,11 +281,11 @@ func TestModelMetricLabelsDoesNotInferSpeedFromTotalLatency(t *testing.T) {
 		}},
 	}}
 
-	_, speed, latency := modelMetricLabels(cat, "openai", "slow-looking")
+	_, _, _, speed, latency := modelMetricLabels(cat, nil, "openai", "slow-looking")
 	if speed != "—" || latency != "2000ms" {
 		t.Fatalf("legacy speed fallback = %q with latency %q, want em dash and 2000ms", speed, latency)
 	}
-	_, speed, _ = modelMetricLabels(cat, "openai", "measured")
+	_, _, _, speed, _ = modelMetricLabels(cat, nil, "openai", "measured")
 	if speed != "25.0 tok/s" {
 		t.Fatalf("persisted speed = %q, want 25.0 tok/s", speed)
 	}
@@ -308,9 +310,39 @@ func TestModelMetricLabelsPrefersFreshLiveTiming(t *testing.T) {
 		}},
 	}}
 
-	_, speed, latency := modelMetricLabels(cat, "omlx", "model")
+	_, _, _, speed, latency := modelMetricLabels(cat, nil, "omlx", "model")
 	if speed != "12.5 tok/s" || latency != "10156ms" {
 		t.Fatalf("metrics = speed %q, latency %q, want 12.5 tok/s and 10156ms", speed, latency)
+	}
+}
+
+func TestModelMetricLabelsSeparatesLlamboAndTaskScore(t *testing.T) {
+	cat := &catalog.Catalog{Providers: map[string]*catalog.ProviderCatalog{
+		"omlx": {Models: map[string]*catalog.ModelEntry{
+			"model": {Quality: map[string]catalog.QualityEvidence{"writing": {Score: .98}}},
+		}},
+	}}
+	snapshot := &evals.OMLXScoreSnapshot{FormulaVersion: "LLAMBO-6-category-v1", PopulationFingerprint: "fingerprint", Inventory: []string{"model"}, CategoryScores: map[string]map[string]*evals.LlamboScore{"model": {"coding": {Score: 82.25, Coverage: .6, TrustedCoverage: .45, Confidence: "medium", WinnerStatus: "official"}}}}
+	llambo, provenance, task, _, _ := modelMetricLabels(cat, snapshot, "omlx", "model")
+	if llambo != "coding=82.2 (official)" || task != "writing 98.0/100" || !strings.Contains(provenance, "formula=LLAMBO-6-category-v1") || !strings.Contains(provenance, "coding={coverage=0.600000,trusted_coverage=0.450000,confidence=medium,winner=official,stale=false}") || !strings.Contains(provenance, "writing=unresolved") {
+		t.Fatalf("scores/provenance were incomplete: llambo=%q provenance=%q task=%q", llambo, provenance, task)
+	}
+	llambo, _, _, _, _ = modelMetricLabels(cat, snapshot, "hosted", "model")
+	if llambo != "—" {
+		t.Fatalf("hosted model got LLAMBO SCORE %q", llambo)
+	}
+}
+
+func TestAppendCatalogMetricModelsOMLXUsesOnlySnapshotInventory(t *testing.T) {
+	cat := &catalog.Catalog{Providers: map[string]*catalog.ProviderCatalog{
+		"omlx": {Models: map[string]*catalog.ModelEntry{"model-a": {Quality: map[string]catalog.QualityEvidence{"writing": {Score: .9}}}, "model-b": {}}},
+	}}
+	snapshot := &evals.OMLXScoreSnapshot{Inventory: []string{"model-b"}}
+	if got := appendCatalogMetricModels(cat, snapshot, "omlx", nil); strings.Join(got, ",") != "model-b" {
+		t.Fatalf("stale catalog model leaked into OMLX listing: %#v", got)
+	}
+	if got := appendCatalogMetricModels(cat, &evals.OMLXScoreSnapshot{Inventory: []string{}}, "omlx", nil); len(got) != 0 {
+		t.Fatalf("empty snapshot retained stale OMLX models: %#v", got)
 	}
 }
 

@@ -10,6 +10,12 @@ import (
 	"time"
 )
 
+type writingJudgmentJob struct {
+	record     WritingPromptRecord
+	generation WritingGenerationRecord
+	criteria   []WritingCriterion
+}
+
 func RunWritingEvaluation(ctx context.Context, manifest WritingRunManifest, records []WritingPromptRecord, adapter WritingBenchmarkAdapter, executor WritingExecutor, store *WritingRunStore) error {
 	if executor == nil || store == nil {
 		return fmt.Errorf("writing executor and store are required")
@@ -43,34 +49,12 @@ func RunWritingEvaluation(ctx context.Context, manifest WritingRunManifest, reco
 		return err
 	}
 
-	type judgmentJob struct {
-		record     WritingPromptRecord
-		generation WritingGenerationRecord
-		criterion  WritingCriterion
+	judgmentJobs, err := pendingWritingJudgmentJobs(manifest, records, adapter, store)
+	if err != nil {
+		return err
 	}
-	judgmentJobs := make([]judgmentJob, 0)
-	for _, record := range records {
-		criteria, err := adapter.Criteria(record)
-		if err != nil {
-			return err
-		}
-		for _, model := range manifest.Identity.Models {
-			for iteration := 1; iteration <= manifest.Identity.Iterations; iteration++ {
-				generation, ok := store.Generation(writingGenerationKey(adapter.ID(), record.ID, model.ID(), iteration))
-				if !ok {
-					continue
-				}
-				for _, criterion := range criteria {
-					key := writingJudgmentKey(generation.Key, generation.ContentSHA256, criterion.ID, manifest.Identity.Judge.ID(), manifest.Identity.JudgePromptVersion)
-					if _, ok := store.Judgment(key); !ok && store.NextJudgmentAttempt(key) <= maxWritingJudgmentAttempts {
-						judgmentJobs = append(judgmentJobs, judgmentJob{record: record, generation: generation, criterion: criterion})
-					}
-				}
-			}
-		}
-	}
-	if err := runWritingJobs(ctx, manifest.Identity.Concurrency, judgmentJobs, func(ctx context.Context, job judgmentJob) error {
-		return executeWritingJudgment(ctx, manifest, executor, store, budget, job.record, job.generation, job.criterion)
+	if err := runWritingJobs(ctx, manifest.Identity.JudgeConcurrency, judgmentJobs, func(ctx context.Context, job writingJudgmentJob) error {
+		return executeWritingJudgment(ctx, manifest, executor, store, budget, job.record, job.generation, job.criteria)
 	}); err != nil {
 		return err
 	}
@@ -78,6 +62,29 @@ func RunWritingEvaluation(ctx context.Context, manifest WritingRunManifest, reco
 		return nil
 	}
 	return ErrWritingRunIncomplete
+}
+
+func pendingWritingJudgmentJobs(manifest WritingRunManifest, records []WritingPromptRecord, adapter WritingBenchmarkAdapter, store *WritingRunStore) ([]writingJudgmentJob, error) {
+	jobs := make([]writingJudgmentJob, 0)
+	for _, record := range records {
+		criteria, err := adapter.Criteria(record)
+		if err != nil {
+			return nil, err
+		}
+		for _, model := range manifest.Identity.Models {
+			for iteration := 1; iteration <= manifest.Identity.Iterations; iteration++ {
+				generation, ok := store.Generation(writingGenerationKey(adapter.ID(), record.ID, model.ID(), iteration))
+				if !ok {
+					continue
+				}
+				key := writingCombinedJudgmentKey(generation.Key, generation.ContentSHA256, manifest.Identity.Judge.ID(), manifest.Identity.JudgePromptVersion)
+				if _, ok := store.Judgment(key); !ok && store.NextJudgmentAttempt(key) <= maxWritingJudgmentAttempts {
+					jobs = append(jobs, writingJudgmentJob{record: record, generation: generation, criteria: criteria})
+				}
+			}
+		}
+	}
+	return jobs, nil
 }
 
 func executeWritingGeneration(ctx context.Context, manifest WritingRunManifest, adapter WritingBenchmarkAdapter, executor WritingExecutor, store *WritingRunStore, budget *writingBudget, record WritingPromptRecord, model WritingModelSpec, iteration int) error {
@@ -94,12 +101,14 @@ func executeWritingGeneration(ctx context.Context, manifest WritingRunManifest, 
 	started := time.Now().UTC()
 	result, callErr := executor.Execute(ctx, call)
 	completed := time.Now().UTC()
-	budget.complete(estimate, writingAccountingCost(result.Usage, estimate))
+	accountingCost := writingAccountingCost(result.Usage, estimate)
+	budget.complete(estimate, accountingCost)
 	recordOut := WritingGenerationRecord{
 		Key: key, Attempt: attempt, BenchmarkID: adapter.ID(), PromptID: record.ID,
 		Provider: model.Provider, Model: model.Model, Iteration: iteration,
 		StartedAt: started, CompletedAt: completed, LatencyMS: completed.Sub(started).Milliseconds(),
 		ActualProvider: result.Provider, ActualModel: result.Model, FinishReason: result.FinishReason, Route: result.Route, Usage: result.Usage,
+		AccountingCostUSD: accountingCost,
 	}
 	recordOut.Domain1, recordOut.Domain2 = writingPromptDomains(record)
 	if callErr != nil {
@@ -115,11 +124,18 @@ func executeWritingGeneration(ctx context.Context, manifest WritingRunManifest, 
 	return appendErr
 }
 
-func executeWritingJudgment(ctx context.Context, manifest WritingRunManifest, executor WritingExecutor, store *WritingRunStore, budget *writingBudget, record WritingPromptRecord, generation WritingGenerationRecord, criterion WritingCriterion) error {
-	key := writingJudgmentKey(generation.Key, generation.ContentSHA256, criterion.ID, manifest.Identity.Judge.ID(), manifest.Identity.JudgePromptVersion)
-	system, user := BuildWritingJudgePrompt(record, generation.Content, criterion)
+func executeWritingJudgment(ctx context.Context, manifest WritingRunManifest, executor WritingExecutor, store *WritingRunStore, budget *writingBudget, record WritingPromptRecord, generation WritingGenerationRecord, criteria []WritingCriterion) error {
+	key := writingCombinedJudgmentKey(generation.Key, generation.ContentSHA256, manifest.Identity.Judge.ID(), manifest.Identity.JudgePromptVersion)
+	system, user, err := BuildCombinedWritingJudgePrompt(record, generation.Content, criteria)
+	if err != nil {
+		return err
+	}
 	for attempt := store.NextJudgmentAttempt(key); attempt <= maxWritingJudgmentAttempts; attempt++ {
-		call := WritingExecutionCall{Kind: "judgment", Model: manifest.Identity.Judge, SystemPrompt: system, UserPrompt: user, MaxOutputTokens: manifest.Identity.Judge.MaxOutputTokens}
+		settings, err := CombinedWritingJudgeSettings(manifest.Identity.JudgeThinkingLevel)
+		if err != nil {
+			return err
+		}
+		call := WritingExecutionCall{Kind: "judgment", Model: manifest.Identity.Judge, SystemPrompt: system, UserPrompt: user, MaxOutputTokens: manifest.Identity.Judge.MaxOutputTokens, Settings: settings}
 		estimate := estimateWritingCallCost(system+"\n"+user, call.MaxOutputTokens, call.Model)
 		if err := budget.reserve(estimate); err != nil {
 			return err
@@ -130,23 +146,25 @@ func executeWritingJudgment(ctx context.Context, manifest WritingRunManifest, ex
 		started := time.Now().UTC()
 		result, callErr := executor.Execute(ctx, call)
 		completed := time.Now().UTC()
-		budget.complete(estimate, writingAccountingCost(result.Usage, estimate))
+		accountingCost := writingAccountingCost(result.Usage, estimate)
+		budget.complete(estimate, accountingCost)
 		judgment := WritingJudgmentRecord{
 			Key: key, Attempt: attempt, GenerationKey: generation.Key, ResponseSHA256: generation.ContentSHA256,
-			CriterionID: criterion.ID, Criterion: criterion.Description,
 			JudgeProvider: call.Model.Provider, JudgeModel: call.Model.Model,
 			StartedAt: started, CompletedAt: completed, LatencyMS: completed.Sub(started).Milliseconds(),
 			RawResponse: result.Content, ActualProvider: result.Provider, ActualModel: result.Model,
 			FinishReason: result.FinishReason, Route: result.Route, Usage: result.Usage,
+			AccountingCostUSD: accountingCost,
 		}
 		if callErr != nil {
 			judgment.Status, judgment.Error = "failed", callErr.Error()
 		} else {
-			score, reason, err := ParseWritingJudgment(result.Content)
+			results, err := ParseCombinedWritingJudgment(result.Content, criteria)
 			if err != nil {
 				judgment.Status, judgment.Error = "failed", err.Error()
 			} else {
-				judgment.Status, judgment.Score, judgment.Reason = "success", score, reason
+				judgment.Status = "success"
+				judgment.Results = results
 			}
 		}
 		if err := store.AppendJudgment(judgment); err != nil {
@@ -235,7 +253,7 @@ func writingPromptDomains(record WritingPromptRecord) (string, string) {
 
 func writingRunComplete(manifest WritingRunManifest, records []WritingPromptRecord, adapter WritingBenchmarkAdapter, store *WritingRunStore) bool {
 	for _, record := range records {
-		criteria, err := adapter.Criteria(record)
+		_, err := adapter.Criteria(record)
 		if err != nil {
 			return false
 		}
@@ -245,10 +263,8 @@ func writingRunComplete(manifest WritingRunManifest, records []WritingPromptReco
 				if !ok {
 					return false
 				}
-				for _, criterion := range criteria {
-					if _, ok := store.Judgment(writingJudgmentKey(generation.Key, generation.ContentSHA256, criterion.ID, manifest.Identity.Judge.ID(), manifest.Identity.JudgePromptVersion)); !ok {
-						return false
-					}
+				if _, ok := store.Judgment(writingCombinedJudgmentKey(generation.Key, generation.ContentSHA256, manifest.Identity.Judge.ID(), manifest.Identity.JudgePromptVersion)); !ok {
+					return false
 				}
 			}
 		}
@@ -267,10 +283,10 @@ func newWritingBudget(max float64, store *WritingRunStore) *writingBudget {
 	generations, judgments := store.Records()
 	spent := 0.0
 	for _, record := range generations {
-		spent += record.Usage.CostUSD
+		spent += writingPersistedAccountingCost(record.AccountingCostUSD, record.Usage)
 	}
 	for _, record := range judgments {
-		spent += record.Usage.CostUSD
+		spent += writingPersistedAccountingCost(record.AccountingCostUSD, record.Usage)
 	}
 	return &writingBudget{max: max, spent: spent}
 }
@@ -299,8 +315,15 @@ func (b *writingBudget) complete(estimate, actual float64) {
 }
 
 func writingAccountingCost(usage WritingUsage, estimate float64) float64 {
-	if usage.Known {
+	if usage.Known && (usage.CostKnown || (usage.CacheReadTokens == 0 && usage.CacheWriteTokens == 0)) {
 		return usage.CostUSD
 	}
 	return estimate
+}
+
+func writingPersistedAccountingCost(accountingCost float64, usage WritingUsage) float64 {
+	if accountingCost > 0 {
+		return accountingCost
+	}
+	return usage.CostUSD
 }

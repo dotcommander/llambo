@@ -1,314 +1,231 @@
 package evals
 
 import (
-	"encoding/json"
 	"math"
-	"os"
-	"slices"
 	"strings"
 	"testing"
-	"time"
 )
 
-func TestEmpiricalPercentileUsesMidranks(t *testing.T) {
-	values := []float64{1, 2, 2, 4}
-	closeTo(t, empiricalPercentile(values, 1, true), 12.5)
-	closeTo(t, empiricalPercentile(values, 2, true), 50)
-	closeTo(t, empiricalPercentile(values, 4, true), 87.5)
-	closeTo(t, empiricalPercentile(values, 1, false), 87.5)
-}
-
-func TestBuildReportExternalScoresAreOrderInvariantAndMonotonic(t *testing.T) {
-	models := []Model{
-		externalTestModel("low", 20, 20, 20, 10, 10),
-		externalTestModel("middle", 50, 50, 50, 50, 50),
-		externalTestModel("high", 80, 80, 80, 90, 90),
+func TestLLAMBO2OrderedPrimaryFallback(t *testing.T) {
+	low, high := 10.0, 90.0
+	models := []Model{{Key: "low", Name: "low", IdentityMatch: IdentityMatchExact, LLMStats: &LLMStatsMetrics{SWEVerified: &low, SWEPro: &high, Indexes: map[string]Index{}}}, {Key: "missing", Name: "missing", IdentityMatch: IdentityMatchExact, Benchmarks: map[string]BenchmarkResult{"swe-bench-pro": sealedBenchmark(high)}}}
+	reference := FormulaReference{Metrics: map[string][]float64{"llm_swe_bench_verified": {0, 50, 100}, "llm_swe_bench_pro": {0, 25, 50, 75, 100}, "llm_code_index": {0, 50, 100}, "aa_coding_index": {0, 50, 100}}}
+	score := scoreCategory(models[0], categorySpecs[1], reference)
+	if score == nil || score.Score != empiricalPercentile(reference.Metrics["llm_swe_bench_verified"], low, true) {
+		t.Fatalf("primary did not exclusively own score: %#v", score)
 	}
-	result := Result{GeneratedAt: time.Unix(1, 0).UTC(), AAVersion: 4.1, Models: models}
-	report, err := BuildReport(result, "coding")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if report.FormulaVersion != FormulaVersion || report.RankingProfile != "coding" {
-		t.Fatalf("unexpected report metadata: %#v", report)
-	}
-	if report.Models[0].Key != "high" || report.Models[2].Key != "low" {
-		t.Fatalf("coding rank is not monotonic: %#v", report.Models)
-	}
-	assertAllScoresBounded(t, report)
-
-	reversed := slices.Clone(models)
-	slices.Reverse(reversed)
-	reordered, err := BuildReport(Result{Models: reversed}, "coding")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for key, score := range scoresByKey(report, "coding") {
-		closeTo(t, scoresByKey(reordered, "coding")[key], score)
-	}
-	for i := range report.Models {
-		if report.Models[i].Key != reordered.Models[i].Key {
-			t.Fatalf("input order changed output ordering: %v vs %v", report.Models, reordered.Models)
-		}
+	fallback := scoreCategory(models[1], categorySpecs[1], reference)
+	if fallback == nil || fallback.Primary == nil || fallback.Primary.Benchmark != "swe-bench-pro" {
+		t.Fatalf("missing first source did not use the next eligible primary: %#v", fallback)
 	}
 }
 
-func TestMissingMetricContributesNeutralValueAndEvidenceBounds(t *testing.T) {
-	models := []Model{
-		{Key: "a", Name: "a", LLMStats: &LLMStatsMetrics{Indexes: map[string]Index{"code": {Conservative: 10}}}},
-		{Key: "b", Name: "b", LLMStats: &LLMStatsMetrics{Indexes: map[string]Index{"code": {Conservative: 20}}}},
+func TestOrderedPrimaryRequiresIndependentCohort(t *testing.T) {
+	value := 80.0
+	model := Model{Benchmarks: map[string]BenchmarkResult{"bfcl-v4": sealedBenchmark(value), "tau2-bench": sealedBenchmark(value)}}
+	spec := categorySpecs[0]
+	noCohort := FormulaReference{Metrics: map[string][]float64{"bfcl_v4": nil, "tau2_bench": {10, 40, 60, 80, 90}}}
+	score := scoreCategory(model, spec, noCohort)
+	if score == nil || score.Primary == nil || score.Primary.Benchmark != "tau2-bench" || score.Primary.ReferencePopulation != 5 {
+		t.Fatalf("empty earlier cohort should yield to independent later cohort: %#v", score)
 	}
-	report, err := BuildReport(Result{Models: models}, "coding")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, row := range report.Models {
-		score := row.Scores["coding"]
-		if score == nil {
-			t.Fatalf("half-covered coding score was omitted: %#v", row)
-		}
-		closeTo(t, score.Coverage, .5)
-		closeTo(t, score.Score, .5*row.MetricPercentiles["llm_code_index"]+25)
-		if !(score.Low < score.Score && score.Score < score.High) {
-			t.Fatalf("missing evidence did not widen bounds: %#v", score)
-		}
+	model.Benchmarks = map[string]BenchmarkResult{"bfcl-v4": sealedBenchmark(value)}
+	if scoreCategory(model, spec, FormulaReference{Metrics: map[string][]float64{"bfcl_v4": nil}}) != nil {
+		t.Fatal("source value without a source-native cohort became a score")
 	}
 }
 
-func TestOverallRequiresSixtyPercentCoverage(t *testing.T) {
-	model := Model{Key: "sparse", Name: "sparse", AA: &ArtificialMetrics{Intelligence: float64Ptr(50)}}
-	report, err := BuildReport(Result{Models: []Model{model}}, "overall")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if report.Models[0].Scores["overall"] != nil {
-		t.Fatalf("sparse model received overall score: %#v", report.Models[0].Scores["overall"])
-	}
-}
-
-func TestNormalizedIdentityCapsScoreConfidenceAtMedium(t *testing.T) {
-	models := []Model{
-		externalTestModel("low", 20, 20, 20, 20, 20),
-		externalTestModel("high", 80, 80, 80, 80, 80),
-	}
-	models[1].IdentityMatch = IdentityMatchNormalized
-	reference, err := loadFormulaReference()
-	if err != nil {
-		t.Fatal(err)
-	}
-	metrics, _, _ := normalizeExternalMetrics(models, reference)
-	rows := buildScoredRows(models, metrics, "")
-	for _, row := range rows {
-		if row.Key != "high" {
-			continue
-		}
-		if score := row.Scores["overall"]; score == nil || score.Confidence != "medium" {
-			t.Fatalf("normalized identity confidence was not capped: %#v", score)
-		}
-		return
-	}
-	t.Fatal("normalized model missing from scored rows")
-}
-
-func TestJackknifePreservesCoverageGates(t *testing.T) {
-	models := []Model{{
-		Key: "sparse", Name: "sparse",
-		LLMStats: &LLMStatsMetrics{SWEPro: float64Ptr(50), Indexes: map[string]Index{}},
-	}}
-	reference, err := loadFormulaReference()
-	if err != nil {
-		t.Fatal(err)
-	}
-	metrics, _, _ := normalizeExternalMetrics(models, reference)
-	rows := buildScoredRows(models, metrics, "aa_intelligence_general")
-	if score := rows[0].Scores["coding"]; score != nil {
-		t.Fatalf("jackknife admitted a model below the normal coverage gate: %#v", score)
-	}
-}
-
-func TestSourceComponentRequiresHalfCoverageBeforeFusion(t *testing.T) {
-	models := []Model{
-		{Key: "low", Name: "low", AA: &ArtificialMetrics{Intelligence: float64Ptr(20), Coding: float64Ptr(20), Agentic: float64Ptr(20)}, LLMStats: &LLMStatsMetrics{Indexes: map[string]Index{"reasoning": {Conservative: 20}}}},
-		{Key: "high", Name: "high", AA: &ArtificialMetrics{Intelligence: float64Ptr(80), Coding: float64Ptr(80), Agentic: float64Ptr(80)}, LLMStats: &LLMStatsMetrics{Indexes: map[string]Index{"reasoning": {Conservative: 80}}}},
-	}
-	reference, err := loadFormulaReference()
-	if err != nil {
-		t.Fatal(err)
-	}
-	metrics, _, _ := normalizeExternalMetrics(models, reference)
-	rows := buildScoredRows(models, metrics, "")
-	for _, row := range rows {
-		score := row.Scores["agents"]
-		if score == nil || !slices.Equal(score.Sources, []string{"artificial_analysis"}) {
-			t.Fatalf("under-covered LLM Stats component was fused: %#v", score)
-		}
-		if score.Confidence != "medium" {
-			t.Fatalf("single-source confidence was not capped: %#v", score)
-		}
-	}
-}
-
-func TestBuildReportJSONIsDeterministic(t *testing.T) {
-	result := Result{GeneratedAt: time.Unix(123, 0).UTC(), AAVersion: 4.1, Models: []Model{
-		externalTestModel("low", 20, 20, 20, 20, 20),
-		externalTestModel("high", 80, 80, 80, 80, 80),
-	}}
-	var baseline []byte
-	for i := 0; i < 20; i++ {
-		report, err := BuildReport(result, "overall")
-		if err != nil {
-			t.Fatal(err)
-		}
-		data, err := json.Marshal(report)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if i == 0 {
-			baseline = data
-			continue
-		}
-		if !slices.Equal(data, baseline) {
-			t.Fatal("identical input produced different report JSON")
-		}
-	}
-}
-
-func TestFormulaWeightsSumToOne(t *testing.T) {
-	byDimensionSource := map[string]float64{}
-	for _, metric := range externalMetrics {
-		byDimensionSource[metric.dimension+"/"+metric.source] += metric.weight
-	}
-	for key, sum := range byDimensionSource {
-		closeTo(t, sum, 1)
-		if sum != 1 {
-			t.Fatalf("metric weights for %s sum to %v", key, sum)
-		}
-	}
-	for _, profile := range externalProfiles {
-		sum := 0.0
-		for _, weight := range profile.weights {
-			sum += weight
-		}
-		closeTo(t, sum, 1)
-	}
-}
-
-func TestBuildReportRejectsUnknownProfile(t *testing.T) {
-	_, err := BuildReport(Result{}, "local-secret-score")
-	if err == nil || !strings.Contains(err.Error(), "supported") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestProductionEvalCodeHasNoLocalTargetDependency(t *testing.T) {
-	entries, err := os.ReadDir(".")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
-			continue
-		}
-		data, err := os.ReadFile(entry.Name())
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, forbidden := range []string{"calibrationAnchor", "RidgeRow", "effective_score", ".work/", "local-model-eval"} {
-			if strings.Contains(string(data), forbidden) {
-				t.Fatalf("%s retains forbidden local-eval dependency %q", entry.Name(), forbidden)
-			}
-		}
-	}
-}
-
-func TestRenderMarkdownDescribesExternalOnlyFormula(t *testing.T) {
-	report, err := BuildReport(Result{GeneratedAt: time.Unix(1, 0).UTC(), Models: []Model{
-		externalTestModel("a", 40, 40, 40, 40, 40),
-		externalTestModel("b", 60, 60, 60, 60, 60),
-	}}, "overall")
-	if err != nil {
-		t.Fatal(err)
-	}
-	markdown := RenderMarkdown(report, 1)
-	for _, want := range []string{FormulaVersion, "Ranked by: `overall`", "do not use local evaluation targets", "Missing evidence contributes a neutral 50", "Output $/1M"} {
-		if !strings.Contains(markdown, want) {
-			t.Fatalf("markdown missing %q:\n%s", want, markdown)
-		}
-	}
-}
-
-func TestFormatOutputPrice(t *testing.T) {
-	tests := []struct {
-		name string
-		row  ReportModel
-		want string
+func TestOrderedPrimaryRejectsUnsealedEvidence(t *testing.T) {
+	value := 80.0
+	cohort := []float64{10, 40, 60, 80, 90}
+	for _, test := range []struct {
+		name   string
+		result BenchmarkResult
+		cohort []float64
 	}{
-		{name: "missing", row: ReportModel{}, want: "—"},
-		{name: "llm only", row: ReportModel{LLMStats: &LLMStatsMetrics{OutputPrice: float64Ptr(.25)}}, want: "$0.250"},
-		{name: "same quote", row: ReportModel{LLMStats: &LLMStatsMetrics{OutputPrice: float64Ptr(2)}, AA: &ArtificialMetrics{OutputPrice: float64Ptr(2)}}, want: "$2.00"},
-		{name: "source range", row: ReportModel{LLMStats: &LLMStatsMetrics{OutputPrice: float64Ptr(3)}, AA: &ArtificialMetrics{OutputPrice: float64Ptr(1.5)}}, want: "$1.50–$3.00"},
-		{name: "free", row: ReportModel{AA: &ArtificialMetrics{OutputPrice: float64Ptr(0)}}, want: "$0"},
-		{name: "projection", row: ReportModel{Projection: &ProjectionInfo{SourceKey: "upstream", Confidence: "medium"}, AA: &ArtificialMetrics{OutputPrice: float64Ptr(2)}}, want: "local/projected"},
-	}
-	for _, test := range tests {
+		{"ambiguous identity", BenchmarkResult{Score: &value, Identity: IdentityMatchAmbiguous, Version: "v1", ContentSHA: strings.Repeat("a", 64), Method: "official"}, cohort},
+		{"missing version", BenchmarkResult{Score: &value, Identity: IdentityMatchExact, ContentSHA: strings.Repeat("a", 64), Method: "official"}, cohort},
+		{"missing method", BenchmarkResult{Score: &value, Identity: IdentityMatchExact, Version: "v1", ContentSHA: strings.Repeat("a", 64)}, cohort},
+		{"invalid hash", BenchmarkResult{Score: &value, Identity: IdentityMatchExact, Version: "v1", ContentSHA: "not-a-sha", Method: "official"}, cohort},
+		{"nonfinite score", BenchmarkResult{Score: float64Ptr(math.NaN()), Identity: IdentityMatchExact, Version: "v1", ContentSHA: strings.Repeat("a", 64), Method: "official"}, cohort},
+		{"cohort too small", sealedBenchmark(value), cohort[:4]},
+	} {
 		t.Run(test.name, func(t *testing.T) {
-			if got := fmtOutputPrice(test.row); got != test.want {
+			model := Model{Benchmarks: map[string]BenchmarkResult{"bfcl-v4": test.result}}
+			if score := scoreCategory(model, categorySpecs[0], FormulaReference{Metrics: map[string][]float64{"bfcl_v4": test.cohort}}); score != nil {
+				t.Fatalf("unsealed later primary became a score: %#v", score)
+			}
+		})
+	}
+}
+
+func sealedBenchmark(value float64) BenchmarkResult {
+	return BenchmarkResult{Score: &value, Identity: IdentityMatchExact, Version: "v1", ContentSHA: strings.Repeat("a", 64), Method: "official methodology", SourceID: "swe-bench", SourceClass: string(SourceOwnerResult), EvidenceGrade: "owner", SourceRevision: "v1"}
+}
+
+func TestLLAMBO1UsesPrimarySourceIdentityForConfidence(t *testing.T) {
+	primary, checkA, checkB := 90.0, 90.0, 90.0
+	model := Model{IdentityMatch: IdentityMatchUnmatched, LLMStats: &LLMStatsMetrics{
+		SWEVerified: &primary, SWEPro: &checkA, SciCode: &checkB, Indexes: map[string]Index{},
+	}, AA: &ArtificialMetrics{Coding: &checkB}}
+	reference := FormulaReference{Metrics: map[string][]float64{
+		"llm_swe_bench_verified": {0, 90, 100}, "llm_swe_bench_pro": {0, 90, 100},
+		"llm_scicode": {0, 90, 100}, "aa_coding_index": {0, 90, 100},
+	}}
+	score := scoreCategory(model, categorySpecs[1], reference)
+	if score == nil || score.Confidence != "high" {
+		t.Fatalf("source-native exact primary was not high confidence: %#v", score)
+	}
+}
+
+func TestLLAMBO1WritingUsesOfficialPrimaryAndEQOnlyAsCheck(t *testing.T) {
+	primary, corroborator := 78.0, 1800.0
+	model := Model{Key: "writer", Name: "Writer", Benchmarks: map[string]BenchmarkResult{
+		"writingbench":        {Score: &primary, Identity: IdentityMatchExact, Version: "wb-v1", ContentSHA: strings.Repeat("a", 64), Judge: "Claude-Sonnet-4-5"},
+		"eqbench-creative-v3": {Score: &corroborator, Identity: IdentityMatchNormalized, CommitSHA: EQBenchCreativeCommit, Judge: "Claude Sonnet 4.6"},
+	}}
+	reference := FormulaReference{Metrics: map[string][]float64{
+		"writingbench_overall": {50, 75, 80}, "eqbench_creative_v3": {1000, 1700, 1900},
+	}}
+	score := scoreCategory(model, categorySpecs[len(categorySpecs)-1], reference)
+	if score == nil || score.Score != empiricalPercentile(reference.Metrics["writingbench_overall"], primary, true) || len(score.Checks) != 1 {
+		t.Fatalf("writing primary/check contract failed: %#v", score)
+	}
+	if score.Primary == nil || score.Primary.SourceVersion != "wb-v1" || score.Primary.JudgeVersion == "" || score.Checks[0].CommitSHA != EQBenchCreativeCommit {
+		t.Fatalf("writing provenance missing: %#v", score)
+	}
+}
+
+func TestLLAMBO1WritingIncludesWritingBenchDomainAndRequirementChecks(t *testing.T) {
+	primary := 78.0
+	model := Model{Benchmarks: map[string]BenchmarkResult{"writingbench": {
+		Score: &primary, Identity: IdentityMatchExact, Details: map[string]float64{
+			"domain1_academic": 80, "domain2_report": 60, "style_r": 70, "format_c": 50, "length_r": 60,
+		},
+	}}}
+	reference := FormulaReference{Metrics: map[string][]float64{
+		"writingbench_overall": {50, 78, 90}, "writingbench_domain": {50, 70, 90},
+		"writingbench_requirements": {40, 60, 80},
+	}}
+	score := scoreCategory(model, categorySpecs[len(categorySpecs)-1], reference)
+	if score == nil || len(score.Checks) != 2 || score.Checks[0].Benchmark != "writingbench-domain" || score.Checks[1].Benchmark != "writingbench-requirements" {
+		t.Fatalf("WritingBench domain/requirement checks missing: %#v", score)
+	}
+}
+
+func TestLLAMBO1InstructionFollowingUsesWritingBenchRequirementChecks(t *testing.T) {
+	primary := 50.0
+	model := Model{LLMStats: &LLMStatsMetrics{Indexes: map[string]Index{
+		"instruction_following": {Conservative: primary},
+	}}, Benchmarks: map[string]BenchmarkResult{"writingbench": {
+		Identity: IdentityMatchExact, Version: "wb-v1", Details: map[string]float64{
+			"format_r": 80, "format_c": 60, "length_r": 70, "length_c": 50,
+		},
+	}}}
+	reference := FormulaReference{Metrics: map[string][]float64{
+		"llm_instruction_general": {0, 50, 100}, "llm_structured_reasoning": {0, 50, 100},
+		"writingbench_format": {0, 70, 100}, "writingbench_length": {0, 60, 100},
+	}}
+	score := scoreCategory(model, categorySpecs[2], reference)
+	if score == nil || len(score.Checks) != 2 || score.Checks[0].Benchmark != "writingbench-format" || score.Checks[1].Benchmark != "writingbench-length" {
+		t.Fatalf("WritingBench requirement checks missing: %#v", score)
+	}
+	if score.Checks[0].SourceVersion != "wb-v1" || *score.Checks[0].RawScore != 70 || *score.Checks[1].RawScore != 60 {
+		t.Fatalf("WritingBench requirement evidence incorrect: %#v", score.Checks)
+	}
+}
+
+func TestLLAMBO2InstructionFollowingFallsBackToOfficialIFEval(t *testing.T) {
+	ifeval := 91.84
+	model := Model{Benchmarks: map[string]BenchmarkResult{"ifeval-official": {
+		Score: &ifeval, Identity: IdentityMatchExact, Version: "commit", ContentSHA: strings.Repeat("a", 64), Method: "official methodology",
+	}}}
+	reference := FormulaReference{Metrics: map[string][]float64{
+		"llm_instruction_general": {0, 50, 100}, "ifeval_official": {75, 82.23, 87.8, 90, 91.84},
+	}}
+	score := scoreCategory(model, categorySpecs[2], reference)
+	if score == nil || score.Primary == nil || score.Primary.Benchmark != "ifeval-official" || score.Score != 90 || score.Confidence != "medium" {
+		t.Fatalf("official IFEval fallback failed: %#v", score)
+	}
+}
+
+func TestEmpiricalPercentileUsesMidranks(t *testing.T) {
+	if got := empiricalPercentile([]float64{1, 2, 2, 3}, 2, true); got != 50 {
+		t.Fatalf("got %v, want 50", got)
+	}
+}
+
+func TestLLAMBO1AgreementAndConfidenceThresholds(t *testing.T) {
+	primary, checkA, checkB := 50.0, 60.0, 40.0
+	model := Model{LLMStats: &LLMStatsMetrics{
+		SWEVerified: &primary, SWEPro: &checkA, SciCode: &checkB, Indexes: map[string]Index{},
+	}}
+	reference := FormulaReference{Metrics: map[string][]float64{
+		"llm_swe_bench_verified": {0, 50, 100}, "llm_swe_bench_pro": {0, 50, 100},
+		"llm_scicode": {0, 50, 100}, "aa_coding_index": {0, 50, 100},
+	}}
+	score := scoreCategory(model, categorySpecs[1], reference)
+	wantAgreement := 100 - (math.Abs(66.66666666666667-50)+math.Abs(33.333333333333336-50))/2
+	if score == nil || score.Agreement == nil || math.Abs(*score.Agreement-wantAgreement) > 1e-9 || score.Confidence != "medium" {
+		t.Fatalf("unexpected agreement/confidence: %#v", score)
+	}
+
+	for _, test := range []struct {
+		name      string
+		identity  IdentityMatch
+		stale     bool
+		agreement *float64
+		checks    int
+		want      string
+	}{
+		{"exact high boundary", IdentityMatchExact, false, float64Ptr(90), 2, "high"},
+		{"normalized agreement", IdentityMatchNormalized, false, float64Ptr(80), 1, "medium"},
+		{"exact sparse", IdentityMatchExact, false, nil, 0, "medium"},
+		{"below agreement", IdentityMatchExact, false, float64Ptr(79.9), 1, "low"},
+		{"stale", IdentityMatchExact, true, float64Ptr(100), 2, "low"},
+		{"ambiguous", IdentityMatchAmbiguous, false, float64Ptr(100), 2, "low"},
+		{"projected", IdentityMatchProjected, false, float64Ptr(100), 2, "low"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := categoryConfidence(test.identity, test.stale, test.agreement, test.checks); got != test.want {
 				t.Fatalf("got %q, want %q", got, test.want)
 			}
 		})
 	}
 }
 
+func TestLLAMBO1RenderMatrix(t *testing.T) {
+	primary := &benchmarkEvidence{Benchmark: "swe-bench-verified"}
+	report := Report{FormulaVersion: FormulaVersion, RankingProfile: "coding", Models: []ReportModel{{Name: "model", LlamboScores: map[string]*LlamboScore{"coding": {Score: 50, Primary: primary, Confidence: "medium"}}, Scores: map[string]*ExternalScore{}}}}
+	for _, want := range []string{"Llambo Score Matrix", "Instruction Following", "swe-bench-verified"} {
+		if !strings.Contains(RenderMarkdown(report, 0), want) {
+			t.Fatalf("missing %q", want)
+		}
+	}
+	markdown := RenderMarkdown(report, 0)
+	positions := []int{strings.Index(markdown, "| Agents |"), strings.Index(markdown, "| Coding |"), strings.Index(markdown, "| Instruction Following |"), strings.Index(markdown, "| Long Context |"), strings.Index(markdown, "| Reasoning |"), strings.Index(markdown, "| Writing |")}
+	for i := 1; i < len(positions); i++ {
+		if positions[i-1] < 0 || positions[i] <= positions[i-1] {
+			t.Fatalf("matrix categories are not alphabetically ordered: %v", positions)
+		}
+	}
+}
+
+func TestLLAMBO1RejectsRemovedRankingProfiles(t *testing.T) {
+	for _, profile := range []string{"overall", "general", "value"} {
+		if _, err := BuildReport(Result{}, profile); err == nil || !strings.Contains(err.Error(), "unsupported ranking profile") {
+			t.Fatalf("removed profile %q accepted: %v", profile, err)
+		}
+	}
+}
+
 func externalTestModel(key string, intelligence, coding, agentic, general, code float64) Model {
-	return Model{
-		Key: key, Name: key, IdentityMatch: "exact",
-		AA: &ArtificialMetrics{Intelligence: float64Ptr(intelligence), Coding: float64Ptr(coding), Agentic: float64Ptr(agentic)},
-		LLMStats: &LLMStatsMetrics{
-			GPQA: float64Ptr(general / 100), SWEVerified: float64Ptr(code / 100), SWEPro: float64Ptr(code / 100),
-			Indexes: map[string]Index{
-				"general": {Conservative: general}, "reasoning": {Conservative: general}, "instruction_following": {Conservative: general}, "factuality": {Conservative: general},
-				"code": {Conservative: code}, "agents": {Conservative: general}, "tool_calling": {Conservative: general}, "structured_output": {Conservative: general},
-				"writing": {Conservative: general}, "creativity": {Conservative: general}, "language": {Conservative: general}, "communication": {Conservative: general},
-				"long_context": {Conservative: general}, "grounding": {Conservative: general},
-			},
-		},
-	}
+	return Model{Key: key, Name: key, IdentityMatch: IdentityMatchExact, Benchmarks: map[string]BenchmarkResult{"swe-bench-verified": sealedBenchmark(code)}, AA: &ArtificialMetrics{Intelligence: float64Ptr(intelligence), Coding: float64Ptr(coding), Agentic: float64Ptr(agentic)}, LLMStats: &LLMStatsMetrics{GPQA: float64Ptr(general / 100), SWEVerified: float64Ptr(code / 100), SWEPro: float64Ptr(code / 100), MCPAtlas: float64Ptr(agentic), Indexes: map[string]Index{"general": {Conservative: general}, "reasoning": {Conservative: general}, "instruction_following": {Conservative: general}, "factuality": {Conservative: general}, "code": {Conservative: code}, "agents": {Conservative: general}, "tool_calling": {Conservative: general}, "structured_output": {Conservative: general}, "writing": {Conservative: general}, "long_context": {Conservative: general}, "grounding": {Conservative: general}}}}
 }
-
-func scoresByKey(report Report, profile string) map[string]float64 {
-	result := map[string]float64{}
-	for _, row := range report.Models {
-		if score := row.Scores[profile]; score != nil {
-			result[row.Key] = score.Score
-		}
-	}
-	return result
-}
-
-func assertAllScoresBounded(t *testing.T, report Report) {
-	t.Helper()
-	for _, row := range report.Models {
-		for name, score := range row.Scores {
-			if score == nil {
-				continue
-			}
-			for _, value := range []float64{score.Score, score.RawScore, score.Low, score.High, score.Coverage} {
-				if math.IsNaN(value) || math.IsInf(value, 0) {
-					t.Fatalf("%s/%s contains non-finite value: %#v", row.Key, name, score)
-				}
-			}
-			if score.Score < 0 || score.Score > 100 || score.Low < 0 || score.High > 100 || score.Low > score.High {
-				t.Fatalf("%s/%s is outside bounds: %#v", row.Key, name, score)
-			}
-		}
-	}
-}
-
 func float64Ptr(value float64) *float64 { return &value }
-
 func closeTo(t *testing.T, got, want float64) {
 	t.Helper()
-	if math.Abs(got-want) > 1e-9 {
-		t.Fatalf("got %v, want %v", got, want)
+	if got != want {
+		t.Fatalf("got %v want %v", got, want)
 	}
 }

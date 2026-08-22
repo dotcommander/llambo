@@ -2,240 +2,240 @@ package evals
 
 import (
 	"fmt"
-	"math"
 	"sort"
 	"strings"
 	"time"
 )
 
 func RenderMarkdown(report Report, limit int) string {
-	canonicalRows, projectedRows := partitionProjectionRows(report.Models)
-	if limit <= 0 || limit > len(canonicalRows) {
-		limit = len(canonicalRows)
+	canonical, projected := partitionProjectionRows(report.Models)
+	if limit <= 0 || limit > len(canonical) {
+		limit = len(canonical)
 	}
+	rows := canonical[:limit]
 	var b strings.Builder
-	b.WriteString("# Llambo External Evaluation Report\n\n")
-	fmt.Fprintf(&b, "Generated: %s  \nFormula: `%s`  \nRanked by: `%s`  \n\n", report.GeneratedAt.Format(time.RFC3339), report.FormulaVersion, report.RankingProfile)
-	b.WriteString("## Source status\n\n")
-	for _, source := range report.Sources {
-		fmt.Fprintf(&b, "- [%s](%s): %s, %d models", source.Name, source.URL, source.Cache, source.Models)
-		if !source.FetchedAt.IsZero() {
-			fmt.Fprintf(&b, ", fetched %s", source.FetchedAt.Format(time.RFC3339))
-		}
-		if source.Error != "" {
-			fmt.Fprintf(&b, " (%s)", source.Error)
-		}
-		b.WriteString("\n")
-	}
-
-	b.WriteString("\n## Formula\n\n")
-	fmt.Fprintf(&b, "- Population: %d canonical model rows; %d unique dual-source identities (exact or normalized).\n", report.Formula.Population, report.Formula.DualSourceModels)
-	fmt.Fprintf(&b, "- Transformation: %s.\n", report.Formula.Method)
-	fmt.Fprintf(&b, "- Frozen reference: %s; %d LLM Stats and %d Artificial Analysis models.\n", report.Formula.Reference.CreatedAt.Format(time.RFC3339), report.Formula.Reference.SourceModelCounts["llm_stats"], report.Formula.Reference.SourceModelCounts["artificial_analysis"])
-	fmt.Fprintf(&b, "- Reference drift: %s; maximum KS %.3f", report.Formula.Drift.Status, report.Formula.Drift.MaxKS)
-	if report.Formula.Drift.WorstMetric != "" {
-		fmt.Fprintf(&b, " (%s)", report.Formula.Drift.WorstMetric)
-	}
-	b.WriteString(".\n")
+	b.WriteString("# Llambo Score Matrix\n\n")
+	fmt.Fprintf(&b, "Generated: %s  \nFormula: `%s`  \nRanked by: `%s`\n\n", report.GeneratedAt.Format(time.RFC3339), report.FormulaVersion, report.RankingProfile)
+	writeSourceFreshnessMarkdown(&b, report.Sources, report.GeneratedAt)
 	if report.Eligibility != nil {
 		filters := make([]string, 0, 2)
-		if report.Eligibility.MinOverall >= 0 {
-			filters = append(filters, fmt.Sprintf("overall >= %.1f", report.Eligibility.MinOverall))
+		if report.Eligibility.MinScore >= 0 {
+			filters = append(filters, fmt.Sprintf("%s >= %.1f", report.Eligibility.ScoreCategory, report.Eligibility.MinScore))
 		}
 		if report.Eligibility.MaxOutputPrice >= 0 {
-			filters = append(filters, fmt.Sprintf("known output price <= %s/1M", fmtPrice(report.Eligibility.MaxOutputPrice)))
+			filters = append(filters, fmt.Sprintf("output price <= $%.3g/1M", report.Eligibility.MaxOutputPrice))
 		}
-		fmt.Fprintf(&b, "- Eligibility filters: %s; %d of %d models included, %d excluded (%d missing overall, %d below overall, %d over price, %d unknown prices retained).\n",
-			strings.Join(filters, "; "), report.Eligibility.IncludedModels, report.Eligibility.InputModels,
-			report.Eligibility.ExcludedModels, report.Eligibility.MissingOverall, report.Eligibility.BelowOverall,
-			report.Eligibility.OverOutputPrice, report.Eligibility.UnknownPriceKept)
-	}
-	fmt.Fprintf(&b, "- Tracked projections: %d of %d applied from %s registry version %d.\n", report.Projections.Applied, report.Projections.Configured, report.Projections.RegistrySource, report.Projections.Version)
-	for _, missing := range report.Projections.Missing {
-		fmt.Fprintf(&b, "  - Missing upstream `%s` for tracked artifact `%s`.\n", missing.SourceKey, missing.ArtifactKey)
+		fmt.Fprintf(&b, "Eligibility filters: %s; %d of %d models included.\n\n", strings.Join(filters, "; "), report.Eligibility.IncludedModels, report.Eligibility.InputModels)
 	}
 	if report.OMLX != nil {
 		if report.OMLX.Status == "unavailable" {
-			fmt.Fprintf(&b, "- OMLX live selection: unavailable; projected availability omitted (%s).\n", report.OMLX.Error)
+			b.WriteString("OMLX live selection: unavailable; projected availability omitted.\n\n")
 		} else {
-			fmt.Fprintf(&b, "- OMLX live selection: %d discovered at %s; %d matched, %d unreviewed live, %d inactive reviewed, %d excluded.\n",
-				report.OMLX.Discovered, report.OMLX.Endpoint, len(report.OMLX.MatchedModels), len(report.OMLX.UnmatchedModels), len(report.OMLX.InactiveReviewedModels), len(report.OMLX.ExcludedModels))
+			fmt.Fprintf(&b, "OMLX live selection: %s.\n\n", report.OMLX.Status)
 		}
 	}
-	for _, reason := range report.Formula.Drift.Reasons {
-		fmt.Fprintf(&b, "  - %s.\n", reason)
+	b.WriteString("Six independent capability scores use reviewed cached remote benchmarks only. Operational speed and price are displayed separately and never affect capability rankings.\n\n")
+	b.WriteString("| Model | Agents | Coding | Instruction Following | Long Context | Reasoning | Writing | Speed | Price |\n|---|---:|---:|---:|---:|---:|---:|---:|---:|\n")
+	for _, row := range rows {
+		fmt.Fprintf(&b, "| %s | %s | %s | %s | %s | %s | %s | %s | %s |\n", row.Name, formatLlambo(row.LlamboScores["agents"]), formatLlambo(row.LlamboScores["coding"]), formatLlambo(row.LlamboScores["instruction-following"]), formatLlambo(row.LlamboScores["long-context"]), formatLlambo(row.LlamboScores["reasoning"]), formatLlambo(row.LlamboScores["writing"]), formatOperational(row.Scores["speed"]), fmtOutputPrice(row))
 	}
-	fmt.Fprintf(&b, "- Jackknife stability: %s across %d metric removals; mean Kendall %.3f, minimum top-20 overlap %.1f%%", report.Formula.Stability.Status, report.Formula.Stability.Variants, report.Formula.Stability.MeanKendall, report.Formula.Stability.MinTop20Overlap*100)
-	if report.Formula.Stability.WorstMetric != "" {
-		fmt.Fprintf(&b, " (%s)", report.Formula.Stability.WorstMetric)
+	if len(projected) > 0 {
+		b.WriteString("\n## Local projections\n\nProjected artifacts inherit reviewed upstream evidence with identity-confidence calibration, remain outside the canonical matrix, and always have low Llambo confidence.\n\n")
+		b.WriteString("| Model | Agents | Coding | Instruction Following | Long Context | Reasoning | Writing | Speed | Price |\n|---|---:|---:|---:|---:|---:|---:|---:|---:|\n")
+		for _, row := range projected {
+			fmt.Fprintf(&b, "| %s | %s | %s | %s | %s | %s | %s | %s | %s |\n", row.Name, formatLlambo(row.LlamboScores["agents"]), formatLlambo(row.LlamboScores["coding"]), formatLlambo(row.LlamboScores["instruction-following"]), formatLlambo(row.LlamboScores["long-context"]), formatLlambo(row.LlamboScores["reasoning"]), formatLlambo(row.LlamboScores["writing"]), formatOperational(row.Scores["speed"]), fmtOutputPrice(row))
+		}
 	}
-	b.WriteString(".\n")
-	if report.AAVersion > 0 {
-		fmt.Fprintf(&b, "- Artificial Analysis index version: %.1f.\n", report.AAVersion)
-	}
-	b.WriteString("- Profiles: ")
-	profileNames := make([]string, 0, len(report.Formula.Profiles))
-	for _, profile := range report.Formula.Profiles {
-		profileNames = append(profileNames, profile.Name)
-	}
-	b.WriteString(strings.Join(profileNames, ", "))
-	b.WriteString(".\n")
-
-	fmt.Fprintf(&b, "\n## Rankings (by %s)\n\n", report.RankingProfile)
-	b.WriteString("| Rank | Model | Org | Access | Overall | General | Coding | Reasoning | Agents | Writing | Long ctx | Speed | Value | Output $/1M | Evidence | AA intelligence | LLM reasoning |\n")
-	b.WriteString("| ---: | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: |\n")
-	previousScore := 0.0
-	previousRank := 0
-	for i, row := range canonicalRows[:limit] {
-		selected := row.Scores[report.RankingProfile]
-		rank := "—"
-		if selected != nil {
-			if previousRank == 0 || selected.Score != previousScore {
-				previousRank = i + 1
-				previousScore = selected.Score
+	writeCoverageCampaignMarkdown(&b, report.CoverageCampaign)
+	b.WriteString("\n## Evidence\n\n")
+	for _, row := range append(append([]ReportModel(nil), rows...), projected...) {
+		for _, category := range sortedLlamboCategories(row.LlamboScores) {
+			score := row.LlamboScores[category]
+			if score == nil {
+				continue
 			}
-			rank = fmt.Sprintf("%d", previousRank)
+			fmt.Fprintf(&b, "- %s / %s: score %.1f; coverage %.1f%%; trusted coverage %.1f%%; confidence %s; winner %s; stale %t%s\n", row.Name, category, score.Score, 100*score.Coverage, 100*score.TrustedCoverage, score.Confidence, score.WinnerStatus, score.Stale, projectionSuffix(row))
+			for _, contribution := range scoreContributions(score) {
+				fmt.Fprintf(&b, "  - %s / %s: raw %s, percentile %s, frozen population %d, nominal/effective weight %.3f/%.3f, grade %s%s\n", contribution.Family, contribution.Benchmark, formatRaw(contribution.RawScore), formatRaw(contribution.Percentile), contribution.ReferencePopulation, contribution.NominalWeight, contribution.EffectiveWeight, contribution.EvidenceGrade, formatEvidenceProvenance(contribution))
+			}
 		}
-		fmt.Fprintf(&b, "| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |\n",
-			rank, escapePipe(row.Name), escapePipe(row.Organization), fmtAccess(row.Open),
-			fmtExternalScore(row.Scores["overall"]), fmtExternalScore(row.Scores["general"]), fmtExternalScore(row.Scores["coding"]),
-			fmtExternalScore(row.Scores["reasoning"]), fmtExternalScore(row.Scores["agents"]), fmtExternalScore(row.Scores["writing"]),
-			fmtExternalScore(row.Scores["long-context"]), fmtExternalScore(row.Scores["speed"]), fmtExternalScore(row.Scores["value"]),
-			fmtOutputPrice(row), fmtEvidence(selected), fmtAA(row.AA), fmtIndex(row.LLMStats, "reasoning"))
-	}
-
-	if len(projectedRows) > 0 {
-		b.WriteString("\n## Tracked local/OSS projections\n\n")
-		b.WriteString("These rows inherit external evidence from the named upstream model. Their confidence is capped by the projection registry; access and cost are local/projected, not copied upstream API claims.\n\n")
-		fmt.Fprintf(&b, "| Local artifact | Projected from | Selected (%s) | Overall | Coding | Agents | Writing | Cost | Evidence |\n", escapePipe(report.RankingProfile))
-		b.WriteString("| --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- |\n")
-		for _, row := range projectedRows {
-			selected := row.Scores[report.RankingProfile]
-			fmt.Fprintf(&b, "| %s | %s | %s | %s | %s | %s | %s | %s | %s |\n",
-				escapePipe(row.Name), escapePipe(row.Projection.SourceKey),
-				fmtExternalScore(selected),
-				fmtExternalScore(row.Scores["overall"]), fmtExternalScore(row.Scores["coding"]),
-				fmtExternalScore(row.Scores["agents"]), fmtExternalScore(row.Scores["writing"]),
-				fmtOutputPrice(row), fmtEvidence(selected))
+		for _, category := range sortedLlamboCategories(row.LlamboScores) {
+			reason := row.UnresolvedReasons[category]
+			if row.LlamboScores[category] == nil {
+				fmt.Fprintf(&b, "- %s / %s: unresolved — %s%s\n", row.Name, category, reason, projectionSuffix(row))
+			}
 		}
 	}
-
-	b.WriteString("\n## Interpretation\n\n")
-	b.WriteString("Scores are deterministic percentiles of the external source metrics, transformed by the declared policy weights. They are not predictions of retired Llambo tests and do not use local evaluation targets. Missing evidence contributes a neutral 50 and widens the reported evidence interval; it never becomes zero. Coverage, cross-source disagreement, and rank stability remain separate from capability scores. Percentiles are relative rankings, not probabilities of task success. Prefer a task-specific profile over `overall` when the workload is narrow.\n\n")
-	b.WriteString("Sources: [LLM Stats](https://llm-stats.com/) and [Artificial Analysis](https://artificialanalysis.ai/).\n")
+	if report.Validation != nil {
+		b.WriteString("\n## Local validation diagnostic\n\n")
+		b.WriteString("Read-only sealed exact-ID receipt comparison; it does not affect Llambo Scores, ordering, or filters.\n\n")
+		b.WriteString("| Category | Exact pairs | Spearman | Status |\n|---|---:|---:|---|\n")
+		for _, category := range report.Validation.Categories {
+			fmt.Fprintf(&b, "| %s | %d | %s | %s |\n", category.Category, category.SampleSize, formatCorrelation(category.Spearman), category.Status)
+		}
+	}
 	return b.String()
+}
+
+func writeSourceFreshnessMarkdown(b *strings.Builder, sources []SourceStatus, generatedAt time.Time) {
+	for _, source := range sources {
+		if source.Cache == "stale" || (!source.FetchedAt.IsZero() && generatedAt.Sub(source.FetchedAt) > DefaultTTL) {
+			fmt.Fprintf(b, "Warning: source `%s` is stale (%s). It remains scoreable but lowers confidence.\n\n", source.Name, source.FetchedAt.UTC().Format(time.RFC3339))
+		}
+	}
+}
+
+func writeCoverageCampaignMarkdown(b *strings.Builder, campaign *CoverageCampaign) {
+	if campaign == nil {
+		return
+	}
+	fmt.Fprintf(b, "\n## External score coverage\n\nCampaign `%s`: **%s** — %d/%d cells present; %d unresolved.\n\n", campaign.TargetVersion, campaign.Status, campaign.PresentCells, campaign.TotalCells, len(campaign.Unresolved))
+	if len(campaign.Unresolved) > 0 {
+		b.WriteString("| Model | Category | Status | Reason | Last checked |\n|---|---|---|---|---|\n")
+		for _, cell := range campaign.Unresolved {
+			fmt.Fprintf(b, "| %s | %s | %s | %s | %s |\n", markdownCell(cell.ModelKey), markdownCell(cell.Category), markdownCell(cell.Status), markdownCell(cell.Reason), markdownCell(cell.LastCheckedRevision))
+		}
+	}
+	if len(campaign.InactiveOrNew) > 0 {
+		b.WriteString("\nInactive/new models are tracked outside this frozen campaign:\n\n| Model | Reason |\n|---|---|\n")
+		for _, note := range campaign.InactiveOrNew {
+			fmt.Fprintf(b, "| %s | %s |\n", markdownCell(note.Key), markdownCell(note.Reason))
+		}
+	}
+}
+
+func markdownCell(value string) string {
+	value = strings.ReplaceAll(value, "|", "\\|")
+	return strings.ReplaceAll(value, "\n", " ")
+}
+
+func formatCorrelation(value *float64) string {
+	if value == nil {
+		return "—"
+	}
+	return fmt.Sprintf("%.3f", *value)
+}
+
+func formatEvidenceProvenance(e benchmarkEvidence) string {
+	parts := make([]string, 0, 4)
+	if e.SourceVersion != "" {
+		parts = append(parts, "version "+e.SourceVersion)
+	}
+	if e.SourceID != "" {
+		parts = append(parts, "source "+e.SourceID)
+	}
+	if e.SourceRevision != "" {
+		parts = append(parts, "source revision "+e.SourceRevision)
+	}
+	if len(e.Mirrors) > 0 {
+		parts = append(parts, fmt.Sprintf("%d deduplicated mirror(s)", len(e.Mirrors)))
+	}
+	if e.CommitSHA != "" {
+		parts = append(parts, "commit "+e.CommitSHA)
+	}
+	if e.ContentSHA != "" {
+		parts = append(parts, "sha256 "+e.ContentSHA)
+	}
+	if e.Methodology != "" {
+		parts = append(parts, "method "+e.Methodology)
+	}
+	if e.JudgeVersion != "" {
+		parts = append(parts, "judge "+e.JudgeVersion)
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "; " + strings.Join(parts, "; ")
+}
+
+func formatLlambo(score *LlamboScore) string {
+	if score == nil {
+		return "unresolved"
+	}
+	status := ""
+	if score.WinnerStatus != "" {
+		status = "; " + score.WinnerStatus
+	}
+	if score.Stale {
+		status += "; stale"
+	}
+	if score.Estimated {
+		status += "; estimated"
+	}
+	return fmt.Sprintf("%.1f (%s; %.0f%% coverage%s)", score.Score, score.Confidence, 100*score.TrustedCoverage, status)
+}
+
+// formatOverall is retained for decoding and inspecting historical v1
+// snapshots. Active LLAMBO-6 renderers never call it.
+func formatOverall(score *OverallScore) string {
+	if score == nil || score.Score == nil {
+		return "—"
+	}
+	return fmt.Sprintf("%.1f (%s)", *score.Score, score.Confidence)
+}
+
+func scoreContributions(score *LlamboScore) []benchmarkEvidence {
+	if len(score.Contributions) > 0 {
+		return score.Contributions
+	}
+	if score.Primary != nil && score.Primary.Benchmark != "" {
+		return []benchmarkEvidence{*score.Primary}
+	}
+	return nil
+}
+func formatOperational(score *ExternalScore) string {
+	if score == nil {
+		return "—"
+	}
+	return fmt.Sprintf("%.1f", score.Score)
+}
+func formatRaw(value *float64) string {
+	if value == nil {
+		return "—"
+	}
+	return fmt.Sprintf("%.4g", *value)
+}
+func formatAgreement(value *float64) string {
+	if value == nil {
+		return "—"
+	}
+	return fmt.Sprintf("%.1f", *value)
+}
+func projectionSuffix(row ReportModel) string {
+	if row.Projection == nil {
+		return ""
+	}
+	return " (projected)"
+}
+
+func sortedLlamboCategories(scores map[string]*LlamboScore) []string {
+	keys := make([]string, 0, len(scores))
+	for key := range scores {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func partitionProjectionRows(rows []ReportModel) ([]ReportModel, []ReportModel) {
+	canonical, projected := make([]ReportModel, 0, len(rows)), make([]ReportModel, 0)
+	for _, row := range rows {
+		if row.Projection == nil {
+			canonical = append(canonical, row)
+		} else {
+			projected = append(projected, row)
+		}
+	}
+	return canonical, projected
 }
 
 func fmtOutputPrice(row ReportModel) string {
 	if row.Projection != nil {
 		return "local/projected"
 	}
-	var prices []float64
-	if row.LLMStats != nil && row.LLMStats.OutputPrice != nil {
-		prices = appendFinitePrice(prices, *row.LLMStats.OutputPrice)
-	}
-	if row.AA != nil && row.AA.OutputPrice != nil {
-		prices = appendFinitePrice(prices, *row.AA.OutputPrice)
-	}
-	if len(prices) == 0 {
-		return "—"
-	}
-	sort.Float64s(prices)
-	if len(prices) == 1 || prices[0] == prices[len(prices)-1] {
-		return fmtPrice(prices[0])
-	}
-	return fmt.Sprintf("%s–%s", fmtPrice(prices[0]), fmtPrice(prices[len(prices)-1]))
-}
-
-func partitionProjectionRows(rows []ReportModel) (canonical, projected []ReportModel) {
-	canonical = make([]ReportModel, 0, len(rows))
-	projected = make([]ReportModel, 0)
-	for _, row := range rows {
-		if row.Projection != nil {
-			projected = append(projected, row)
-			continue
-		}
-		canonical = append(canonical, row)
-	}
-	return canonical, projected
-}
-
-func appendFinitePrice(prices []float64, price float64) []float64 {
-	if math.IsNaN(price) || math.IsInf(price, 0) || price < 0 {
-		return prices
-	}
-	return append(prices, price)
-}
-
-func fmtPrice(price float64) string {
-	switch {
-	case price == 0:
-		return "$0"
-	case price < .01:
-		return fmt.Sprintf("$%.4f", price)
-	case price < 1:
-		return fmt.Sprintf("$%.3f", price)
-	default:
-		return fmt.Sprintf("$%.2f", price)
-	}
-}
-
-func fmtExternalScore(score *ExternalScore) string {
-	if score == nil {
-		return "—"
-	}
-	return fmt.Sprintf("%.1f", score.Score)
-}
-
-func fmtEvidence(score *ExternalScore) string {
-	if score == nil {
-		return "—"
-	}
-	parts := []string{fmt.Sprintf("%s, %.0f%%", score.Confidence, score.Coverage*100), fmt.Sprintf("%.1f–%.1f", score.Low, score.High)}
-	if score.Disagreement != nil {
-		parts = append(parts, fmt.Sprintf("Δ%.1f", *score.Disagreement))
-	}
-	if score.RankStability != "" {
-		parts = append(parts, fmt.Sprintf("%s ±%d", score.RankStability, score.RankSpread))
-	}
-	return strings.Join(parts, "; ")
-}
-
-func fmtAccess(v *bool) string {
-	if v == nil {
-		return "unknown"
-	}
-	if *v {
-		return "open"
-	}
-	return "closed"
-}
-
-func fmtAA(v *ArtificialMetrics) string {
-	if v == nil || v.Intelligence == nil {
-		return "—"
-	}
-	return fmt.Sprintf("%.1f", *v.Intelligence)
-}
-
-func fmtIndex(v *LLMStatsMetrics, name string) string {
-	if v == nil {
-		return "—"
-	}
-	index, ok := v.Indexes[name]
+	value, ok := maximumOutputPrice(row)
 	if !ok {
 		return "—"
 	}
-	return fmt.Sprintf("%.1f", index.Conservative)
-}
-
-func escapePipe(s string) string { return strings.ReplaceAll(s, "|", "\\|") }
-
-func sortedWeightKeys(weights map[string]float64) []string {
-	keys := make([]string, 0, len(weights))
-	for key := range weights {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
+	return fmt.Sprintf("$%.3g", value)
 }

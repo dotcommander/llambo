@@ -15,7 +15,7 @@ import (
 
 const (
 	maxWritingGenerationAttempts = 1
-	maxWritingJudgmentAttempts   = 3
+	maxWritingJudgmentAttempts   = 1
 )
 
 var ErrWritingRunIncomplete = errors.New("writing evaluation completed with failures")
@@ -82,6 +82,9 @@ func NewWritingRunManifest(inputPath, inputHash string, records []WritingPromptR
 			TimeoutSeconds:          int(timeout / time.Second),
 			MaxRunCostUSD:           maxRunCost,
 			Generation:              adapter.GenerationSettings(),
+			JudgeLayout:             "combined-v1",
+			JudgeThinkingLevel:      "medium",
+			JudgeConcurrency:        1,
 		},
 	}
 	identityJSON, _ := json.Marshal(manifest.Identity)
@@ -109,6 +112,13 @@ func PlanWritingRun(manifest WritingRunManifest, records []WritingPromptRecord, 
 	if manifest.Identity.Iterations < 1 || manifest.Identity.Concurrency < 1 || manifest.Identity.TimeoutSeconds < 1 {
 		return WritingRunPlan{}, fmt.Errorf("iterations, concurrency, and timeout must be positive")
 	}
+	judgeExecution := manifest.Identity.JudgeExecution
+	if judgeExecution == "" {
+		judgeExecution = "sync"
+	}
+	if judgeExecution != "sync" {
+		return WritingRunPlan{}, fmt.Errorf("unsupported writing judge execution %q", judgeExecution)
+	}
 	for _, model := range append(append([]WritingModelSpec(nil), manifest.Identity.Models...), manifest.Identity.Judge) {
 		if model.Provider == "" || model.Model == "" || model.MaxOutputTokens < 1 {
 			return WritingRunPlan{}, fmt.Errorf("writing model identity and max output tokens are required")
@@ -120,6 +130,7 @@ func PlanWritingRun(manifest WritingRunManifest, records []WritingPromptRecord, 
 	plan := WritingRunPlan{
 		BenchmarkID:         adapter.ID(),
 		ScoreIdentity:       adapter.ScoreIdentity(),
+		JudgeExecution:      judgeExecution,
 		PromptCount:         len(records),
 		MaxJudgmentAttempts: maxWritingJudgmentAttempts,
 	}
@@ -132,11 +143,12 @@ func PlanWritingRun(manifest WritingRunManifest, records []WritingPromptRecord, 
 			for iteration := 1; iteration <= manifest.Identity.Iterations; iteration++ {
 				plan.GenerationCalls++
 				plan.WorstCaseCostUSD += estimateWritingCallCost(record.Prompt, model.MaxOutputTokens, model)
-				for _, criterion := range criteria {
-					system, user := BuildWritingJudgePrompt(record, strings.Repeat("x", model.MaxOutputTokens*4), criterion)
-					plan.JudgmentCalls++
-					plan.WorstCaseCostUSD += float64(maxWritingJudgmentAttempts) * estimateWritingCallCost(system+"\n"+user, manifest.Identity.Judge.MaxOutputTokens, manifest.Identity.Judge)
+				system, user, err := BuildCombinedWritingJudgePrompt(record, strings.Repeat("x", model.MaxOutputTokens*4), criteria)
+				if err != nil {
+					return WritingRunPlan{}, err
 				}
+				plan.JudgmentCalls++
+				plan.WorstCaseCostUSD += estimateWritingCallCost(system+"\n"+user, manifest.Identity.Judge.MaxOutputTokens, manifest.Identity.Judge)
 			}
 		}
 	}
@@ -150,6 +162,10 @@ func writingGenerationKey(benchmark, promptID, model string, iteration int) stri
 
 func writingJudgmentKey(generationKey, responseHash, criterionID, judgeID, promptVersion string) string {
 	return "j-" + writingHash(strings.Join([]string{generationKey, responseHash, criterionID, judgeID, promptVersion}, "\x00"))[:24]
+}
+
+func writingCombinedJudgmentKey(generationKey, responseHash, judgeID, promptVersion string) string {
+	return writingJudgmentKey(generationKey, responseHash, "combined", judgeID, promptVersion)
 }
 
 func writingHash(value string) string {

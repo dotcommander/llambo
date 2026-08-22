@@ -1,0 +1,444 @@
+{
+  "schema_version": "writingbench-identity-snapshot-v1",
+  "fetched_at": "2026-08-21T06:05:41.053902Z",
+  "locator": "https://huggingface.co/spaces/WritingBench/WritingBench/resolve/main/score.xlsx",
+  "revision": "d9338ce9b09792ea7167279fee7ccc1910e28c5d",
+  "commit_sha": "c06986e05aea53d625837e67c88944a2234271f1",
+  "content_sha256": "623a59886c6b755724828a5e302df30e93b5aa30cd86bfff09ec512746d4b3d9",
+  "methodology": "WritingBench official score.xlsx Overall",
+  "row_count": 54,
+  "rows": [
+    {
+      "key": "writingbench:qwen-2.5-72b-instruct",
+      "name": "qwen-2.5-72b-instruct",
+      "organization": "Alibaba",
+      "normalized_name": "qwen 2 5 72b instruct",
+      "organization_family": "alibaba",
+      "normalized_identity": "alibaba\u0000qwen 2 5 72b instruct"
+    },
+    {
+      "key": "writingbench:qwen-2.5-7b-instruct",
+      "name": "qwen-2.5-7b-instruct",
+      "organization": "Alibaba",
+      "normalized_name": "qwen 2 5 7b instruct",
+      "organization_family": "alibaba",
+      "normalized_identity": "alibaba\u0000qwen 2 5 7b instruct"
+    },
+    {
+      "key": "writingbench:qwen-max",
+      "name": "qwen-max",
+      "organization": "Alibaba",
+      "normalized_name": "qwen max",
+      "organization_family": "alibaba",
+      "normalized_identity": "alibaba\u0000qwen max"
+    },
+    {
+      "key": "writingbench:qwen3-0.6b-nothinking",
+      "name": "qwen3-0.6b-nothinking",
+      "organization": "Alibaba",
+      "normalized_name": "qwen3 0 6b nothinking",
+      "organization_family": "alibaba",
+      "normalized_identity": "alibaba\u0000qwen3 0 6b nothinking"
+    },
+    {
+      "key": "writingbench:qwen3-0.6b-thinking",
+      "name": "qwen3-0.6b-thinking",
+      "organization": "Alibaba",
+      "normalized_name": "qwen3 0 6b thinking",
+      "organization_family": "alibaba",
+      "normalized_identity": "alibaba\u0000qwen3 0 6b thinking"
+    },
+    {
+      "key": "writingbench:qwen3-235b-a22b-instruct-2507",
+      "name": "qwen3-235b-a22b-instruct-2507",
+      "organization": "Alibaba",
+      "normalized_name": "qwen3 235b a22b instruct 2507",
+      "organization_family": "alibaba",
+      "normalized_identity": "alibaba\u0000qwen3 235b a22b instruct 2507"
+    },
+    {
+      "key": "writingbench:qwen3-235b-a22b-nothinking",
+      "name": "qwen3-235b-a22b-nothinking",
+      "organization": "Alibaba",
+      "normalized_name": "qwen3 235b a22b nothinking",
+      "organization_family": "alibaba",
+      "normalized_identity": "alibaba\u0000qwen3 235b a22b nothinking"
+    },
+    {
+      "key": "writingbench:qwen3-235b-a22b-thinking",
+      "name": "qwen3-235b-a22b-thinking",
+      "organization": "Alibaba",
+      "normalized_name": "qwen3 235b a22b thinking",
+      "organization_family": "alibaba",
+      "normalized_identity": "alibaba\u0000qwen3 235b a22b thinking"
+    },
+    {
+      "key": "writingbench:qwen3-235b-a22b-thinking-2507",
+      "name": "qwen3-235b-a22b-thinking-2507",
+      "organization": "Alibaba",
+      "normalized_name": "qwen3 235b a22b thinking 2507",
+      "organization_family": "alibaba",
+      "normalized_identity": "alibaba\u0000qwen3 235b a22b thinking 2507"
+    },
+    {
+      "key": "writingbench:qwen3-max",
+      "name": "qwen3-max",
+      "organization": "Alibaba",
+      "normalized_name": "qwen3 max",
+      "organization_family": "alibaba",
+      "normalized_identity": "alibaba\u0000qwen3 max"
+    },
+    {
+      "key": "writingbench:qwq-32b",
+      "name": "qwq-32b",
+      "organization": "Alibaba",
+      "normalized_name": "qwq 32b",
+      "organization_family": "alibaba",
+      "normalized_identity": "alibaba\u0000qwq 32b"
+    },
+    {
+      "key": "writingbench:claude-3-5-haiku-20241022",
+      "name": "claude-3-5-haiku-20241022",
+      "organization": "Anthropic",
+      "normalized_name": "claude 3 5 haiku 20241022",
+      "organization_family": "anthropic",
+      "normalized_identity": "anthropic\u0000claude 3 5 haiku 20241022"
+    },
+    {
+      "key": "writingbench:claude-3-5-sonnet-20241022",
+      "name": "claude-3-5-sonnet-20241022",
+      "organization": "Anthropic",
+      "normalized_name": "claude 3 5 sonnet 20241022",
+      "organization_family": "anthropic",
+      "normalized_identity": "anthropic\u0000claude 3 5 sonnet 20241022"
+    },
+    {
+      "key": "writingbench:claude-3-7-sonnet-20250219",
+      "name": "claude-3-7-sonnet-20250219",
+      "organization": "Anthropic",
+      "normalized_name": "claude 3 7 sonnet 20250219",
+      "organization_family": "anthropic",
+      "normalized_identity": "anthropic\u0000claude 3 7 sonnet 20250219"
+    },
+    {
+      "key": "writingbench:claude-3-7-sonnet-20250219-thinking",
+      "name": "claude-3-7-sonnet-20250219-thinking",
+      "organization": "Anthropic",
+      "normalized_name": "claude 3 7 sonnet 20250219 thinking",
+      "organization_family": "anthropic",
+      "normalized_identity": "anthropic\u0000claude 3 7 sonnet 20250219 thinking"
+    },
+    {
+      "key": "writingbench:claude-haiku-4-5-20251001",
+      "name": "claude-haiku-4-5-20251001",
+      "organization": "Anthropic",
+      "normalized_name": "claude haiku 4 5 20251001",
+      "organization_family": "anthropic",
+      "normalized_identity": "anthropic\u0000claude haiku 4 5 20251001"
+    },
+    {
+      "key": "writingbench:claude-opus-4-1-20250805",
+      "name": "claude-opus-4-1-20250805",
+      "organization": "Anthropic",
+      "normalized_name": "claude opus 4 1 20250805",
+      "organization_family": "anthropic",
+      "normalized_identity": "anthropic\u0000claude opus 4 1 20250805"
+    },
+    {
+      "key": "writingbench:claude-opus-4-20250514",
+      "name": "claude-opus-4-20250514",
+      "organization": "Anthropic",
+      "normalized_name": "claude opus 4 20250514",
+      "organization_family": "anthropic",
+      "normalized_identity": "anthropic\u0000claude opus 4 20250514"
+    },
+    {
+      "key": "writingbench:claude-opus-4-20250514-thinking",
+      "name": "claude-opus-4-20250514-thinking",
+      "organization": "Anthropic",
+      "normalized_name": "claude opus 4 20250514 thinking",
+      "organization_family": "anthropic",
+      "normalized_identity": "anthropic\u0000claude opus 4 20250514 thinking"
+    },
+    {
+      "key": "writingbench:claude-opus-4-5-20251101",
+      "name": "claude-opus-4-5-20251101",
+      "organization": "Anthropic",
+      "normalized_name": "claude opus 4 5 20251101",
+      "organization_family": "anthropic",
+      "normalized_identity": "anthropic\u0000claude opus 4 5 20251101"
+    },
+    {
+      "key": "writingbench:claude-sonnet-4-20250514",
+      "name": "claude-sonnet-4-20250514",
+      "organization": "Anthropic",
+      "normalized_name": "claude sonnet 4 20250514",
+      "organization_family": "anthropic",
+      "normalized_identity": "anthropic\u0000claude sonnet 4 20250514"
+    },
+    {
+      "key": "writingbench:claude-sonnet-4-20250514-thinking",
+      "name": "claude-sonnet-4-20250514-thinking",
+      "organization": "Anthropic",
+      "normalized_name": "claude sonnet 4 20250514 thinking",
+      "organization_family": "anthropic",
+      "normalized_identity": "anthropic\u0000claude sonnet 4 20250514 thinking"
+    },
+    {
+      "key": "writingbench:claude-sonnet-4-5-20250929",
+      "name": "claude-sonnet-4-5-20250929",
+      "organization": "Anthropic",
+      "normalized_name": "claude sonnet 4 5 20250929",
+      "organization_family": "anthropic",
+      "normalized_identity": "anthropic\u0000claude sonnet 4 5 20250929"
+    },
+    {
+      "key": "writingbench:nanbeige4-3b-thinking-2511",
+      "name": "nanbeige4-3b-thinking-2511",
+      "organization": "Boss",
+      "normalized_name": "nanbeige4 3b thinking 2511",
+      "organization_family": "boss",
+      "normalized_identity": "boss\u0000nanbeige4 3b thinking 2511"
+    },
+    {
+      "key": "writingbench:doubao-seed-1-6-250615",
+      "name": "doubao-seed-1-6-250615",
+      "organization": "ByteDance",
+      "normalized_name": "doubao seed 1 6 250615",
+      "organization_family": "bytedance",
+      "normalized_identity": "bytedance\u0000doubao seed 1 6 250615"
+    },
+    {
+      "key": "writingbench:doubao-seed-1-6-thinking-250615",
+      "name": "doubao-seed-1-6-thinking-250615",
+      "organization": "ByteDance",
+      "normalized_name": "doubao seed 1 6 thinking 250615",
+      "organization_family": "bytedance",
+      "normalized_identity": "bytedance\u0000doubao seed 1 6 thinking 250615"
+    },
+    {
+      "key": "writingbench:doubao-seed-1-6-thinking-250715",
+      "name": "doubao-seed-1-6-thinking-250715",
+      "organization": "ByteDance",
+      "normalized_name": "doubao seed 1 6 thinking 250715",
+      "organization_family": "bytedance",
+      "normalized_identity": "bytedance\u0000doubao seed 1 6 thinking 250715"
+    },
+    {
+      "key": "writingbench:deepseek-r1",
+      "name": "deepseek-r1",
+      "organization": "DeepSeek",
+      "normalized_name": "deepseek r1",
+      "organization_family": "deepseek",
+      "normalized_identity": "deepseek\u0000deepseek r1"
+    },
+    {
+      "key": "writingbench:deepseek-r1-0528",
+      "name": "deepseek-r1-0528",
+      "organization": "Deepseek",
+      "normalized_name": "deepseek r1 0528",
+      "organization_family": "deepseek",
+      "normalized_identity": "deepseek\u0000deepseek r1 0528"
+    },
+    {
+      "key": "writingbench:deepseek-v3",
+      "name": "deepseek-v3",
+      "organization": "DeepSeek",
+      "normalized_name": "deepseek v3",
+      "organization_family": "deepseek",
+      "normalized_identity": "deepseek\u0000deepseek v3"
+    },
+    {
+      "key": "writingbench:deepseek-v3-250324",
+      "name": "deepseek-v3-250324",
+      "organization": "DeepSeek",
+      "normalized_name": "deepseek v3 250324",
+      "organization_family": "deepseek",
+      "normalized_identity": "deepseek\u0000deepseek v3 250324"
+    },
+    {
+      "key": "writingbench:gemini-1.5-pro",
+      "name": "gemini-1.5-pro",
+      "organization": "Google",
+      "normalized_name": "gemini 1 5 pro",
+      "organization_family": "google",
+      "normalized_identity": "google\u0000gemini 1 5 pro"
+    },
+    {
+      "key": "writingbench:gemini-2.0-flash",
+      "name": "gemini-2.0-flash",
+      "organization": "Google",
+      "normalized_name": "gemini 2 0 flash",
+      "organization_family": "google",
+      "normalized_identity": "google\u0000gemini 2 0 flash"
+    },
+    {
+      "key": "writingbench:gemini-2.5-pro",
+      "name": "gemini-2.5-pro",
+      "organization": "Google",
+      "normalized_name": "gemini 2 5 pro",
+      "organization_family": "google",
+      "normalized_identity": "google\u0000gemini 2 5 pro"
+    },
+    {
+      "key": "writingbench:gemini-3-pro-preview",
+      "name": "gemini-3-pro-preview",
+      "organization": "Google",
+      "normalized_name": "gemini 3 pro preview",
+      "organization_family": "google",
+      "normalized_identity": "google\u0000gemini 3 pro preview"
+    },
+    {
+      "key": "writingbench:llama-3.1-8b-instruct",
+      "name": "llama-3.1-8b-instruct",
+      "organization": "Meta",
+      "normalized_name": "llama 3 1 8b instruct",
+      "organization_family": "meta",
+      "normalized_identity": "meta\u0000llama 3 1 8b instruct"
+    },
+    {
+      "key": "writingbench:llama-3.2-1b-instruct",
+      "name": "llama-3.2-1b-instruct",
+      "organization": "Meta",
+      "normalized_name": "llama 3 2 1b instruct",
+      "organization_family": "meta",
+      "normalized_identity": "meta\u0000llama 3 2 1b instruct"
+    },
+    {
+      "key": "writingbench:llama-3.2-3b-instruct",
+      "name": "llama-3.2-3b-instruct",
+      "organization": "Meta",
+      "normalized_name": "llama 3 2 3b instruct",
+      "organization_family": "meta",
+      "normalized_identity": "meta\u0000llama 3 2 3b instruct"
+    },
+    {
+      "key": "writingbench:llama-3.3-70b-instruct",
+      "name": "llama-3.3-70b-instruct",
+      "organization": "Meta",
+      "normalized_name": "llama 3 3 70b instruct",
+      "organization_family": "meta",
+      "normalized_identity": "meta\u0000llama 3 3 70b instruct"
+    },
+    {
+      "key": "writingbench:llama-4-maverick-17b-128e",
+      "name": "llama-4-maverick-17b-128e",
+      "organization": "Meta",
+      "normalized_name": "llama 4 maverick 17b 128e",
+      "organization_family": "meta",
+      "normalized_identity": "meta\u0000llama 4 maverick 17b 128e"
+    },
+    {
+      "key": "writingbench:llama-4-scout-17b-16e-instruct",
+      "name": "llama-4-scout-17b-16e-instruct",
+      "organization": "Meta",
+      "normalized_name": "llama 4 scout 17b 16e instruct",
+      "organization_family": "meta",
+      "normalized_identity": "meta\u0000llama 4 scout 17b 16e instruct"
+    },
+    {
+      "key": "writingbench:mistral-large-instruct-2411",
+      "name": "mistral-large-instruct-2411",
+      "organization": "Mistral AI",
+      "normalized_name": "mistral large instruct 2411",
+      "organization_family": "mistral",
+      "normalized_identity": "mistral\u0000mistral large instruct 2411"
+    },
+    {
+      "key": "writingbench:kimi-k2-instruct",
+      "name": "kimi-k2-instruct",
+      "organization": "Moonshot",
+      "normalized_name": "kimi k2 instruct",
+      "organization_family": "moonshot",
+      "normalized_identity": "moonshot\u0000kimi k2 instruct"
+    },
+    {
+      "key": "writingbench:chatgpt-4o-latest",
+      "name": "chatgpt-4o-latest",
+      "organization": "OpenAI",
+      "normalized_name": "chatgpt 4o latest",
+      "organization_family": "openai",
+      "normalized_identity": "openai\u0000chatgpt 4o latest"
+    },
+    {
+      "key": "writingbench:gpt-4.1-2025-04-14",
+      "name": "gpt-4.1-2025-04-14",
+      "organization": "OpenAI",
+      "normalized_name": "gpt 4 1 2025 04 14",
+      "organization_family": "openai",
+      "normalized_identity": "openai\u0000gpt 4 1 2025 04 14"
+    },
+    {
+      "key": "writingbench:gpt-4.5-preview",
+      "name": "gpt-4.5-preview",
+      "organization": "OpenAI",
+      "normalized_name": "gpt 4 5 preview",
+      "organization_family": "openai",
+      "normalized_identity": "openai\u0000gpt 4 5 preview"
+    },
+    {
+      "key": "writingbench:gpt-4o-mini",
+      "name": "gpt-4o-mini",
+      "organization": "OpenAI",
+      "normalized_name": "gpt 4o mini",
+      "organization_family": "openai",
+      "normalized_identity": "openai\u0000gpt 4o mini"
+    },
+    {
+      "key": "writingbench:gpt-5-2025-08-07",
+      "name": "gpt-5-2025-08-07",
+      "organization": "OpenAI",
+      "normalized_name": "gpt 5 2025 08 07",
+      "organization_family": "openai",
+      "normalized_identity": "openai\u0000gpt 5 2025 08 07"
+    },
+    {
+      "key": "writingbench:o1-preview-2024-09-12",
+      "name": "o1-preview-2024-09-12",
+      "organization": "OpenAI",
+      "normalized_name": "o1 preview 2024 09 12",
+      "organization_family": "openai",
+      "normalized_identity": "openai\u0000o1 preview 2024 09 12"
+    },
+    {
+      "key": "writingbench:o3-2025-04-16",
+      "name": "o3-2025-04-16",
+      "organization": "OpenAI",
+      "normalized_name": "o3 2025 04 16",
+      "organization_family": "openai",
+      "normalized_identity": "openai\u0000o3 2025 04 16"
+    },
+    {
+      "key": "writingbench:o3-mini",
+      "name": "o3-mini",
+      "organization": "OpenAI",
+      "normalized_name": "o3 mini",
+      "organization_family": "openai",
+      "normalized_identity": "openai\u0000o3 mini"
+    },
+    {
+      "key": "writingbench:o4-mini-2025-04-16",
+      "name": "o4-mini-2025-04-16",
+      "organization": "OpenAI",
+      "normalized_name": "o4 mini 2025 04 16",
+      "organization_family": "openai",
+      "normalized_identity": "openai\u0000o4 mini 2025 04 16"
+    },
+    {
+      "key": "writingbench:grok-3",
+      "name": "grok-3",
+      "organization": "xAI",
+      "normalized_name": "grok 3",
+      "organization_family": "xai",
+      "normalized_identity": "xai\u0000grok 3"
+    },
+    {
+      "key": "writingbench:grok-4-0709",
+      "name": "grok-4-0709",
+      "organization": "xAI",
+      "normalized_name": "grok 4 0709",
+      "organization_family": "xai",
+      "normalized_identity": "xai\u0000grok 4 0709"
+    }
+  ]
+}

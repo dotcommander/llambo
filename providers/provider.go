@@ -24,6 +24,9 @@ type LLMUsage struct {
 	PromptTokens     int
 	CompletionTokens int
 	TotalTokens      int
+	CacheReadTokens  int
+	CacheWriteTokens int
+	ReasoningTokens  int
 	Cost             *LLMCost
 }
 

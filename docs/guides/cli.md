@@ -49,7 +49,7 @@ llambo evals
 llambo evals --refresh --output /tmp/llambo-evals.md
 llambo evals --rank-by coding --format html --output /tmp/llambo-evals-coding.html
 llambo evals --rank-by coding
-llambo evals --min-overall -1 --max-output-price -1
+llambo evals --rank-by coding --min-score 60 --max-output-price -1
 llambo evals --no-omlx
 llambo evals --projections ./eval-projections.json
 llambo evals writing --refresh --format json --output /tmp/llambo-writing.json

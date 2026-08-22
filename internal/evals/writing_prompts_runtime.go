@@ -10,3 +10,12 @@ var writingJudgeSystemPrompt string
 
 //go:embed prompts/judge-user.txt
 var writingJudgeUserTemplate string
+
+//go:embed prompts/judge-combined-system.txt
+var writingCombinedJudgeSystemPrompt string
+
+//go:embed prompts/judge-combined-user.txt
+var writingCombinedJudgeUserTemplate string
+
+//go:embed prompts/judge-combined-schema.json
+var writingCombinedJudgeSchema []byte

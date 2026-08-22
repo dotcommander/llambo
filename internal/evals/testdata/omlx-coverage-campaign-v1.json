@@ -1,0 +1,452 @@
+{
+  "target_version": "omlx-score-coverage-2026-08-21",
+  "targets": [
+    {
+      "key": "LFM2.5-2.6B-4bit",
+      "writing_identity": {
+        "name": "LFM2.5-2.6B",
+        "organization": "Liquid AI"
+      },
+      "cells": {
+        "agents": {
+          "status": "research-pending",
+          "reason": "No eligible official agents cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "coding": {
+          "status": "research-pending",
+          "reason": "No eligible official coding cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "instruction-following": {
+          "status": "research-pending",
+          "reason": "No eligible official instruction cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "long-context": {
+          "status": "research-pending",
+          "reason": "No eligible official long-context cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "reasoning": {
+          "status": "research-pending",
+          "reason": "No eligible official reasoning cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "writing": {
+          "status": "externally-blocked",
+          "reason": "Official WritingBench snapshot has no matching target-family row.",
+          "last_checked_revision": "d9338ce9b09792ea7167279fee7ccc1910e28c5d"
+        }
+      }
+    },
+    {
+      "key": "LFM2.5-2.6B-bf16",
+      "writing_identity": {
+        "name": "LFM2.5-2.6B",
+        "organization": "Liquid AI"
+      },
+      "cells": {
+        "agents": {
+          "status": "research-pending",
+          "reason": "No eligible official agents cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "coding": {
+          "status": "research-pending",
+          "reason": "No eligible official coding cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "instruction-following": {
+          "status": "research-pending",
+          "reason": "No eligible official instruction cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "long-context": {
+          "status": "research-pending",
+          "reason": "No eligible official long-context cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "reasoning": {
+          "status": "research-pending",
+          "reason": "No eligible official reasoning cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "writing": {
+          "status": "externally-blocked",
+          "reason": "Official WritingBench snapshot has no matching target-family row.",
+          "last_checked_revision": "d9338ce9b09792ea7167279fee7ccc1910e28c5d"
+        }
+      }
+    },
+    {
+      "key": "LFM2.5-2.6B-oQ4",
+      "writing_identity": {
+        "name": "LFM2.5-2.6B",
+        "organization": "Liquid AI"
+      },
+      "cells": {
+        "agents": {
+          "status": "research-pending",
+          "reason": "No eligible official agents cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "coding": {
+          "status": "research-pending",
+          "reason": "No eligible official coding cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "instruction-following": {
+          "status": "research-pending",
+          "reason": "No eligible official instruction cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "long-context": {
+          "status": "research-pending",
+          "reason": "No eligible official long-context cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "reasoning": {
+          "status": "research-pending",
+          "reason": "No eligible official reasoning cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "writing": {
+          "status": "externally-blocked",
+          "reason": "Official WritingBench snapshot has no matching target-family row.",
+          "last_checked_revision": "d9338ce9b09792ea7167279fee7ccc1910e28c5d"
+        }
+      }
+    },
+    {
+      "key": "LFM2.5-8B-A1B-MLX-4bit",
+      "writing_identity": {
+        "name": "LFM2.5-8B-A1B",
+        "organization": "Liquid AI"
+      },
+      "cells": {
+        "agents": {
+          "status": "research-pending",
+          "reason": "No eligible official agents cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "coding": {
+          "status": "research-pending",
+          "reason": "No eligible official coding cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "instruction-following": {
+          "status": "research-pending",
+          "reason": "No eligible official instruction cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "long-context": {
+          "status": "research-pending",
+          "reason": "No eligible official long-context cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "reasoning": {
+          "status": "research-pending",
+          "reason": "No eligible official reasoning cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "writing": {
+          "status": "externally-blocked",
+          "reason": "Official WritingBench snapshot has no matching target-family row.",
+          "last_checked_revision": "d9338ce9b09792ea7167279fee7ccc1910e28c5d"
+        }
+      }
+    },
+    {
+      "key": "LFM2.5-VL-3B-MLX-4bit",
+      "writing_identity": {
+        "name": "LFM2.5-VL-3B",
+        "organization": "Liquid AI"
+      },
+      "cells": {
+        "agents": {
+          "status": "research-pending",
+          "reason": "No eligible official agents cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "coding": {
+          "status": "research-pending",
+          "reason": "No eligible official coding cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "instruction-following": {
+          "status": "research-pending",
+          "reason": "No eligible official instruction cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "long-context": {
+          "status": "research-pending",
+          "reason": "No eligible official long-context cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "reasoning": {
+          "status": "research-pending",
+          "reason": "No eligible official reasoning cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "writing": {
+          "status": "externally-blocked",
+          "reason": "Official WritingBench snapshot has no matching target-family row.",
+          "last_checked_revision": "d9338ce9b09792ea7167279fee7ccc1910e28c5d"
+        }
+      }
+    },
+    {
+      "key": "Qwen3.6-27B-MLX-4bit",
+      "writing_identity": {
+        "name": "Qwen3.6-27B",
+        "organization": "Alibaba"
+      },
+      "cells": {
+        "agents": {
+          "status": "research-pending",
+          "reason": "No eligible official agents cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "coding": {
+          "status": "research-pending",
+          "reason": "No eligible official coding cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "instruction-following": {
+          "status": "research-pending",
+          "reason": "No eligible official instruction cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "long-context": {
+          "status": "research-pending",
+          "reason": "No eligible official long-context cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "reasoning": {
+          "status": "research-pending",
+          "reason": "No eligible official reasoning cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "writing": {
+          "status": "externally-blocked",
+          "reason": "Official WritingBench snapshot has no matching target-family row.",
+          "last_checked_revision": "d9338ce9b09792ea7167279fee7ccc1910e28c5d"
+        }
+      }
+    },
+    {
+      "key": "Qwen3.6-35B-A3B-oQ4-fp16-mtp",
+      "writing_identity": {
+        "name": "Qwen3.6-35B-A3B",
+        "organization": "Alibaba"
+      },
+      "cells": {
+        "agents": {
+          "status": "research-pending",
+          "reason": "No eligible official agents cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "coding": {
+          "status": "research-pending",
+          "reason": "No eligible official coding cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "instruction-following": {
+          "status": "research-pending",
+          "reason": "No eligible official instruction cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "long-context": {
+          "status": "research-pending",
+          "reason": "No eligible official long-context cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "reasoning": {
+          "status": "research-pending",
+          "reason": "No eligible official reasoning cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "writing": {
+          "status": "externally-blocked",
+          "reason": "Official WritingBench snapshot has no matching target-family row.",
+          "last_checked_revision": "d9338ce9b09792ea7167279fee7ccc1910e28c5d"
+        }
+      }
+    },
+    {
+      "key": "gemma-4-26B-A4B-it-heretic-4bit",
+      "writing_identity": {
+        "name": "Gemma-4-26B-A4B-IT",
+        "organization": "Google"
+      },
+      "cells": {
+        "agents": {
+          "status": "research-pending",
+          "reason": "No eligible official agents cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "coding": {
+          "status": "research-pending",
+          "reason": "No eligible official coding cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "instruction-following": {
+          "status": "research-pending",
+          "reason": "No eligible official instruction cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "long-context": {
+          "status": "research-pending",
+          "reason": "No eligible official long-context cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "reasoning": {
+          "status": "research-pending",
+          "reason": "No eligible official reasoning cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "writing": {
+          "status": "externally-blocked",
+          "reason": "Official WritingBench snapshot has no matching target-family row.",
+          "last_checked_revision": "d9338ce9b09792ea7167279fee7ccc1910e28c5d"
+        }
+      }
+    },
+    {
+      "key": "gpt-oss-20b-MXFP4-Q8",
+      "writing_identity": {
+        "name": "gpt-oss-20b",
+        "organization": "OpenAI"
+      },
+      "cells": {
+        "agents": {
+          "status": "research-pending",
+          "reason": "No eligible official agents cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "coding": {
+          "status": "research-pending",
+          "reason": "No eligible official coding cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "instruction-following": {
+          "status": "research-pending",
+          "reason": "No eligible official instruction cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "long-context": {
+          "status": "research-pending",
+          "reason": "No eligible official long-context cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "reasoning": {
+          "status": "research-pending",
+          "reason": "No eligible official reasoning cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "writing": {
+          "status": "externally-blocked",
+          "reason": "Official WritingBench snapshot has no matching target-family row.",
+          "last_checked_revision": "d9338ce9b09792ea7167279fee7ccc1910e28c5d"
+        }
+      }
+    },
+    {
+      "key": "granite-4.1-8b-nvfp4",
+      "writing_identity": {
+        "name": "Granite-4.1-8B",
+        "organization": "IBM"
+      },
+      "cells": {
+        "agents": {
+          "status": "research-pending",
+          "reason": "No eligible official agents cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "coding": {
+          "status": "research-pending",
+          "reason": "No eligible official coding cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "instruction-following": {
+          "status": "research-pending",
+          "reason": "No eligible official instruction cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "long-context": {
+          "status": "research-pending",
+          "reason": "No eligible official long-context cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "reasoning": {
+          "status": "research-pending",
+          "reason": "No eligible official reasoning cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "writing": {
+          "status": "externally-blocked",
+          "reason": "Official WritingBench snapshot has no matching target-family row.",
+          "last_checked_revision": "d9338ce9b09792ea7167279fee7ccc1910e28c5d"
+        }
+      }
+    },
+    {
+      "key": "Qwen-AgentWorld-35B-A3B-oQ4-MLX",
+      "writing_identity": {
+        "name": "Qwen3.6-35B-A3B",
+        "organization": "Alibaba"
+      },
+      "cells": {
+        "agents": {
+          "status": "research-pending",
+          "reason": "No eligible official agents cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "coding": {
+          "status": "research-pending",
+          "reason": "No eligible official coding cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "instruction-following": {
+          "status": "research-pending",
+          "reason": "No eligible official instruction cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "long-context": {
+          "status": "research-pending",
+          "reason": "No eligible official long-context cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "reasoning": {
+          "status": "research-pending",
+          "reason": "No eligible official reasoning cohort is frozen.",
+          "last_checked_revision": "LLAMBO-2"
+        },
+        "writing": {
+          "status": "externally-blocked",
+          "reason": "Official WritingBench snapshot has no matching target-family row.",
+          "last_checked_revision": "d9338ce9b09792ea7167279fee7ccc1910e28c5d"
+        }
+      }
+    }
+  ],
+  "inactive_or_new": [
+    {
+      "key": "Qwen3.8-27B-4bit",
+      "reason": "Added after the frozen 11-target campaign; requires a separate manifest."
+    },
+    {
+      "key": "Qwen3.8-27B-MLX-4bit",
+      "reason": "Added after the frozen 11-target campaign; requires a separate manifest."
+    },
+    {
+      "key": "Qwen3.8-27B-oQ4e-mtp",
+      "reason": "Added after the frozen 11-target campaign; requires a separate manifest."
+    },
+    {
+      "key": "gemma-4-31B-it-uncensored-heretic-4bit",
+      "reason": "Added after the frozen 11-target campaign; requires a separate manifest."
+    }
+  ]
+}

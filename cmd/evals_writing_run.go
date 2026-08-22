@@ -16,23 +16,25 @@ import (
 )
 
 type evalsWritingRunCommand struct {
-	Input          string        `required:"" help:"Sealed writing prompt JSONL exported by llambo"`
-	Benchmark      string        `required:"" enum:"writingbench,eqbench-creative-v3" help:"Benchmark adapter"`
-	Model          string        `required:"" help:"One exact generation target as provider/model"`
-	JudgeModel     string        `name:"judge-model" required:"" help:"Exact judge target as provider/model"`
-	OutputDir      string        `name:"output-dir" required:"" help:"Explicit run directory for the manifest, ledgers, reports, and receipt"`
-	CampaignLedger string        `name:"campaign-ledger" required:"" help:"Shared campaign budget ledger JSON"`
-	PricingFile    string        `name:"pricing-file" help:"Run-scoped explicit pricing CSV overlay; does not mutate the live catalog"`
-	Iterations     int           `help:"Iterations: WritingBench requires 1; EQ-Bench defaults to 3 (1..3)"`
-	Concurrency    int           `default:"2" help:"Global worker limit (1..8; provider worker limits also apply)"`
-	Timeout        time.Duration `default:"5m" help:"Per-call timeout"`
-	JudgeTokens    int           `name:"judge-max-output-tokens" default:"8192" help:"Maximum judge output tokens (1..65536)"`
-	MaxRunCost     float64       `name:"max-run-cost" help:"Required positive worst-case USD budget with --execute"`
-	Execute        bool          `help:"Allow provider-backed generation and judging; omitted means provider-free dry run"`
+	Input           string        `required:"" help:"Sealed writing prompt JSONL exported by llambo"`
+	Benchmark       string        `required:"" enum:"writingbench,eqbench-creative-v3" help:"Benchmark adapter"`
+	Model           string        `required:"" help:"One exact generation target as provider/model"`
+	JudgeModel      string        `name:"judge-model" required:"" help:"Exact judge target as provider/model"`
+	OutputDir       string        `name:"output-dir" required:"" help:"Explicit run directory for the manifest, ledgers, reports, and receipt"`
+	CampaignLedger  string        `name:"campaign-ledger" required:"" help:"Shared campaign budget ledger JSON"`
+	PricingFile     string        `name:"pricing-file" help:"Run-scoped explicit pricing CSV overlay; does not mutate the live catalog"`
+	Iterations      int           `help:"Iterations: WritingBench requires 1; EQ-Bench defaults to 3 (1..3)"`
+	Concurrency     int           `default:"2" help:"Global worker limit (1..8; provider worker limits also apply)"`
+	Timeout         time.Duration `default:"5m" help:"Per-call timeout"`
+	JudgeTokens     int           `name:"judge-max-output-tokens" default:"8192" help:"Maximum judge output tokens (1..65536)"`
+	MaxRunCost      float64       `name:"max-run-cost" help:"Required positive worst-case USD budget with --execute"`
+	MaxCampaignCost float64       `name:"max-campaign-cost" help:"Total campaign USD cap; required with --execute"`
+	LocalUseCase    string        `name:"local-use-case" help:"Specific reason external benchmark evidence is insufficient; required for local targets with --execute"`
+	Execute         bool          `help:"Allow provider-backed generation and judging; omitted means provider-free dry run"`
 }
 
 func (c *evalsWritingRunCommand) Run(parent *evalsCommand, io *commandIO) error {
-	for _, name := range []string{"refresh", "format", "output", "export-prompts", "prompt-source", "prompt-limit", "discover-open-models", "discover-limit", "allow-partial", "rank-by", "offline", "projections", "min-overall", "max-output-price", "omlx-url", "no-omlx"} {
+	for _, name := range []string{"refresh", "refresh-official-model-cards", "format", "output", "export-prompts", "prompt-source", "prompt-limit", "discover-open-models", "discover-limit", "allow-partial", "rank-by", "offline", "projections", "min-score", "validation-receipts", "max-output-price", "omlx-url", "no-omlx"} {
 		if io.FlagChanged(name) {
 			return fmt.Errorf("--%s is not supported with evals writing run", name)
 		}
@@ -89,6 +91,8 @@ func runWritingEvaluationCommand(cmd *commandIO, options *evalsWritingRunCommand
 		return err
 	}
 	manifest := evals.NewWritingRunManifest(options.Input, inputHash, records, adapter, models, judge, iterations, options.Concurrency, options.Timeout, options.MaxRunCost, time.Now())
+	manifest.Identity.LocalUseCase = strings.TrimSpace(options.LocalUseCase)
+	manifest.RunID = writingManifestRunID(manifest)
 	plan, err := evals.PlanWritingRun(manifest, records, adapter)
 	if err != nil {
 		return err
@@ -99,10 +103,19 @@ func runWritingEvaluationCommand(cmd *commandIO, options *evalsWritingRunCommand
 	if options.MaxRunCost <= 0 {
 		return fmt.Errorf("--execute requires a positive --max-run-cost")
 	}
+	if options.MaxCampaignCost <= 0 {
+		return fmt.Errorf("--execute requires a positive --max-campaign-cost")
+	}
+	if (strings.HasPrefix(options.Model, "omlx/") || strings.HasPrefix(options.JudgeModel, "omlx/")) && strings.TrimSpace(options.LocalUseCase) == "" {
+		return fmt.Errorf("local execution requires a specific --local-use-case")
+	}
 	if plan.WorstCaseCostUSD > options.MaxRunCost+1e-12 {
 		return fmt.Errorf("worst-case run estimate $%.6f exceeds --max-run-cost $%.6f", plan.WorstCaseCostUSD, options.MaxRunCost)
 	}
-	ledger, err := evals.OpenCampaignLedger(options.CampaignLedger, 10)
+	if err := verifyWritingOMLXModels(cmd.Context(), manifest, configs); err != nil {
+		return err
+	}
+	ledger, err := evals.OpenCampaignLedger(options.CampaignLedger, options.MaxCampaignCost)
 	if err != nil {
 		return err
 	}
@@ -136,25 +149,38 @@ func runWritingEvaluationCommand(cmd *commandIO, options *evalsWritingRunCommand
 	if err := errors.Join(runErr, closeErr, artifactErr, ledgerErr); err != nil {
 		return err
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "Writing evaluation %s: %s\nReport: %s\nObserved cost: $%.6f\n", receipt.RunID, receipt.Status, filepath.Join(options.OutputDir, "report.md"), receipt.Report.ObservedCostUSD)
+	fmt.Fprintf(cmd.OutOrStdout(), "Writing evaluation %s: %s\nJudge execution: %s\nReport: %s\nObserved cost: $%.6f\n", receipt.RunID, receipt.Status, plan.JudgeExecution, filepath.Join(options.OutputDir, "report.md"), receipt.Report.ObservedCostUSD)
 	return runErr
+}
+
+type writingCommandExecutor interface {
+	evals.WritingExecutor
+	Close()
+}
+
+func writingManifestRunID(manifest evals.WritingRunManifest) string {
+	return evals.WritingRunIdentityHash(manifest)[:16]
 }
 
 func writingObservedCost(manifest evals.WritingRunManifest, generations []evals.WritingGenerationRecord, judgments []evals.WritingJudgmentRecord) *float64 {
 	observed := 0.0
 	for _, record := range generations {
 		observed += record.Usage.CostUSD
-		if !record.Usage.Known && writingModelIsPaid(manifest.Identity.Models, record.Provider, record.Model) {
+		if (!record.Usage.Known || writingUsageCostUnknown(record.Usage)) && writingModelIsPaid(manifest.Identity.Models, record.Provider, record.Model) {
 			return nil
 		}
 	}
 	for _, record := range judgments {
 		observed += record.Usage.CostUSD
-		if !record.Usage.Known && (manifest.Identity.Judge.InputPer1M > 0 || manifest.Identity.Judge.OutputPer1M > 0) {
+		if (!record.Usage.Known || writingUsageCostUnknown(record.Usage)) && (manifest.Identity.Judge.InputPer1M > 0 || manifest.Identity.Judge.OutputPer1M > 0) {
 			return nil
 		}
 	}
 	return &observed
+}
+
+func writingUsageCostUnknown(usage evals.WritingUsage) bool {
+	return !usage.CostKnown && (usage.CacheReadTokens > 0 || usage.CacheWriteTokens > 0)
 }
 
 func writingModelIsPaid(models []evals.WritingModelSpec, provider, model string) bool {
@@ -266,8 +292,12 @@ func resolveWritingModels(modelSelectors []string, judgeSelector string, judgeMa
 		} else if maxTokens <= 0 {
 			maxTokens = 4096
 		}
-		spec := evals.WritingModelSpec{Provider: target.Provider, Model: target.Model, InputPer1M: target.InputPer1M, OutputPer1M: target.OutputPer1M, MaxOutputTokens: maxTokens, Workers: target.Config.GetWorkers()}
-		cfg := target.Config
+		evidenceClass, evidenceSource, evidenceNote, err := writingExternalEvidence(cat, target.Provider, target.Model)
+		if err != nil {
+			return evals.WritingModelSpec{}, providers.Config{}, err
+		}
+		spec := evals.WritingModelSpec{Provider: target.Provider, Model: target.Model, InputPer1M: target.InputPer1M, OutputPer1M: target.OutputPer1M, MaxOutputTokens: maxTokens, Workers: target.Config.GetWorkers(), EvidenceClass: evidenceClass, EvidenceSource: evidenceSource, EvidenceNote: evidenceNote}
+		cfg := writingRuntimeConfig(target.Config, spec)
 		cfg.MaxTokens = maxTokens
 		return spec, cfg, nil
 	}
@@ -292,6 +322,34 @@ func resolveWritingModels(modelSelectors []string, judgeSelector string, judgeMa
 	}
 	configs[judge.ID()] = judgeConfig
 	return models, judge, configs, nil
+}
+
+func writingRuntimeConfig(cfg providers.Config, model evals.WritingModelSpec) providers.Config {
+	cfg.InputCostPM = model.InputPer1M
+	cfg.OutputCostPM = model.OutputPer1M
+	return cfg
+}
+
+func writingExternalEvidence(cat *catalog.Catalog, provider, model string) (string, string, string, error) {
+	entry := modelEntryForTarget(cat, provider, model)
+	if task, evidence, ok := catalog.BestQualityEvidence(entry); ok {
+		if writingExternalQualitySource(evidence.Source) {
+			return "exact", evidence.Source, task, nil
+		}
+	}
+	projection, ok, err := evals.ReviewedProjectionForArtifact(model)
+	if err != nil {
+		return "", "", "", fmt.Errorf("load external projection evidence: %w", err)
+	}
+	if ok {
+		return "projection", projection.SourceKey, projection.Confidence + ": " + projection.Basis, nil
+	}
+	return "missing", "", "no reviewed exact or projected evidence", nil
+}
+
+func writingExternalQualitySource(source string) bool {
+	source = strings.ToLower(strings.TrimSpace(source))
+	return strings.Contains(source, "llm_stats") || strings.Contains(source, "artificial_analysis")
 }
 
 func exactWritingModelSelector(selector string) bool {

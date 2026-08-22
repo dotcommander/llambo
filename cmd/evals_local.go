@@ -15,25 +15,30 @@ import (
 // change. It is kept here so local evaluation mechanics remain independently
 // testable and dry runs never contact a provider.
 type evalsLocalRunCommand struct {
-	Suite          evals.LocalSuite `required:"" enum:"tools,asr,tts,embeddings,acceleration" help:"Task-specific local evaluation suite"`
-	Input          string           `required:"" help:"Sealed local evaluation manifest JSON"`
-	Model          string           `required:"" help:"Exact target as provider/model"`
-	OutputDir      string           `name:"output-dir" required:"" help:"New run directory"`
-	CampaignLedger string           `name:"campaign-ledger" required:"" help:"Shared campaign budget ledger JSON"`
-	Limit          int              `default:"1" help:"Maximum sealed cases"`
-	Concurrency    int              `default:"1" help:"Worker limit; local runs require one"`
-	Timeout        time.Duration    `default:"10m" help:"Per-call timeout"`
-	MaxRunCost     float64          `name:"max-run-cost" help:"Worst-case USD run cap; required with --execute"`
-	ReferenceModel string           `name:"reference-model" help:"Exact baseline model for paired suites"`
-	FeatureModel   string           `name:"feature-model" help:"Exact helper model for acceleration"`
-	OMLXSettings   string           `name:"omlx-settings" help:"Exact model_settings.json path for an approved acceleration run"`
-	ExclusiveOMLX  bool             `name:"exclusive-omlx-settings-approved" help:"Confirm the separately approved exclusive OMLX settings window"`
-	InputPer1M     float64          `name:"input-per-1m" help:"Known USD input price per million tokens"`
-	OutputPer1M    float64          `name:"output-per-1m" help:"Known USD output price per million tokens"`
-	Execute        bool             `help:"Allow provider-backed calls; default is a provider-free dry run"`
+	Suite           evals.LocalSuite `required:"" enum:"tools,asr,tts,embeddings,acceleration" help:"Task-specific local evaluation suite"`
+	Input           string           `required:"" help:"Sealed local evaluation manifest JSON"`
+	Model           string           `required:"" help:"Exact target as provider/model"`
+	OutputDir       string           `name:"output-dir" required:"" help:"New run directory"`
+	CampaignLedger  string           `name:"campaign-ledger" required:"" help:"Shared campaign budget ledger JSON"`
+	Limit           int              `default:"1" help:"Maximum sealed cases"`
+	Concurrency     int              `default:"1" help:"Worker limit; local runs require one"`
+	Timeout         time.Duration    `default:"10m" help:"Per-call timeout"`
+	MaxRunCost      float64          `name:"max-run-cost" help:"Worst-case USD run cap; required with --execute"`
+	MaxCampaignCost float64          `name:"max-campaign-cost" help:"Total campaign USD cap; required with --execute"`
+	LocalUseCase    string           `name:"local-use-case" help:"Specific reason external benchmark evidence is insufficient; required with --execute"`
+	ReferenceModel  string           `name:"reference-model" help:"Exact baseline model for paired suites"`
+	FeatureModel    string           `name:"feature-model" help:"Exact helper model for acceleration"`
+	OMLXSettings    string           `name:"omlx-settings" help:"Exact model_settings.json path for an approved acceleration run"`
+	ExclusiveOMLX   bool             `name:"exclusive-omlx-settings-approved" help:"Confirm the separately approved exclusive OMLX settings window"`
+	InputPer1M      float64          `name:"input-per-1m" help:"Known USD input price per million tokens"`
+	OutputPer1M     float64          `name:"output-per-1m" help:"Known USD output price per million tokens"`
+	Execute         bool             `help:"Allow provider-backed calls; default is a provider-free dry run"`
 }
 
 func (c *evalsLocalRunCommand) Run(parent *evalsCommand, io *commandIO) error {
+	if io.FlagChanged("refresh-official-model-cards") {
+		return fmt.Errorf("--refresh-official-model-cards is not supported with evals local run")
+	}
 	// Kong binds the inherited evals --limit flag on the parent command. Copy
 	// its explicitly positive value into the leaf runner before planning.
 	if parent.Limit > 0 {
@@ -76,6 +81,9 @@ func runLocalEvaluationCommandAt(io *commandIO, o *evalsLocalRunCommand, omlxURL
 	if err != nil {
 		return err
 	}
+	if strings.TrimSpace(o.LocalUseCase) != "" {
+		evals.SealLocalRunUseCase(&m, o.LocalUseCase)
+	}
 	plan, err := evals.PlanLocalRun(m, in)
 	if err != nil {
 		return err
@@ -90,6 +98,12 @@ func runLocalEvaluationCommandAt(io *commandIO, o *evalsLocalRunCommand, omlxURL
 	}
 	if o.MaxRunCost <= 0 {
 		return fmt.Errorf("--execute requires positive --max-run-cost")
+	}
+	if o.MaxCampaignCost <= 0 {
+		return fmt.Errorf("--execute requires positive --max-campaign-cost")
+	}
+	if strings.TrimSpace(o.LocalUseCase) == "" {
+		return fmt.Errorf("--execute requires a specific --local-use-case")
 	}
 	if plan.WorstCaseCostUSD > o.MaxRunCost+1e-12 {
 		return fmt.Errorf("worst-case run estimate $%.6f exceeds --max-run-cost $%.6f", plan.WorstCaseCostUSD, o.MaxRunCost)
@@ -130,7 +144,7 @@ func runLocalEvaluationCommandAt(io *commandIO, o *evalsLocalRunCommand, omlxURL
 		return err
 	}
 	defer closeExecutor()
-	ledger, err := evals.OpenCampaignLedger(o.CampaignLedger, 10)
+	ledger, err := evals.OpenCampaignLedger(o.CampaignLedger, o.MaxCampaignCost)
 	if err != nil {
 		return err
 	}

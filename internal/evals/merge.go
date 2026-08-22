@@ -1,6 +1,7 @@
 package evals
 
 import (
+	"fmt"
 	"strings"
 	"unicode"
 )
@@ -93,6 +94,167 @@ func mergeModels(llm, aa []Model) []Model {
 		out = append(out, model)
 	}
 	return out
+}
+
+// mergeWritingBenchModels only attaches source-native scores when both sides
+// have one conservative identity match. Ambiguous or unmatched rows stay out
+// of the capability report instead of guessing an identity.
+func mergeWritingBenchModels(models, writingBench []Model) []Model {
+	byIdentity := make(map[string][]int, len(models))
+	for i, model := range models {
+		if identity, ok := externalIdentity(model); ok {
+			byIdentity[identity] = append(byIdentity[identity], i)
+		}
+	}
+	benchByIdentity := make(map[string][]Model, len(writingBench))
+	for _, model := range writingBench {
+		if identity, ok := externalIdentity(model); ok {
+			benchByIdentity[identity] = append(benchByIdentity[identity], model)
+		}
+	}
+	for identity, benchmarks := range benchByIdentity {
+		indices := byIdentity[identity]
+		if len(indices) != 1 || len(benchmarks) != 1 {
+			continue
+		}
+		if models[indices[0]].Benchmarks == nil {
+			models[indices[0]].Benchmarks = make(map[string]BenchmarkResult)
+		}
+		for name, result := range benchmarks[0].Benchmarks {
+			result.Identity = benchmarkIdentityMatch(models[indices[0]], benchmarks[0])
+			storeBenchmarkResult(models[indices[0]].Benchmarks, name, result)
+		}
+	}
+	return models
+}
+
+// mergeEQBenchCreativeModels permits name-only matching only when the source
+// omits organization and both source and destination have exactly one normalized
+// name. This is the narrowest safe reconciliation for the official CSV.
+func mergeEQBenchCreativeModels(models, eqBench []Model) []Model {
+	byIdentity := make(map[string][]int, len(models))
+	byName := make(map[string][]int, len(models))
+	for i, model := range models {
+		if identity, ok := externalIdentity(model); ok {
+			byIdentity[identity] = append(byIdentity[identity], i)
+		}
+		if name := normalizeIdentityText(model.Name, true); name != "" {
+			byName[name] = append(byName[name], i)
+		}
+	}
+	benchIdentity := make(map[string][]Model, len(eqBench))
+	benchName := make(map[string][]Model, len(eqBench))
+	for _, model := range eqBench {
+		if identity, ok := externalIdentity(model); ok {
+			benchIdentity[identity] = append(benchIdentity[identity], model)
+		}
+		if name := normalizeIdentityText(model.Name, true); name != "" {
+			benchName[name] = append(benchName[name], model)
+		}
+	}
+	for identity, rows := range benchIdentity {
+		if indices := byIdentity[identity]; len(rows) == 1 && len(indices) == 1 {
+			attachBenchmark(&models[indices[0]], rows[0], benchmarkIdentityMatch(models[indices[0]], rows[0]))
+		}
+	}
+	for name, rows := range benchName {
+		if rows[0].Organization != "" || len(rows) != 1 || len(byName[name]) != 1 {
+			continue
+		}
+		if existing := models[byName[name][0]].Benchmarks; existing != nil {
+			if _, ok := existing["eqbench-creative-v3"]; ok {
+				continue
+			}
+		}
+		attachBenchmark(&models[byName[name][0]], rows[0], IdentityMatchNormalized)
+	}
+	return models
+}
+
+func attachBenchmark(target *Model, source Model, identity IdentityMatch) {
+	if target.Benchmarks == nil {
+		target.Benchmarks = make(map[string]BenchmarkResult)
+	}
+	for name, result := range source.Benchmarks {
+		result.Identity = identity
+		storeBenchmarkResult(target.Benchmarks, name, result)
+	}
+}
+
+func storeBenchmarkResult(results map[string]BenchmarkResult, benchmark string, candidate BenchmarkResult) {
+	current, exists := results[benchmark]
+	if !exists {
+		results[benchmark] = candidate
+		return
+	}
+	currentRank, candidateRank := sourceAuthority(current.SourceClass), sourceAuthority(candidate.SourceClass)
+	if candidateRank > currentRank {
+		candidate.Mirrors = append(candidate.Mirrors, benchmarkMirror(current))
+		results[benchmark] = candidate
+		return
+	}
+	if candidateRank < currentRank {
+		current.Mirrors = append(current.Mirrors, benchmarkMirror(candidate))
+		results[benchmark] = current
+		return
+	}
+	if benchmarkValuesConflict(current, candidate) {
+		current.Quarantined = true
+		current.Conflict = fmt.Sprintf("equal-authority conflict between %s and %s", benchmarkSourceLabel(current), benchmarkSourceLabel(candidate))
+		current.Mirrors = append(current.Mirrors, benchmarkMirror(candidate))
+		results[benchmark] = current
+		return
+	}
+	// Deterministic precedence within an equal-authority mirror set keeps one
+	// authoritative value while retaining the other as corroborating provenance.
+	if benchmarkSourceLabel(candidate) < benchmarkSourceLabel(current) {
+		candidate.Mirrors = append(candidate.Mirrors, benchmarkMirror(current))
+		results[benchmark] = candidate
+		return
+	}
+	current.Mirrors = append(current.Mirrors, benchmarkMirror(candidate))
+	results[benchmark] = current
+}
+
+func sourceAuthority(class string) int {
+	switch SourceClass(class) {
+	case SourceOwnerResult:
+		return 4
+	case SourceFirstPartyResult, SourceOfficialJudgment:
+		return 3
+	case SourceAggregatorResult:
+		return 2
+	default:
+		return 1
+	}
+}
+
+func benchmarkValuesConflict(left, right BenchmarkResult) bool {
+	if left.Score == nil || right.Score == nil {
+		return left.Score != right.Score
+	}
+	return *left.Score != *right.Score || left.Version != right.Version || left.Direction != right.Direction
+}
+
+func benchmarkMirror(result BenchmarkResult) BenchmarkMirror {
+	return BenchmarkMirror{SourceID: result.SourceID, SourceClass: result.SourceClass, SourceRevision: result.SourceRevision, ContentSHA: result.ContentSHA, Locator: result.Locator}
+}
+
+func benchmarkSourceLabel(result BenchmarkResult) string {
+	if strings.TrimSpace(result.SourceID) != "" {
+		return result.SourceID
+	}
+	if strings.TrimSpace(result.Locator) != "" {
+		return result.Locator
+	}
+	return strings.TrimSpace(result.SourceClass)
+}
+
+func benchmarkIdentityMatch(target, source Model) IdentityMatch {
+	if strings.TrimSpace(target.Name) == strings.TrimSpace(source.Name) && strings.TrimSpace(target.Organization) == strings.TrimSpace(source.Organization) {
+		return IdentityMatchExact
+	}
+	return IdentityMatchNormalized
 }
 
 func externalIdentity(model Model) (string, bool) {

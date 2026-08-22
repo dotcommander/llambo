@@ -5,26 +5,26 @@ import (
 	"testing"
 )
 
-func TestApplyMinimumOverall(t *testing.T) {
+func TestApplyMinimumCategoryScore(t *testing.T) {
 	report := Report{Models: []ReportModel{
-		{Key: "high", Scores: map[string]*ExternalScore{"overall": {Score: 80}}},
-		{Key: "boundary", Scores: map[string]*ExternalScore{"overall": {Score: 40}}},
-		{Key: "low", Scores: map[string]*ExternalScore{"overall": {Score: 39.9}}},
-		{Key: "missing", Scores: map[string]*ExternalScore{"overall": nil}},
-		{Key: "local", Projection: &ProjectionInfo{SourceKey: "high"}, Scores: map[string]*ExternalScore{"overall": {Score: 43.5}}},
+		{Key: "high", LlamboScores: map[string]*LlamboScore{"coding": {Score: 80}}},
+		{Key: "boundary", LlamboScores: map[string]*LlamboScore{"coding": {Score: 40}}},
+		{Key: "low", LlamboScores: map[string]*LlamboScore{"coding": {Score: 39.9}}},
+		{Key: "missing", LlamboScores: map[string]*LlamboScore{"coding": nil}},
+		{Key: "local", Projection: &ProjectionInfo{SourceKey: "high"}, LlamboScores: map[string]*LlamboScore{"coding": {Score: 43.5}}},
 	}}
 
-	ApplyMinimumOverall(&report, 40)
+	ApplyCategoryEligibility(&report, "coding", 40, -1)
 
 	if got := modelKeys(report.Models); strings.Join(got, ",") != "high,boundary,local" {
 		t.Fatalf("unexpected eligible models: %v", got)
 	}
-	want := EligibilityDiagnostics{MinOverall: 40, MaxOutputPrice: -1, InputModels: 5, IncludedModels: 3, ExcludedModels: 2, MissingOverall: 1, BelowOverall: 1}
+	want := EligibilityDiagnostics{MinScore: 40, ScoreCategory: "coding", MaxOutputPrice: -1, InputModels: 5, IncludedModels: 3, ExcludedModels: 2, MissingPrimary: 1, BelowScore: 1}
 	if report.Eligibility == nil || *report.Eligibility != want {
 		t.Fatalf("unexpected eligibility diagnostics: %#v", report.Eligibility)
 	}
 	markdown := RenderMarkdown(report, 0)
-	if !strings.Contains(markdown, "Eligibility filters: overall >= 40.0; 3 of 5 models included") {
+	if !strings.Contains(markdown, "Eligibility filters: coding >= 40.0; 3 of 5 models included") {
 		t.Fatalf("eligibility filter missing from Markdown:\n%s", markdown)
 	}
 }
@@ -40,7 +40,7 @@ func TestApplyEligibilityMaximumKnownOutputPrice(t *testing.T) {
 		{Key: "local", Projection: &ProjectionInfo{SourceKey: "expensive"}, Scores: map[string]*ExternalScore{"overall": {Score: 80}}, AA: &ArtificialMetrics{OutputPrice: price(50)}},
 	}}
 
-	ApplyEligibility(&report, 40, 10)
+	ApplyCategoryEligibility(&report, "coding", -1, 10)
 
 	if got := strings.Join(modelKeys(report.Models), ","); got != "cheap,boundary,unknown,local" {
 		t.Fatalf("unexpected price-eligible models: %s", got)
@@ -50,9 +50,9 @@ func TestApplyEligibilityMaximumKnownOutputPrice(t *testing.T) {
 	}
 }
 
-func TestApplyMinimumOverallNegativeDisablesFilter(t *testing.T) {
+func TestApplyMinimumScoreNegativeDisablesFilter(t *testing.T) {
 	report := Report{Models: []ReportModel{{Key: "missing", Scores: map[string]*ExternalScore{}}}}
-	ApplyMinimumOverall(&report, -1)
+	ApplyCategoryEligibility(&report, "coding", -1, -1)
 	if len(report.Models) != 1 || report.Eligibility != nil {
 		t.Fatalf("negative threshold did not disable filter: %#v", report)
 	}
@@ -60,7 +60,7 @@ func TestApplyMinimumOverallNegativeDisablesFilter(t *testing.T) {
 
 func TestApplyEligibilityNegativeLimitsDisableAllFilters(t *testing.T) {
 	report := Report{Models: []ReportModel{{Key: "missing", Scores: map[string]*ExternalScore{}}}}
-	ApplyEligibility(&report, -1, -1)
+	ApplyCategoryEligibility(&report, "matrix", -1, -1)
 	if len(report.Models) != 1 || report.Eligibility != nil {
 		t.Fatalf("negative limits did not disable filters: %#v", report)
 	}

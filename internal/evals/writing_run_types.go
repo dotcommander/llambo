@@ -7,8 +7,8 @@ import (
 )
 
 const (
-	WritingRunSchemaVersion        = 1
-	WritingJudgePromptVersion      = "local-writing-judge-v2"
+	WritingRunSchemaVersion        = 2
+	WritingJudgePromptVersion      = "local-writing-judge-combined-v1"
 	WritingGenerationPromptVersion = "local-writing-generation-v1"
 )
 
@@ -17,8 +17,13 @@ type WritingModelSpec struct {
 	Model           string  `json:"model"`
 	InputPer1M      float64 `json:"input_per_1m"`
 	OutputPer1M     float64 `json:"output_per_1m"`
+	CacheReadPer1M  float64 `json:"cache_read_per_1m,omitempty"`
+	CacheWritePer1M float64 `json:"cache_write_per_1m,omitempty"`
 	MaxOutputTokens int     `json:"max_output_tokens"`
 	Workers         int     `json:"workers"`
+	EvidenceClass   string  `json:"external_evidence_class,omitempty"`
+	EvidenceSource  string  `json:"external_evidence_source,omitempty"`
+	EvidenceNote    string  `json:"external_evidence_note,omitempty"`
 }
 
 func (m WritingModelSpec) ID() string { return m.Provider + "/" + m.Model }
@@ -42,6 +47,11 @@ type WritingRunIdentity struct {
 	TimeoutSeconds          int                       `json:"timeout_seconds"`
 	MaxRunCostUSD           float64                   `json:"max_run_cost_usd"`
 	Generation              WritingGenerationSettings `json:"generation"`
+	JudgeExecution          string                    `json:"judge_execution,omitempty"`
+	JudgeLayout             string                    `json:"judge_layout,omitempty"`
+	JudgeThinkingLevel      string                    `json:"judge_thinking_level,omitempty"`
+	JudgeConcurrency        int                       `json:"judge_concurrency,omitempty"`
+	LocalUseCase            string                    `json:"local_use_case,omitempty"`
 }
 
 type WritingRunManifest struct {
@@ -56,8 +66,19 @@ type WritingUsage struct {
 	PromptTokens     int     `json:"prompt_tokens,omitempty"`
 	CompletionTokens int     `json:"completion_tokens,omitempty"`
 	TotalTokens      int     `json:"total_tokens,omitempty"`
+	CacheReadTokens  int     `json:"cache_read_tokens,omitempty"`
+	CacheWriteTokens int     `json:"cache_write_tokens,omitempty"`
+	ReasoningTokens  int     `json:"reasoning_tokens,omitempty"`
 	CostUSD          float64 `json:"cost_usd,omitempty"`
 	Known            bool    `json:"known,omitempty"`
+	CostKnown        bool    `json:"cost_known,omitempty"`
+}
+
+type WritingCriterionJudgment struct {
+	CriterionID string `json:"criterion_id"`
+	Criterion   string `json:"criterion"`
+	Score       int    `json:"score"`
+	Reason      string `json:"reason"`
 }
 
 // WritingDispatchIntent is fsynced before each provider call. If a process
@@ -72,51 +93,54 @@ type WritingDispatchIntent struct {
 }
 
 type WritingGenerationRecord struct {
-	Key            string       `json:"key"`
-	Attempt        int          `json:"attempt"`
-	BenchmarkID    string       `json:"benchmark_id"`
-	PromptID       string       `json:"prompt_id"`
-	Domain1        string       `json:"domain1,omitempty"`
-	Domain2        string       `json:"domain2,omitempty"`
-	Provider       string       `json:"provider"`
-	Model          string       `json:"model"`
-	Iteration      int          `json:"iteration"`
-	StartedAt      time.Time    `json:"started_at"`
-	CompletedAt    time.Time    `json:"completed_at"`
-	LatencyMS      int64        `json:"latency_ms"`
-	Status         string       `json:"status"`
-	Error          string       `json:"error,omitempty"`
-	Content        string       `json:"content,omitempty"`
-	ContentSHA256  string       `json:"content_sha256,omitempty"`
-	ActualProvider string       `json:"actual_provider,omitempty"`
-	ActualModel    string       `json:"actual_model,omitempty"`
-	FinishReason   string       `json:"finish_reason,omitempty"`
-	Route          string       `json:"route,omitempty"`
-	Usage          WritingUsage `json:"usage,omitzero"`
+	Key               string       `json:"key"`
+	Attempt           int          `json:"attempt"`
+	BenchmarkID       string       `json:"benchmark_id"`
+	PromptID          string       `json:"prompt_id"`
+	Domain1           string       `json:"domain1,omitempty"`
+	Domain2           string       `json:"domain2,omitempty"`
+	Provider          string       `json:"provider"`
+	Model             string       `json:"model"`
+	Iteration         int          `json:"iteration"`
+	StartedAt         time.Time    `json:"started_at"`
+	CompletedAt       time.Time    `json:"completed_at"`
+	LatencyMS         int64        `json:"latency_ms"`
+	Status            string       `json:"status"`
+	Error             string       `json:"error,omitempty"`
+	Content           string       `json:"content,omitempty"`
+	ContentSHA256     string       `json:"content_sha256,omitempty"`
+	ActualProvider    string       `json:"actual_provider,omitempty"`
+	ActualModel       string       `json:"actual_model,omitempty"`
+	FinishReason      string       `json:"finish_reason,omitempty"`
+	Route             string       `json:"route,omitempty"`
+	Usage             WritingUsage `json:"usage,omitzero"`
+	AccountingCostUSD float64      `json:"accounting_cost_usd,omitempty"`
 }
 
 type WritingJudgmentRecord struct {
-	Key            string       `json:"key"`
-	Attempt        int          `json:"attempt"`
-	GenerationKey  string       `json:"generation_key"`
-	ResponseSHA256 string       `json:"response_sha256"`
-	CriterionID    string       `json:"criterion_id"`
-	Criterion      string       `json:"criterion"`
-	JudgeProvider  string       `json:"judge_provider"`
-	JudgeModel     string       `json:"judge_model"`
-	StartedAt      time.Time    `json:"started_at"`
-	CompletedAt    time.Time    `json:"completed_at"`
-	LatencyMS      int64        `json:"latency_ms"`
-	Status         string       `json:"status"`
-	Error          string       `json:"error,omitempty"`
-	RawResponse    string       `json:"raw_response,omitempty"`
-	Score          int          `json:"score,omitempty"`
-	Reason         string       `json:"reason,omitempty"`
-	ActualProvider string       `json:"actual_provider,omitempty"`
-	ActualModel    string       `json:"actual_model,omitempty"`
-	FinishReason   string       `json:"finish_reason,omitempty"`
-	Route          string       `json:"route,omitempty"`
-	Usage          WritingUsage `json:"usage,omitzero"`
+	Key               string                     `json:"key"`
+	Attempt           int                        `json:"attempt"`
+	GenerationKey     string                     `json:"generation_key"`
+	ResponseSHA256    string                     `json:"response_sha256"`
+	CriterionID       string                     `json:"criterion_id"`
+	Criterion         string                     `json:"criterion"`
+	JudgeProvider     string                     `json:"judge_provider"`
+	JudgeModel        string                     `json:"judge_model"`
+	StartedAt         time.Time                  `json:"started_at"`
+	CompletedAt       time.Time                  `json:"completed_at"`
+	LatencyMS         int64                      `json:"latency_ms"`
+	Status            string                     `json:"status"`
+	Error             string                     `json:"error,omitempty"`
+	RawResponse       string                     `json:"raw_response,omitempty"`
+	Score             int                        `json:"score,omitempty"`
+	Reason            string                     `json:"reason,omitempty"`
+	ActualProvider    string                     `json:"actual_provider,omitempty"`
+	ActualModel       string                     `json:"actual_model,omitempty"`
+	FinishReason      string                     `json:"finish_reason,omitempty"`
+	Route             string                     `json:"route,omitempty"`
+	Usage             WritingUsage               `json:"usage,omitzero"`
+	AccountingCostUSD float64                    `json:"accounting_cost_usd,omitempty"`
+	Results           []WritingCriterionJudgment `json:"results,omitempty"`
 }
 
 type WritingExecutionCall struct {
@@ -149,6 +173,7 @@ type WritingCriterion struct {
 type WritingRunPlan struct {
 	BenchmarkID            string  `json:"benchmark_id"`
 	ScoreIdentity          string  `json:"score_identity"`
+	JudgeExecution         string  `json:"judge_execution"`
 	PromptCount            int     `json:"prompt_count"`
 	GenerationCalls        int     `json:"generation_calls"`
 	JudgmentCalls          int     `json:"judgment_calls"`

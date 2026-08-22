@@ -1,0 +1,18 @@
+{
+  "fetched_at": "2026-08-21T06:11:58Z",
+  "url": "https://huggingface.co/LiquidAI/LFM2.5-8B-A1B/raw/b9aebfcbe28b6cb374042f495d733037550ab146/README.md",
+  "version": "b9aebfcbe28b6cb374042f495d733037550ab146",
+  "commit_sha": "b9aebfcbe28b6cb374042f495d733037550ab146",
+  "content_sha256": "10950a8975d3f43c4b51a74def690603ac82be6c53a2d8eb509e6e31177b6efc",
+  "methodology": "LiquidAI official LFM2.5-8B-A1B model-card Knowledge and instruction following comparison table; IFEval column",
+  "models": [
+    {"key":"ifeval:lfm2.5-8b-a1b","name":"LFM2.5-8B-A1B","organization":"Liquid AI","benchmarks":{"ifeval-official":{"score":91.84,"version":"b9aebfcbe28b6cb374042f495d733037550ab146","url":"https://huggingface.co/LiquidAI/LFM2.5-8B-A1B/raw/b9aebfcbe28b6cb374042f495d733037550ab146/README.md","commit_sha":"b9aebfcbe28b6cb374042f495d733037550ab146","content_sha256":"10950a8975d3f43c4b51a74def690603ac82be6c53a2d8eb509e6e31177b6efc","methodology":"Official model-card IFEval","fetched_at":"2026-08-21T06:11:58Z"}}},
+    {"key":"ifeval:granite-4.0-h-tiny","name":"Granite-4.0-H-Tiny","organization":"IBM","benchmarks":{"ifeval-official":{"score":82.23}}},
+    {"key":"ifeval:qwen3.5-4b","name":"Qwen3.5-4B","organization":"Alibaba","benchmarks":{"ifeval-official":{"score":87.80}}},
+    {"key":"ifeval:qwen3-30b-a3b-thinking-2507","name":"Qwen3-30B-A3B-Thinking-2507","organization":"Alibaba","benchmarks":{"ifeval-official":{"score":90.82}}},
+    {"key":"ifeval:gemma-4-e2b-it","name":"Gemma-4-E2B-IT","organization":"Google","benchmarks":{"ifeval-official":{"score":82.93}}},
+    {"key":"ifeval:gemma-4-e4b-it","name":"Gemma-4-E4B-IT","organization":"Google","benchmarks":{"ifeval-official":{"score":87.74}}},
+    {"key":"ifeval:gemma-4-26b-a4b-it","name":"Gemma-4-26B-A4B-IT","organization":"Google","benchmarks":{"ifeval-official":{"score":91.40}}},
+    {"key":"ifeval:gpt-oss-20b","name":"gpt-oss-20b","organization":"OpenAI","benchmarks":{"ifeval-official":{"score":86.73}}}
+  ]
+}

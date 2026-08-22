@@ -83,7 +83,7 @@ func PlanLocalRun(m LocalRunManifest, in LocalInputManifest) (LocalRunPlan, erro
 		plan.WorstCaseProviderCalls = 2*m.Identity.Limit + 2 // off/on per case plus one excluded warm-up per condition
 	}
 	for _, raw := range in.Cases[:m.Identity.Limit] {
-		callCost := float64(len([]rune(string(raw)))/4)*m.Identity.Pricing.InputPer1M/1_000_000 + float64(m.Identity.MaxOutputTokens)*m.Identity.Pricing.OutputPer1M/1_000_000
+		callCost := float64(len(raw))*m.Identity.Pricing.InputPer1M/1_000_000 + float64(m.Identity.MaxOutputTokens)*m.Identity.Pricing.OutputPer1M/1_000_000
 		if in.Suite == LocalSuiteAcceleration {
 			callCost *= 2
 		}
@@ -91,7 +91,7 @@ func PlanLocalRun(m LocalRunManifest, in LocalInputManifest) (LocalRunPlan, erro
 	}
 	if in.Suite == LocalSuiteAcceleration {
 		raw := in.Cases[0]
-		plan.WorstCaseCostUSD += 2 * (float64(len([]rune(string(raw)))/4)*m.Identity.Pricing.InputPer1M/1_000_000 + float64(m.Identity.MaxOutputTokens)*m.Identity.Pricing.OutputPer1M/1_000_000)
+		plan.WorstCaseCostUSD += 2 * (float64(len(raw))*m.Identity.Pricing.InputPer1M/1_000_000 + float64(m.Identity.MaxOutputTokens)*m.Identity.Pricing.OutputPer1M/1_000_000)
 	}
 	return plan, nil
 }

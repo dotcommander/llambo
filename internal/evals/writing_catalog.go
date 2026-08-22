@@ -20,7 +20,7 @@ const (
 var markdownLinkRE = regexp.MustCompile(`\[([^\]]+)\]\([^)]*\)`)
 
 // WritingCatalog describes writing-focused evaluation sources without mixing
-// their source-native scores into the LES-1 report.
+// their source-native scores into the LLAMBO-2 report.
 type WritingCatalog struct {
 	GeneratedAt          time.Time                    `json:"generated_at"`
 	RegistryVersion      int                          `json:"registry_version"`
@@ -117,7 +117,7 @@ func DefaultWritingCatalog(now time.Time) WritingCatalog {
 				PromptURL:     "https://github.com/lechmazur/writing/tree/main/prompts_wc",
 				PromptFormat:  "text brief files",
 				RunMode:       "Generate a matched short story for each brief, then use pairwise judging against the published comparison protocol.",
-				RunNotes:      "Pin the prompt revision, generation settings, and evaluator roster. Do not compare source-native scores with LES-1.",
+				RunNotes:      "Pin the prompt revision, generation settings, and evaluator roster. Do not compare local source-native scores with LLAMBO-2.",
 				Focus:         "Creative short stories under matched constrained briefs",
 				Scoring:       "Pairwise Thurstone comparison with estimated win chance and uncertainty range",
 				ScrapeMethod:  "Markdown leaderboard and public prompt/story artifacts",

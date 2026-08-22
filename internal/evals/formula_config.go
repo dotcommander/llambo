@@ -1,77 +1,110 @@
 package evals
 
+import (
+	"sort"
+	"strings"
+)
+
 type metricSpec struct {
 	name      string
 	dimension string
 	source    string
-	weight    float64
 	higher    bool
 	value     func(Model) (*float64, bool)
 }
 
-type profileSpec struct {
-	name    string
-	weights map[string]float64
+type benchmarkSpec struct {
+	benchmark string
+	name      string
+	reference string
+	value     func(Model) (*float64, bool)
 }
 
-var externalMetrics = []metricSpec{
-	{name: "aa_intelligence_general", dimension: "general", source: "artificial_analysis", weight: .60, higher: true, value: aaValue(func(v *ArtificialMetrics) *float64 { return v.Intelligence })},
-	{name: "aa_coding_general", dimension: "general", source: "artificial_analysis", weight: .20, higher: true, value: aaValue(func(v *ArtificialMetrics) *float64 { return v.Coding })},
-	{name: "aa_agentic_general", dimension: "general", source: "artificial_analysis", weight: .20, higher: true, value: aaValue(func(v *ArtificialMetrics) *float64 { return v.Agentic })},
-	{name: "llm_general_index", dimension: "general", source: "llm_stats", weight: .50, higher: true, value: llmIndexValue("general")},
-	{name: "llm_reasoning_general", dimension: "general", source: "llm_stats", weight: .25, higher: true, value: llmIndexValue("reasoning")},
-	{name: "llm_instruction_general", dimension: "general", source: "llm_stats", weight: .15, higher: true, value: llmIndexValue("instruction_following")},
-	{name: "llm_factuality_general", dimension: "general", source: "llm_stats", weight: .10, higher: true, value: llmIndexValue("factuality")},
-	{name: "aa_coding_index", dimension: "coding", source: "artificial_analysis", weight: .60, higher: true, value: aaValue(func(v *ArtificialMetrics) *float64 { return v.Coding })},
-	{name: "aa_intelligence_coding", dimension: "coding", source: "artificial_analysis", weight: .25, higher: true, value: aaValue(func(v *ArtificialMetrics) *float64 { return v.Intelligence })},
-	{name: "aa_agentic_coding", dimension: "coding", source: "artificial_analysis", weight: .15, higher: true, value: aaValue(func(v *ArtificialMetrics) *float64 { return v.Agentic })},
-	{name: "llm_code_index", dimension: "coding", source: "llm_stats", weight: .50, higher: true, value: llmIndexValue("code", "coding")},
-	{name: "llm_swe_bench_verified", dimension: "coding", source: "llm_stats", weight: .30, higher: true, value: llmValue(func(v *LLMStatsMetrics) *float64 { return v.SWEVerified })},
-	{name: "llm_swe_bench_pro", dimension: "coding", source: "llm_stats", weight: .20, higher: true, value: llmValue(func(v *LLMStatsMetrics) *float64 { return v.SWEPro })},
-	{name: "aa_intelligence_reasoning", dimension: "reasoning", source: "artificial_analysis", weight: .55, higher: true, value: aaValue(func(v *ArtificialMetrics) *float64 { return v.Intelligence })},
-	{name: "aa_coding_reasoning", dimension: "reasoning", source: "artificial_analysis", weight: .25, higher: true, value: aaValue(func(v *ArtificialMetrics) *float64 { return v.Coding })},
-	{name: "aa_agentic_reasoning", dimension: "reasoning", source: "artificial_analysis", weight: .20, higher: true, value: aaValue(func(v *ArtificialMetrics) *float64 { return v.Agentic })},
-	{name: "llm_reasoning_index", dimension: "reasoning", source: "llm_stats", weight: .60, higher: true, value: llmIndexValue("reasoning")},
-	{name: "llm_general_reasoning", dimension: "reasoning", source: "llm_stats", weight: .20, higher: true, value: llmIndexValue("general")},
-	{name: "llm_instruction_reasoning", dimension: "reasoning", source: "llm_stats", weight: .10, higher: true, value: llmIndexValue("instruction_following")},
-	{name: "llm_structured_reasoning", dimension: "reasoning", source: "llm_stats", weight: .10, higher: true, value: llmIndexValue("structured_output")},
-	{name: "aa_agentic_index", dimension: "agents", source: "artificial_analysis", weight: .60, higher: true, value: aaValue(func(v *ArtificialMetrics) *float64 { return v.Agentic })},
-	{name: "aa_intelligence_agents", dimension: "agents", source: "artificial_analysis", weight: .25, higher: true, value: aaValue(func(v *ArtificialMetrics) *float64 { return v.Intelligence })},
-	{name: "aa_coding_agents", dimension: "agents", source: "artificial_analysis", weight: .15, higher: true, value: aaValue(func(v *ArtificialMetrics) *float64 { return v.Coding })},
-	{name: "llm_agents_index", dimension: "agents", source: "llm_stats", weight: .45, higher: true, value: llmIndexValue("agents")},
-	{name: "llm_tool_calling_index", dimension: "agents", source: "llm_stats", weight: .35, higher: true, value: llmIndexValue("tool_calling")},
-	{name: "llm_reasoning_agents", dimension: "agents", source: "llm_stats", weight: .10, higher: true, value: llmIndexValue("reasoning")},
-	{name: "llm_structured_agents", dimension: "agents", source: "llm_stats", weight: .10, higher: true, value: llmIndexValue("structured_output")},
-	{name: "llm_writing_index", dimension: "writing", source: "llm_stats", weight: .35, higher: true, value: llmIndexValue("writing")},
-	{name: "llm_creativity_writing", dimension: "writing", source: "llm_stats", weight: .25, higher: true, value: llmIndexValue("creativity")},
-	{name: "llm_language_writing", dimension: "writing", source: "llm_stats", weight: .20, higher: true, value: llmIndexValue("language")},
-	{name: "llm_communication_index", dimension: "writing", source: "llm_stats", weight: .15, higher: true, value: llmIndexValue("communication")},
-	{name: "llm_instruction_writing", dimension: "writing", source: "llm_stats", weight: .05, higher: true, value: llmIndexValue("instruction_following")},
-	{name: "llm_long_context_index", dimension: "long-context", source: "llm_stats", weight: .50, higher: true, value: llmIndexValue("long_context")},
-	{name: "llm_instruction_long", dimension: "long-context", source: "llm_stats", weight: .20, higher: true, value: llmIndexValue("instruction_following")},
-	{name: "llm_factuality_long", dimension: "long-context", source: "llm_stats", weight: .15, higher: true, value: llmIndexValue("factuality")},
-	{name: "llm_grounding_long", dimension: "long-context", source: "llm_stats", weight: .15, higher: true, value: llmIndexValue("grounding")},
-	{name: "aa_output_speed", dimension: "speed", source: "artificial_analysis", weight: .50, higher: true, value: aaValue(func(v *ArtificialMetrics) *float64 { return v.OutputTokensPS })},
-	{name: "aa_time_to_first_token", dimension: "speed", source: "artificial_analysis", weight: .20, higher: false, value: aaValue(func(v *ArtificialMetrics) *float64 { return v.TTFTSeconds })},
-	{name: "aa_end_to_end_time", dimension: "speed", source: "artificial_analysis", weight: .30, higher: false, value: aaValue(func(v *ArtificialMetrics) *float64 { return v.E2ESeconds })},
-	{name: "llm_output_speed", dimension: "speed", source: "llm_stats", weight: 1, higher: true, value: llmValue(func(v *LLMStatsMetrics) *float64 { return v.Throughput })},
-	{name: "aa_input_price", dimension: "price", source: "artificial_analysis", weight: .40, higher: false, value: aaValue(func(v *ArtificialMetrics) *float64 { return v.InputPrice })},
-	{name: "aa_output_price", dimension: "price", source: "artificial_analysis", weight: .60, higher: false, value: aaValue(func(v *ArtificialMetrics) *float64 { return v.OutputPrice })},
-	{name: "llm_input_price", dimension: "price", source: "llm_stats", weight: .40, higher: false, value: llmValue(func(v *LLMStatsMetrics) *float64 { return v.InputPrice })},
-	{name: "llm_output_price", dimension: "price", source: "llm_stats", weight: .60, higher: false, value: llmValue(func(v *LLMStatsMetrics) *float64 { return v.OutputPrice })},
+type categorySpec struct {
+	name     string
+	families []benchmarkFamily
+	// Retained for LLAMBO-2 reference decoding and rollback diagnostics.
+	primaries []benchmarkSpec
+	checks    []benchmarkSpec
 }
 
-var externalProfiles = []profileSpec{
-	{name: "overall", weights: map[string]float64{"general": .20, "coding": .25, "reasoning": .20, "agents": .20, "writing": .10, "long-context": .05}},
-	{name: "value", weights: map[string]float64{"overall": .75, "price": .25}},
+type benchmarkFamily struct {
+	name       string
+	benchmarks []string
 }
 
-var dimensionNames = []string{"general", "coding", "reasoning", "agents", "writing", "long-context", "speed", "price"}
+// categorySpecs is the reviewed LLAMBO-6 portfolio. A family represents one
+// independent capability signal, so every represented family has equal weight.
+// Benchmarks within a family are alternatives, not additional votes. This keeps
+// mirrored or near-duplicate leaderboards from dominating a category.
+var categorySpecs = []categorySpec{
+	{name: "agents", families: []benchmarkFamily{{"tool-api-orchestration", []string{"bfcl-v4", "toolsandbox", "tau2-bench", "tau3-bench", "tau-bench-retail", "toolbench"}}, {"environment-task-completion", []string{"gaia", "webarena", "osworld"}}, {"computer-use", []string{"assistantbench", "webarena-lite"}}}},
+	{name: "coding", families: []benchmarkFamily{{"repository-editing", []string{"swe-bench-verified", "swe-bench-pro", "aider"}}, {"live-synthesis", []string{"livecodebench", "livecodebench-v6"}}, {"function-program-generation", []string{"humaneval", "mbpp", "bigcodebench"}}, {"scientific-coding", []string{"scicode", "multipl-e"}}}},
+	{name: "instruction-following", families: []benchmarkFamily{{"verifiable-constraints", []string{"ifeval-official", "ifeval", "ifbench"}}, {"structured-adherence", []string{"multi-if", "ifstruct"}}, {"preference-adherence", []string{"arena-hard", "alpacaeval"}}}},
+	{name: "long-context", families: []benchmarkFamily{{"retrieval-stress", []string{"ruler", "niah"}}, {"multi-document-reasoning", []string{"longbench", "longbench-v2"}}, {"persistent-state", []string{"babilong"}}}},
+	{name: "reasoning", families: []benchmarkFamily{{"advanced-science", []string{"gpqa"}}, {"competition-mathematics", []string{"aime", "aime-versioned", "math"}}, {"abstraction", []string{"arc"}}, {"broad-knowledge", []string{"mmlu-pro"}}}},
+	{name: "writing", families: []benchmarkFamily{{"rubric-long-form", []string{"writingbench"}}, {"fiction-narrative", []string{"eqbench-creative-v3", "fiction-live"}}, {"broad-generation", []string{"biggen"}}, {"human-preference", []string{"lmsys-writing"}}, {"style-calibration", []string{"aidanbench"}}}},
+}
+
+func benchmarkDetailAverageValue(benchmark string, keys ...string) func(Model) (*float64, bool) {
+	return func(model Model) (*float64, bool) {
+		result, ok := model.Benchmarks[benchmark]
+		if !ok || len(keys) == 0 {
+			return nil, false
+		}
+		total := 0.0
+		for _, key := range keys {
+			value, present := result.Details[key]
+			if !present {
+				return nil, false
+			}
+			total += value
+		}
+		value := total / float64(len(keys))
+		return &value, true
+	}
+}
+
+func benchmarkDetailPrefixAverageValue(benchmark string, prefixes ...string) func(Model) (*float64, bool) {
+	return func(model Model) (*float64, bool) {
+		result, ok := model.Benchmarks[benchmark]
+		if !ok {
+			return nil, false
+		}
+		matching := make([]string, 0, len(result.Details))
+		for key := range result.Details {
+			for _, prefix := range prefixes {
+				if strings.HasPrefix(key, prefix) {
+					matching = append(matching, key)
+					break
+				}
+			}
+		}
+		if len(matching) == 0 {
+			return nil, false
+		}
+		sort.Strings(matching)
+		total := 0.0
+		for _, key := range matching {
+			total += result.Details[key]
+		}
+		value := total / float64(len(matching))
+		return &value, true
+	}
+}
+
+var operationalMetrics = []metricSpec{
+	{name: "aa_output_speed", dimension: "speed", source: "artificial_analysis", higher: true, value: aaValue(func(v *ArtificialMetrics) *float64 { return v.OutputTokensPS })},
+	{name: "llm_output_speed", dimension: "speed", source: "llm_stats", higher: true, value: llmValue(func(v *LLMStatsMetrics) *float64 { return v.Throughput })},
+	{name: "aa_output_price", dimension: "price", source: "artificial_analysis", higher: false, value: aaValue(func(v *ArtificialMetrics) *float64 { return v.OutputPrice })},
+	{name: "llm_output_price", dimension: "price", source: "llm_stats", higher: false, value: llmValue(func(v *LLMStatsMetrics) *float64 { return v.OutputPrice })},
+}
+
+var externalMetrics = operationalMetrics
 
 func SupportedRankingProfiles() []string {
-	return []string{"overall", "general", "coding", "reasoning", "agents", "writing", "long-context", "speed", "value", "price"}
+	return []string{"agents", "coding", "instruction-following", "long-context", "matrix", "price", "reasoning", "speed", "writing"}
 }
-
 func isSupportedProfile(name string) bool {
 	for _, candidate := range SupportedRankingProfiles() {
 		if name == candidate {
@@ -80,15 +113,15 @@ func isSupportedProfile(name string) bool {
 	}
 	return false
 }
-
-func profileWeights(name string) map[string]float64 {
-	for _, profile := range externalProfiles {
-		if profile.name == name {
-			return profile.weights
+func isCapabilityCategory(name string) bool {
+	for _, category := range categorySpecs {
+		if name == category.name {
+			return true
 		}
 	}
-	return map[string]float64{name: 1}
+	return false
 }
+func IsCapabilityCategory(name string) bool { return isCapabilityCategory(name) }
 
 func aaValue(getter func(*ArtificialMetrics) *float64) func(Model) (*float64, bool) {
 	return func(model Model) (*float64, bool) {
@@ -99,7 +132,6 @@ func aaValue(getter func(*ArtificialMetrics) *float64) func(Model) (*float64, bo
 		return value, value != nil
 	}
 }
-
 func llmValue(getter func(*LLMStatsMetrics) *float64) func(Model) (*float64, bool) {
 	return func(model Model) (*float64, bool) {
 		if model.LLMStats == nil {
@@ -109,7 +141,6 @@ func llmValue(getter func(*LLMStatsMetrics) *float64) func(Model) (*float64, boo
 		return value, value != nil
 	}
 }
-
 func llmIndexValue(names ...string) func(Model) (*float64, bool) {
 	return func(model Model) (*float64, bool) {
 		if model.LLMStats == nil {
@@ -124,11 +155,9 @@ func llmIndexValue(names ...string) func(Model) (*float64, bool) {
 		return nil, false
 	}
 }
-
-func cloneWeights(values map[string]float64) map[string]float64 {
-	cloned := make(map[string]float64, len(values))
-	for key, value := range values {
-		cloned[key] = value
+func benchmarkValue(name string) func(Model) (*float64, bool) {
+	return func(model Model) (*float64, bool) {
+		result, ok := model.Benchmarks[name]
+		return result.Score, ok && result.Score != nil
 	}
-	return cloned
 }

@@ -44,7 +44,7 @@ func (e *fixtureWritingExecutor) Execute(ctx context.Context, call WritingExecut
 	e.active--
 	e.mu.Unlock()
 	if call.Kind == "judgment" {
-		return WritingExecutionResult{Content: `{"score":8,"reason":"fixture reason"}`, Provider: call.Model.Provider, Model: call.Model.Model}, nil
+		return WritingExecutionResult{Content: `{"results":[{"criterion_id":"checklist-1","score":8,"reason":"fixture"},{"criterion_id":"checklist-2","score":8,"reason":"fixture"},{"criterion_id":"checklist-3","score":8,"reason":"fixture"},{"criterion_id":"checklist-4","score":8,"reason":"fixture"},{"criterion_id":"checklist-5","score":8,"reason":"fixture"}]}`, Provider: call.Model.Provider, Model: call.Model.Model}, nil
 	}
 	return WritingExecutionResult{Content: "fixture response", Provider: call.Model.Provider, Model: call.Model.Model}, nil
 }
@@ -128,26 +128,43 @@ func TestWritingRunBoundedAndResumable(t *testing.T) {
 	if maxActive > 2 {
 		t.Fatalf("max concurrency = %d, want <= 2", maxActive)
 	}
-	if calls != 6 {
-		t.Fatalf("calls = %d, want 1 generation + 5 judgments", calls)
+	if calls != 2 {
+		t.Fatalf("calls = %d, want 1 generation + 1 combined judgment", calls)
 	}
 	generations, judgments := store.Records()
 	for _, record := range generations {
 		if record.Usage.Known || record.Usage.CostUSD != 0 {
 			t.Fatal("generation without provider usage was misreported as observed cost")
 		}
+		if record.AccountingCostUSD <= 0 {
+			t.Fatal("generation did not persist its conservative accounting cost")
+		}
 	}
 	for _, record := range judgments {
 		if record.Usage.Known || record.Usage.CostUSD != 0 {
 			t.Fatal("judgment without provider usage was misreported as observed cost")
+		}
+		if record.AccountingCostUSD <= 0 {
+			t.Fatal("judgment did not persist its conservative accounting cost")
 		}
 	}
 	if err := RunWritingEvaluation(t.Context(), manifest, records, adapter, executor, store); err != nil {
 		t.Fatal(err)
 	}
 	calls, _ = executor.stats()
-	if calls != 6 {
+	if calls != 2 {
 		t.Fatalf("resume made provider calls: %d", calls)
+	}
+}
+
+func TestWritingPersistedAccountingCostPrefersSealedAdmissionCost(t *testing.T) {
+	t.Parallel()
+	usage := WritingUsage{Known: true, CostUSD: 0.2}
+	if got := writingPersistedAccountingCost(1.25, usage); got != 1.25 {
+		t.Fatalf("persisted accounting cost = %v, want 1.25", got)
+	}
+	if got := writingPersistedAccountingCost(0, usage); got != 0.2 {
+		t.Fatalf("legacy accounting fallback = %v, want 0.2", got)
 	}
 }
 
@@ -162,7 +179,7 @@ func TestPlanWritingRunWorstCase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan.GenerationCalls != 1 || plan.JudgmentCalls != 5 || plan.WorstCaseProviderCalls != 16 || plan.WorstCaseCostUSD <= 0 {
+	if plan.GenerationCalls != 1 || plan.JudgmentCalls != 1 || plan.WorstCaseProviderCalls != 2 || plan.WorstCaseCostUSD <= 0 {
 		t.Fatalf("plan = %#v", plan)
 	}
 }
@@ -186,5 +203,11 @@ func TestWritingAccountingCostUsesEstimateOnlyForAdmissionAccounting(t *testing.
 	}
 	if got := writingAccountingCost(WritingUsage{Known: true}, 1.25); got != 0 {
 		t.Fatalf("known zero cost = %v, want 0", got)
+	}
+	if got := writingAccountingCost(WritingUsage{Known: true, CacheReadTokens: 10}, 1.25); got != 1.25 {
+		t.Fatalf("unknown cached-token cost = %v, want conservative estimate 1.25", got)
+	}
+	if got := writingAccountingCost(WritingUsage{Known: true, CostKnown: true, CacheReadTokens: 10, CostUSD: 0.2}, 1.25); got != 0.2 {
+		t.Fatalf("known cached-token cost = %v, want 0.2", got)
 	}
 }

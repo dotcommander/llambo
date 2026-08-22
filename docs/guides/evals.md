@@ -1,12 +1,43 @@
 # External Evaluation Scores
 
+## 30-second category scorecard
+
+Generate all six cache-only LLAMBO-6 category scores without executing a model or
+contacting a remote source:
+
+```bash
+llambo evals --offline --rank-by matrix
+llambo evals --offline --rank-by coding
+llambo evals --offline --format json --output /tmp/llambo-evals.json
+```
+
+Use `--live-omlx` only when the scorecard must reflect the OMLX models visible on
+loopback now. It refreshes inventory metadata, not external benchmark data, and it
+does not run inference:
+
+```bash
+llambo evals --live-omlx --rank-by matrix
+```
+
+Each model can receive independent scores for agents, coding, instruction
+following, long context, reasoning, and writing. There is no overall composite.
+Speed, latency, memory, and price remain separate operational facts.
+
+## Cost-safe local evaluation
+
+External benchmark evidence comes first. Provider-backed local runs are an explicit exception: execution requires a concrete `--local-use-case`, a per-run `--max-run-cost`, and a shared `--max-campaign-cost` ledger ceiling.
+
+Writing evaluation uses one synchronous structured judge call per generated response. That call returns every rubric criterion together, uses Gemini thinking level `medium`, and is not automatically retried after a paid dispatch or invalid judge JSON. Receipts retain prompt, completion, cache-read, cache-write, and reasoning token counts; Gemini reasoning is already included in completion usage and is never billed twice.
+
+Dry runs remain provider-free and should always be reviewed before adding `--execute`.
+
 ```bash
 llambo evals
 llambo evals --rank-by coding
-llambo evals --rank-by value --limit 100
+llambo evals --rank-by writing --limit 100
 llambo evals --format json --output /tmp/llambo-evals.json
 llambo evals --rank-by coding --format html --output /tmp/llambo-evals-coding.html
-llambo evals --min-overall -1 --max-output-price -1
+llambo evals --rank-by coding --min-score 40 --max-output-price -1
 llambo evals --no-omlx
 llambo evals --projections ./eval-projections.json
 llambo evals writing
@@ -14,12 +45,11 @@ llambo evals writing --refresh
 llambo evals writing --refresh --format json --output /tmp/llambo-writing.json
 ```
 
-`llambo evals` transforms cached LLM Stats and Artificial Analysis snapshots
-into transparent, task-specific rankings. It never executes models, reads
-historical Llambo results, or fits against local evaluation targets. Plain
-`llambo evals` does make a bounded loopback request to OMLX so the local section
-contains only currently available text-capable artifacts. It does not refresh
-either external source.
+`llambo evals` transforms sealed cached remote benchmark snapshots into transparent
+category rankings. It never executes models, reads historical Llambo results, or
+fits against local evaluation targets. External sources refresh only with the
+explicit `--refresh` flag. Live loopback inventory refresh is separately explicit
+through `--live-omlx`.
 
 Use `--refresh` only when you deliberately want newer source snapshots:
 
@@ -34,7 +64,7 @@ and cannot be combined with `--refresh`. `--no-omlx` skips only local discovery.
 ## Writing benchmark catalog
 
 Use the separate writing catalog when you want concrete prose tests rather than
-the LES-1 ranking report:
+the LLAMBO-6 score matrix:
 
 ```bash
 # Offline: show the reviewed source registry and current open-weight queue
@@ -55,8 +85,8 @@ llambo evals writing --refresh --discover-open-models --discover-limit 25
 ```
 
 The catalog keeps scores in the scale used by each upstream benchmark. It does
-not average, percentile-transform, or inject them into `llambo evals` LES-1
-scores. Refresh scrapes the public
+not calculate category scores itself; admitted sealed results are normalized by
+the LLAMBO-6 scoring path. Refresh scrapes the public
 [Lech Mazur creative story-writing leaderboard](https://github.com/lechmazur/writing),
 which publishes pairwise comparison scores, estimated win chance, and an
 uncertainty range. Its public artifacts include the prompts and generated
@@ -109,8 +139,30 @@ llambo evals writing run \
   --model deepseek/deepseek-v4-pro \
   --judge-model openrouter/anthropic/claude-sonnet-5 \
   --output-dir /tmp/writing-run \
-  --execute --max-run-cost 25.00
+  --campaign-ledger /tmp/writing-campaign.json \
+  --execute --max-run-cost 25.00 --max-campaign-cost 50.00
 ```
+
+### Gemini judges use one synchronous call
+
+The judge combines every criterion for a generated response into one structured
+Gemini request. This cuts WritingBench judging from five calls to one and keeps
+the judge worker count at one:
+
+```bash
+llambo evals writing run \
+  --input /tmp/writingbench.jsonl \
+  --benchmark writingbench \
+  --model omlx/gemma-4-26B-A4B-it-heretic-4bit \
+  --judge-model gemini/gemini-3.7-flash \
+  --output-dir /tmp/writing-gemini-sync \
+  --local-use-case "compare exact local quantization variants"
+```
+
+The sealed run identity fixes `judge_layout=combined-v1`,
+`judge_thinking_level=medium`, and `judge_concurrency=1`. A failed dispatch or
+invalid structured response is preserved as terminal evidence and is not
+automatically charged again.
 
 The run is bound to the prompt-file hash, exact model and judge identities,
 pricing snapshot, adapter version, settings, and limits. Reusing the same output
@@ -124,9 +176,10 @@ can finish artifact generation.
 | Prompt limit | Defaults to 5; allowed range is 1–100 |
 | Concurrency | Defaults to 2; maximum 8 and still capped by provider `workers` |
 | Timeout | Defaults to 5 minutes per provider call |
+| Gemini judge | One synchronous combined-criteria call; medium thinking |
 | Judge output | Defaults to 8,192 tokens; override with `--judge-max-output-tokens` |
 | Pricing | Unknown input or output prices are rejected |
-| Paid execution | Requires both `--execute` and a positive `--max-run-cost` |
+| Paid execution | Requires `--execute`, `--max-run-cost`, and `--max-campaign-cost`; local targets also require a specific `--local-use-case` |
 | Catalog | Never updated automatically; `quality-import.json` is review-only |
 
 Both adapters produce local, non-leaderboard-comparable scores. WritingBench
@@ -193,22 +246,25 @@ turning an unreviewed model feed into evaluation evidence.
 On first use, run `llambo evals --refresh` once to create the snapshots. Llambo
 stores them under your operating system's user cache directory at
 `llambo/evals/`. Later `llambo evals` runs read those files regardless of age;
-they never refresh implicitly. Local OMLX discovery is live and is not cached.
+they never refresh implicitly. OMLX inventory discovery is opt-in through
+`--live-omlx` and is never cached.
 
 ## Command options
 
 | Option | Type | Default | Behavior |
 | --- | --- | --- | --- |
-| `--rank-by` | string | `overall` | Selects `overall`, `general`, `coding`, `reasoning`, `agents`, `writing`, `long-context`, `speed`, `value`, or `price` |
+| `--rank-by` | string | `matrix` | Selects `coding`, `agents`, `reasoning`, `writing`, `instruction-following`, `long-context`, `speed`, or `price`; omit it for the alphabetical matrix |
 | `--format` | string | `markdown` | Emits `markdown`/`md`, `json`, or standalone `html` |
 | `--limit` | integer | `50` | Limits eligible canonical ranked rows; eligible tracked projections are always included; `0` includes every eligible model |
-| `--min-overall` | number | `40` | Includes only models with overall score at least this value; models without overall are excluded; a negative value disables the filter |
+| `--min-score` | number | `-1` | With a capability `--rank-by`, includes only models at or above this category score; models without the primary are excluded; a negative value disables the filter |
 | `--max-output-price` | number | `10` | Excludes canonical models whose highest known source output price exceeds this amount per 1M tokens; unknown prices and local projections remain eligible; a negative value disables the filter |
 | `--output`, `-o` | path | stdout | Writes the report atomically to a file |
 | `--projections` | path | built-in registry | Replaces the built-in tracked local/OSS projection registry with a JSON file |
+| `--validation-receipts` | path | unset | Reads sealed exact-ID local receipt summaries and reports per-category Spearman correlation; never changes scores or ordering |
+| `--live-omlx` | boolean | `false` | Explicitly queries the loopback OMLX inventory, filters local projections to its exact live IDs, and uses that inventory for the published snapshot; failure stops the command before publication |
 | `--omlx-url` | URL | `http://127.0.0.1:8000` | Loopback OMLX base URL used for live local-model discovery |
-| `--no-omlx` | boolean | `false` | Skips live OMLX discovery and uses the reviewed registry as-is |
 | `--refresh` | boolean | `false` | Fetches and replaces external source snapshots |
+| `--refresh-official-model-cards` | boolean | `false` | Fetches only the five pinned LiquidAI, Qwen, OpenAI, and Google model cards; LLM Stats, Artificial Analysis, WritingBench, and EQ-Bench remain cache-only. Cannot be combined with `--refresh` or `--offline` |
 | `--export-prompts` | path | unset | Writes normalized prompt JSONL; writing mode requires `--refresh` |
 | `--prompt-source` | string | `writingbench` | Selects `writingbench`, `eqbench-creative-v3`, `ifeval`, or `all` for prompt export |
 | `--prompt-limit` | integer | `0` | Limits exported prompt records; `0` exports all selected records |
@@ -220,17 +276,16 @@ they never refresh implicitly. Local OMLX discovery is live and is not cached.
 Use `--format html --output <path>` to write a standalone report for viewing in a
 browser. Markdown and JSON may be written to the same `--output` option.
 
-Without `--allow-partial`, both cached snapshots are required. LLM Stats is
-always required because it supplies the broader profile inventory.
+LLM Stats and Artificial Analysis remain the base inventory. WritingBench and
+EQ-Bench snapshots are cached separately; offline absence is reported and leaves
+writing evidence unavailable rather than failing or inventing a score.
 
-The default eligibility policy is `overall >= 40` and maximum known output
-price `$10/1M`. It is applied after LES-1 scores, drift, and stability are
-calculated, so it changes only which rows are shown—not the formula population,
-percentiles, or scores. When the two sources disagree on output price, the
-higher quote enforces the ceiling. Canonical rows with unknown prices remain
-visible and are counted in diagnostics. Local projections are exempt because a
-hosted API quote does not describe local serving cost. Use both
-`--min-overall -1 --max-output-price -1` when auditing every source row.
+The default matrix has no capability cutoff and retains the maximum known output
+price ceiling of `$10/1M`. Filtering changes only displayed rows, never the
+frozen reference or scores. When sources disagree on output price, the higher
+quote enforces the ceiling. Canonical rows with unknown prices remain visible;
+local projections are exempt because hosted pricing does not describe local
+serving cost. Use `--max-output-price -1` to audit every source row.
 
 The Markdown ranking includes `Output $/1M`, the source-native output-token
 price per one million tokens. A single available quote is shown directly. If
@@ -241,42 +296,36 @@ price. JSON reports retain each source's raw `output_price` field.
 ## Tracked local and OSS artifacts
 
 `llambo evals` includes a separate tracked-projections section for local model
-artifacts whose upstream identity has been reviewed. These rows reuse the
-upstream model's LES-1 scores after the canonical population, drift, and
-jackknife calculations are complete. They never duplicate a model in the
-reference population or change another model's percentile or rank.
+artifacts whose upstream identity has been reviewed. These rows inherit admitted
+upstream evidence after canonical scoring is complete. Projection confidence
+calibrates trusted coverage and pulls sparse projected scores toward neutral 50.
+Projected rows never duplicate a model in the reference population or change
+another model's percentile or rank.
 
-By default, Llambo first reads OMLX `/admin/api/models`, whose `model_type`
+With explicit `--live-omlx`, Llambo first reads OMLX `/admin/api/models`, whose `model_type`
 distinguishes `llm`/`vlm` text-capable models from ASR, TTS, embeddings, helpers,
 and virtual tools. If that endpoint is unavailable, it falls back to
 `/v1/models` with conservative filtering. Exact live IDs are intersected with
 the reviewed registry; filenames are never guessed into upstream identities.
 Live unreviewed, inactive reviewed, and excluded non-text IDs are reported.
-If OMLX is unavailable, local projections are omitted rather than presented as
-live. Set `OMLX_API_KEY` if the local endpoint requires bearer authentication.
-
-The built-in registry currently tracks:
-
-| Artifact | External source row | Projection confidence |
-| --- | --- | --- |
-| `Qwen3.6-27B-MLX-4bit` | AA Qwen3.6 27B reasoning | medium |
-| `Qwen3.6-35B-A3B-oQ4-fp16-mtp` | AA Qwen3.6 35B A3B reasoning | medium |
-| `gemma-4-26B-A4B-it-heretic-4bit` | AA Gemma 4 26B A4B reasoning | low |
-| `gpt-oss-20b-MXFP4-Q8` | merged GPT OSS 20B High | low |
-| `granite-4.1-8b-nvfp4` | AA Granite 4.1 8B | medium |
-| `Qwen-AgentWorld-35B-A3B-oQ4-MLX` | LLM Stats Qwen3.6 35B A3B | low |
+If OMLX is unavailable, the command fails before it renders or publishes a
+live-filtered score snapshot. Set `OMLX_API_KEY` if the local endpoint requires
+bearer authentication. The complete reviewed projection registry is
+[`internal/evals/projections.json`](../../internal/evals/projections.json);
+the report names any configured source row that is unavailable.
 
 Medium confidence is used for a quantized or packaging variant with a reviewed
 base identity. Low confidence is used when a fine-tune or reasoning-mode
-difference may materially change behavior. Projection confidence caps the
-copied score confidence. A projection is not an exact measurement of the local
-artifact, and Llambo does not invent a quantization or fine-tune penalty.
+difference may materially change behavior. Exact and high-confidence mappings use
+multiplier `1.00`, medium uses `0.75`, and low uses `0.50`. A projection is not an
+exact measurement of the local artifact, and Llambo does not invent a separate
+quantization or fine-tune penalty.
 Missing upstream source keys are reported explicitly.
 
-Projected rows omit hosted price, speed, value, access, and operational raw
-fields because they do not describe local serving. JSON retains capability
-fields and explicit `projection` provenance, including review basis and date,
-for auditability.
+Projected rows omit hosted price, speed, access, and operational raw fields
+because they do not describe local serving. Markdown and HTML render them under
+**Local projections**; JSON places them in `local_projections`, separate from
+canonical `models`, with explicit projection basis and review date.
 
 To replace the built-in registry, pass a versioned JSON file:
 
@@ -304,6 +353,12 @@ replacement is local file I/O only and does not refresh either source cache.
   supplies conservative category indexes, benchmark results, price, and speed.
 - [Artificial Analysis](https://artificialanalysis.ai/) supplies intelligence,
   coding, agentic, price, and performance fields through its supported API.
+- [WritingBench](https://huggingface.co/spaces/WritingBench/WritingBench/blob/main/score.xlsx)
+  supplies the rubric-long-form family plus domain, subdomain, and requirement
+  details from its versioned XLSX workbook.
+- [EQ-Bench Creative Writing v3](https://github.com/EQ-bench/EQ-bench-site)
+  supplies pinned `elo_score` corroboration. Its repository may lag the live
+  leaderboard, so it never owns or changes the writing score.
 
 Cross-source rows merge only when normalized model names and canonical
 organization families match uniquely in both snapshots. Matching normalized
@@ -312,44 +367,87 @@ source keys are labeled `normalized` and capped at medium confidence. Reasoning 
 quantization, fine-tune, and `+` qualifiers remain identity-significant.
 Ambiguous identities stay separate and are labeled `ambiguous`.
 
-## LES-1 formula
+Each writing observation retains its URL, source version or pinned commit,
+content SHA-256, fetch time, methodology, judge version, and identity match.
 
-Formula `LES-1` converts every metric to an empirical
-percentile against a checked-in frozen reference distribution. Higher is better
-for capability and throughput; lower is better for price and latency. Ties use
-midranks.
+## LLAMBO-6 category formula
 
-Within each source and domain, an absent metric contributes a neutral 50.
-Missing evidence therefore widens the exact `[low, high]` evidence interval but
-does not become zero. A source component requires at least 50% metric coverage.
-When a unique exact or normalized identity has both sources, its domain scores
-are averaged and the absolute disagreement is reported separately. Normalized
-matches are capped at medium confidence.
+`LLAMBO-6-category-v5` reports six independent capability scores. A reviewed,
+versioned registry assigns every admitted benchmark to exactly one category and
+one independent capability family. Each category targets three to five families.
 
-Capability weights are fixed policy, never learned coefficients:
+Version 3 adds SHA-pinned official comparison-table evidence for LiquidAI
+LFM2.5-2.6B and LFM2.5-VL-3B, Qwen3.8-27B, OpenAI gpt-oss-20b, and Google
+Gemma 4 31B and 26B A4B. Each target score is normalized
+only against the compatible frozen population published in that same source.
+The gpt-oss population comprises six explicitly identified model-and-reasoning-
+effort configurations, not six distinct base models. Ordinary runs read these
+sources only from cache; use `--refresh-official-model-cards` to retrieve just
+the five pinned cards, or `--refresh` for the full source set.
 
-| Domain | Artificial Analysis | LLM Stats |
-| --- | --- | --- |
-| General | intelligence 60%, coding 20%, agentic 20% | general 50%, reasoning 25%, instruction following 15%, factuality 10% |
-| Coding | coding 60%, intelligence 25%, agentic 15% | code 50%, SWE-bench Verified 30%, SWE-bench Pro 20% |
-| Reasoning | intelligence 55%, coding 25%, agentic 20% | reasoning 60%, general 20%, instruction following 10%, structured output 10% |
-| Agents | agentic 60%, intelligence 25%, coding 15% | agents 45%, tool calling 35%, reasoning 10%, structured output 10% |
-| Writing | — | writing 35%, creativity 25%, language 20%, communication 15%, instruction following 5% |
-| Long context | — | long context 50%, instruction following 20%, factuality 15%, grounding 15% |
+Version 4 preserves every benchmark-backed category score. For a reviewed local
+projection only, a missing category is filled from the mean of that artifact's
+existing shrunken remote category scores: `50 + (mean - 50) × 0.25`. These cells
+are serialized as `estimated=true` with method
+`cross-category-remote-shrink-v1` and their sorted source categories. They have
+zero coverage, low confidence, no benchmark evidence, and cannot be an official
+category winner. Canonical source rows remain benchmark-backed or unresolved.
 
-The default overall score is:
+Version 5 adds six immutable LLM Stats public-leaderboard cohorts from the
+sealed 5,544-row artifact
+`de5462f48f2ac7d36713cdf96b57d63832588e598d0bae54e02f7c47737a4f8a`:
+`longbench-v2` (17), `math` (71), `humaneval` (66), `ifeval` (67),
+`arena-hard` (26), and `osworld` (20). A row activates only when its exact
+source ID/class, public-leaderboard version, public cohort, methodology,
+direction, source revision/content-SHA pair, and identity match the frozen
+contract. The several page digests that form one approved population share one
+immutable percentile scale; a mismatch remains unresolved. These are
+aggregator results, so their existing evidence multipliers remain unchanged.
+
+For every compatible benchmark revision, Llambo computes an empirical midrank
+percentile against that benchmark's frozen remote population. Represented families
+receive equal nominal weight. Source authority and identity confidence contribute
+trusted coverage; they do not make one family more important than another. Partial
+trust pulls the result toward neutral 50:
 
 ```text
-25% coding + 20% general + 20% reasoning + 20% agents
-+ 10% writing + 5% long context
+category score = 50 + (observed family percentile - 50) × trusted coverage
 ```
 
-An unavailable domain contributes 50. Overall requires at least 60% weighted
-coverage. Speed and price are deliberately separate from capability. `value`
-combines 75% overall capability with 25% price percentile.
+No eligible canonical evidence renders `—`, never synthetic `0` or `50`. Valid stale cache
+entries remain usable and show their age and stale warning. Incompatible revisions
+never share a reference population. Mirrored results contribute once; lower-
+authority copies are corroboration, and unresolved peer conflicts are quarantined.
 
-Supported `--rank-by` values are `overall`, `general`, `coding`, `reasoning`,
-`agents`, `writing`, `long-context`, `speed`, `value`, and `price`.
+| Category | Reviewed capability families |
+| --- | --- |
+| Agents | Tool/API orchestration; environment task completion; computer use |
+| Coding | Repository editing; live synthesis; function generation; scientific or multilingual coding |
+| Instruction following | Verifiable constraints; structured multi-turn adherence; preference-based adherence |
+| Long context | Retrieval stress; multi-document reasoning; persistent long-state reasoning |
+| Reasoning | Advanced science; competition mathematics; abstraction; broad advanced knowledge |
+| Writing | Rubric long form; fiction/creative writing; broad generation; human preference; style calibration |
+
+An official category winner requires evidence from at least two independent
+families. A lower-coverage leader is `provisional`. Ranking uses full-precision
+score, trusted coverage, then identity confidence; a remaining exact tie produces
+co-winners. Operational metrics and task-specific local evaluations never enter
+these rankings.
+
+Successful explicit generation atomically publishes a versioned local category
+snapshot. A failed run leaves the prior snapshot intact, and previous formula
+versions remain available for replay.
+
+## Read-only local validation
+
+`--validation-receipts` accepts a strict version-1 manifest. Each manifest entry
+names a `receipt_path` and its 64-character `receipt_sha256`; relative paths are
+resolved beside the manifest and the hash is verified before the sealed receipt
+is decoded. Each receipt contains one canonical `model_key`, capability
+`category`, finite local `score`, and `identity_match: "exact"`. The diagnostic reports exact-pair sample size and
+tie-aware Spearman rank correlation per category. Fewer than eight pairs is
+explicitly `insufficient_validation`; local results never fit the formula,
+change a score, or reorder the matrix.
 
 ## Replacing the prose and writing evals
 
@@ -360,17 +458,15 @@ llambo evals --rank-by writing
 llambo evals --rank-by writing --format json --output /tmp/llambo-writing.json
 ```
 
-The writing score combines LLM Stats writing (35%), creativity (25%), language
-(20%), communication (15%), and instruction following (5%). The report keeps
-coverage, evidence bounds, and rank sensitivity beside the score. Artificial
-Analysis does not currently provide a writing metric, so this profile is based
-on LLM Stats evidence and may omit models without enough writing coverage. It
-is an external replacement ranking, not a reconstruction of the retired local
-prose score.
+The writing category combines only the writing families admitted by the reviewed
+LLAMBO-6 registry. WritingBench supplies rubric-long-form evidence; EQ-Bench
+Creative v3 supplies an independent creative-writing family when its frozen
+revision is compatible. Local writing runs remain separate diagnostics and never
+alter the score.
 
 ## Trust and drift
 
-LES-1 embeds the source distributions from its reference snapshot, including
+LLAMBO-6 embeds the source distributions from its reference snapshot, including
 model counts, Artificial Analysis index version, and source fingerprints. A
 refresh does not silently redefine old percentiles.
 
@@ -381,26 +477,8 @@ The report marks reference drift when:
 - active metric coverage changes by more than 10 percentage points; or
 - a metric distribution has a two-sample KS statistic above 0.15.
 
-Every ranking also runs a deterministic metric jackknife. Each active metric is
-removed globally and its remaining source weights are renormalized. The report
-records per-model rank span plus mean Kendall agreement and worst top-20
-overlap. Formula stability requires mean Kendall at least 0.90 and top-20
-overlap at least 0.80.
-
-With the current frozen snapshots, `overall`, `general`, `coding`, `reasoning`,
-`value`, and `price` meet that stability gate. `agents`, `writing`,
-`long-context`, and `speed` remain available but are labeled unstable because
-their external evidence is more sensitive to individual metrics. Treat that
-label as a warning, not as a score penalty.
-
 ## Interpretation
 
-LES scores are relative external-evidence percentiles, not probabilities of
-task success and not reconstructions of retired local suites. Coverage measures
-evidence completeness, cross-source disagreement measures consensus, and rank
-span measures sensitivity to formula inputs. Keep these diagnostics separate
-from the score itself.
-
-Use a task-specific profile whenever the workload is narrower than the balanced
-default. Use source-native values when a particular benchmark is the actual
-decision criterion.
+Llambo Scores are relative external-evidence percentiles, not probabilities of
+task success. Use the category matching the workload; the default alphabetical
+matrix intentionally makes no implicit cross-category ranking.

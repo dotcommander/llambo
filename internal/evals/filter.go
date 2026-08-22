@@ -1,42 +1,38 @@
 package evals
 
-// EligibilityDiagnostics describes the report-level model cutoff applied after
-// LES scoring. Filtering never changes formula populations or percentiles.
+import "math"
+
 type EligibilityDiagnostics struct {
-	MinOverall       float64 `json:"min_overall"`
+	MinScore         float64 `json:"min_score"`
+	ScoreCategory    string  `json:"score_category,omitempty"`
 	MaxOutputPrice   float64 `json:"max_output_price"`
 	InputModels      int     `json:"input_models"`
 	IncludedModels   int     `json:"included_models"`
 	ExcludedModels   int     `json:"excluded_models"`
-	MissingOverall   int     `json:"missing_overall"`
-	BelowOverall     int     `json:"below_overall"`
+	MissingPrimary   int     `json:"missing_primary"`
+	BelowScore       int     `json:"below_score"`
 	OverOutputPrice  int     `json:"over_output_price"`
 	UnknownPriceKept int     `json:"unknown_output_price_kept"`
 }
 
-// ApplyEligibility keeps models that satisfy the configured score and known
-// output-price limits. Models without an overall score cannot demonstrate score
-// eligibility. Unknown hosted prices remain eligible and are counted. Local
-// projections are exempt because hosted API prices do not describe local runs.
-// A negative limit disables that individual filter.
-func ApplyEligibility(report *Report, minOverall, maxOutputPrice float64) {
-	if report == nil || (minOverall < 0 && maxOutputPrice < 0) {
+// ApplyEligibility filters only a named capability. Score filtering is invalid
+// for speed/price because those remain operational measures.
+func ApplyCategoryEligibility(report *Report, category string, minScore, maxOutputPrice float64) {
+	if report == nil || (minScore < 0 && maxOutputPrice < 0) {
 		return
 	}
-	diagnostics := &EligibilityDiagnostics{
-		MinOverall: minOverall, MaxOutputPrice: maxOutputPrice, InputModels: len(report.Models),
-	}
+	diagnostics := &EligibilityDiagnostics{MinScore: minScore, ScoreCategory: category, MaxOutputPrice: maxOutputPrice, InputModels: len(report.Models)}
 	filtered := make([]ReportModel, 0, len(report.Models))
 	for _, model := range report.Models {
-		if minOverall >= 0 {
-			overall := model.Scores["overall"]
-			if overall == nil {
-				diagnostics.MissingOverall++
+		if minScore >= 0 {
+			score := model.LlamboScores[category]
+			if score == nil {
+				diagnostics.MissingPrimary++
 				diagnostics.ExcludedModels++
 				continue
 			}
-			if overall.Score < minOverall {
-				diagnostics.BelowOverall++
+			if score.Score < minScore {
+				diagnostics.BelowScore++
 				diagnostics.ExcludedModels++
 				continue
 			}
@@ -58,19 +54,13 @@ func ApplyEligibility(report *Report, minOverall, maxOutputPrice float64) {
 	report.Eligibility = diagnostics
 }
 
-// ApplyMinimumOverall preserves the score-only operation for callers that do
-// not want a price constraint.
-func ApplyMinimumOverall(report *Report, threshold float64) {
-	ApplyEligibility(report, threshold, -1)
-}
-
 func maximumOutputPrice(model ReportModel) (float64, bool) {
 	prices := make([]float64, 0, 2)
-	if model.LLMStats != nil && model.LLMStats.OutputPrice != nil {
-		prices = appendFinitePrice(prices, *model.LLMStats.OutputPrice)
+	if model.LLMStats != nil && model.LLMStats.OutputPrice != nil && !math.IsNaN(*model.LLMStats.OutputPrice) && !math.IsInf(*model.LLMStats.OutputPrice, 0) {
+		prices = append(prices, *model.LLMStats.OutputPrice)
 	}
-	if model.AA != nil && model.AA.OutputPrice != nil {
-		prices = appendFinitePrice(prices, *model.AA.OutputPrice)
+	if model.AA != nil && model.AA.OutputPrice != nil && !math.IsNaN(*model.AA.OutputPrice) && !math.IsInf(*model.AA.OutputPrice, 0) {
+		prices = append(prices, *model.AA.OutputPrice)
 	}
 	if len(prices) == 0 {
 		return 0, false

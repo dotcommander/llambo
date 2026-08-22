@@ -42,7 +42,10 @@ func BuildWritingRunReport(manifest WritingRunManifest, adapter WritingBenchmark
 			report.JudgmentFailures++
 			continue
 		}
-		report.Judgments++
+		results := record.Results
+		if len(results) == 0 {
+			results = []WritingCriterionJudgment{{CriterionID: record.CriterionID, Criterion: record.Criterion, Score: record.Score, Reason: record.Reason}}
+		}
 		generation := generationByKey(generations, record.GenerationKey)
 		key := generation.Provider + "\x00" + generation.Model
 		entry := byModel[key]
@@ -50,20 +53,22 @@ func BuildWritingRunReport(manifest WritingRunManifest, adapter WritingBenchmark
 			entry = &accumulator{}
 			byModel[key] = entry
 		}
-		entry.total += record.Score
-		entry.count++
+		for _, result := range results {
+			report.Judgments++
+			entry.total += result.Score
+			entry.count++
+		}
 		promptEntry := byPrompt[generation.Key]
 		if promptEntry == nil {
 			promptEntry = &accumulator{}
 			byPrompt[generation.Key] = promptEntry
 			promptGeneration[generation.Key] = generation
 		}
-		promptEntry.total += record.Score
-		promptEntry.count++
-		report.CriterionScores = append(report.CriterionScores, WritingCriterionScore{
-			Provider: generation.Provider, Model: generation.Model, PromptID: generation.PromptID,
-			Iteration: generation.Iteration, CriterionID: record.CriterionID, Score: record.Score,
-		})
+		for _, result := range results {
+			promptEntry.total += result.Score
+			promptEntry.count++
+			report.CriterionScores = append(report.CriterionScores, WritingCriterionScore{Provider: generation.Provider, Model: generation.Model, PromptID: generation.PromptID, Iteration: generation.Iteration, CriterionID: result.CriterionID, Score: result.Score})
+		}
 	}
 	keys := make([]string, 0, len(byModel))
 	for key := range byModel {

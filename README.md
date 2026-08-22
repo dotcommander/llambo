@@ -77,7 +77,7 @@ llambo evals --rank-by coding --format html --output /tmp/llambo-evals-coding.ht
 - **🔥 Real-time Parallel Execution**: Send batch jobs across multiple providers concurrently. Results stream back the second each backend completes.
 - **🛡️ Auto-Failover & Key Rotation**: Configured with multiple API keys? Llambo automatically rotates keys on `429 Too Many Requests`. If a provider goes down, requests seamlessly fail over to the next healthy backend.
 - **🧠 Intelligent Intent Router**: Automatically classifies your prompt intent (`code`, `extraction`, `long_context`, `chat`) and picks the optimal backend based on your desired policy (`fastest`, `cheapest`, `quality`, or `balanced`).
-- **📊 Cache-First Evals (`llambo evals`)**: Rank models using the deterministic LES-1 benchmark formula without refreshing external sources. Filter by coding, writing, speed, or cost limits instantly.
+- **📊 Cache-First Evals (`llambo evals`)**: Compare six independent LLAMBO-2 capability scores from frozen external benchmarks without refreshing sources. Rank by a capability, speed, or price when needed.
 - **🔄 Drop-In Compatibility**: 100% compatible with OpenAI (`/v1/chat/completions`), Anthropic Messages (`/v1/messages`), and Embeddings (`/v1/embeddings`).
 
 ---

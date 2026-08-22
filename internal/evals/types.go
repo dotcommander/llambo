@@ -12,18 +12,28 @@ const (
 )
 
 type Options struct {
-	CacheDir     string
-	TTL          time.Duration
-	Refresh      bool
-	Offline      bool
-	AllowPartial bool
-	AAAPIKey     string
-	Client       *http.Client
-	LLMModelsURL string
-	LLMFullURL   string
-	LLMIndexURL  string
-	AAURL        string
-	Now          func() time.Time
+	CacheDir             string
+	TTL                  time.Duration
+	Refresh              bool
+	RefreshOfficialCards bool
+	Offline              bool
+	AllowPartial         bool
+	AAAPIKey             string
+	Client               *http.Client
+	LLMModelsURL         string
+	LLMFullURL           string
+	LLMIndexURL          string
+	LLMBenchmarksURL     string
+	IngestLLMBenchmarks  bool
+	AAURL                string
+	WritingBenchURL      string
+	EQBenchCreativeURL   string
+	OfficialLFMURL       string
+	OfficialQwenURL      string
+	OfficialGPTOSSURL    string
+	OfficialLFMVLURL     string
+	OfficialGemmaURL     string
+	Now                  func() time.Time
 }
 
 type Result struct {
@@ -31,27 +41,77 @@ type Result struct {
 	Models      []Model        `json:"models"`
 	Sources     []SourceStatus `json:"sources"`
 	AAVersion   float64        `json:"artificial_analysis_index_version,omitempty"`
+	// ReferenceModels preserves source-native rows for drift calculations. It is
+	// not report output and never participates in identity joins or scoring rows.
+	ReferenceModels []Model `json:"-"`
 }
 
 type SourceStatus struct {
-	Name      string    `json:"name"`
-	URL       string    `json:"url"`
-	FetchedAt time.Time `json:"fetched_at,omitempty"`
-	Cache     string    `json:"cache"` // fetched, fresh, cached, stale, or unavailable
-	Models    int       `json:"models"`
-	Error     string    `json:"error,omitempty"`
+	Name            string    `json:"name"`
+	URL             string    `json:"url"`
+	FetchedAt       time.Time `json:"fetched_at,omitempty"`
+	Cache           string    `json:"cache"` // fetched, fresh, cached, stale, frozen, or unavailable
+	Models          int       `json:"models"`
+	Version         string    `json:"version,omitempty"`
+	CommitSHA       string    `json:"commit_sha,omitempty"`
+	ContentSHA      string    `json:"content_sha256,omitempty"`
+	Methodology     string    `json:"methodology,omitempty"`
+	Observations    int       `json:"observations,omitempty"`
+	RegistryVersion string    `json:"source_registry_version,omitempty"`
+	EvidenceGrade   string    `json:"evidence_grade,omitempty"`
+	Error           string    `json:"error,omitempty"`
 }
 
 type Model struct {
-	Key           string             `json:"key"`
-	Name          string             `json:"name"`
-	Organization  string             `json:"organization,omitempty"`
-	IdentityMatch IdentityMatch      `json:"identity_match"`
-	License       string             `json:"license,omitempty"`
-	Open          *bool              `json:"open,omitempty"`
-	Context       *int64             `json:"context,omitempty"`
-	LLMStats      *LLMStatsMetrics   `json:"llm_stats,omitempty"`
-	AA            *ArtificialMetrics `json:"artificial_analysis,omitempty"`
+	Key           string                     `json:"key"`
+	Name          string                     `json:"name"`
+	Organization  string                     `json:"organization,omitempty"`
+	IdentityMatch IdentityMatch              `json:"identity_match"`
+	License       string                     `json:"license,omitempty"`
+	Open          *bool                      `json:"open,omitempty"`
+	Context       *int64                     `json:"context,omitempty"`
+	LLMStats      *LLMStatsMetrics           `json:"llm_stats,omitempty"`
+	AA            *ArtificialMetrics         `json:"artificial_analysis,omitempty"`
+	Benchmarks    map[string]BenchmarkResult `json:"benchmarks,omitempty"`
+	EvidenceStale bool                       `json:"-"`
+}
+
+// BenchmarkResult is a versioned source-native benchmark observation. It is
+// never synthesized from local evaluations or from a composite index.
+type BenchmarkResult struct {
+	Score          *float64           `json:"score,omitempty"`
+	Identity       IdentityMatch      `json:"identity_match,omitempty"`
+	Version        string             `json:"version,omitempty"`
+	URL            string             `json:"url,omitempty"`
+	CommitSHA      string             `json:"commit_sha,omitempty"`
+	ContentSHA     string             `json:"content_sha256,omitempty"`
+	Method         string             `json:"methodology,omitempty"`
+	Judge          string             `json:"judge_version,omitempty"`
+	Stale          bool               `json:"-"`
+	FetchedAt      time.Time          `json:"fetched_at,omitempty"`
+	Details        map[string]float64 `json:"details,omitempty"`
+	SourceClass    string             `json:"source_class,omitempty"`
+	EvidenceGrade  string             `json:"evidence_grade,omitempty"`
+	Unit           string             `json:"unit,omitempty"`
+	Direction      string             `json:"direction,omitempty"`
+	Cohort         string             `json:"cohort,omitempty"`
+	SampleSize     int                `json:"sample_size,omitempty"`
+	Locator        string             `json:"provenance_locator,omitempty"`
+	SourceID       string             `json:"source_id,omitempty"`
+	SourceRevision string             `json:"source_revision,omitempty"`
+	Mirrors        []BenchmarkMirror  `json:"mirrors,omitempty"`
+	Quarantined    bool               `json:"quarantined,omitempty"`
+	Conflict       string             `json:"conflict,omitempty"`
+}
+
+// BenchmarkMirror preserves a deduplicated lower-precedence or corroborating
+// copy without granting it another vote in the category scorer.
+type BenchmarkMirror struct {
+	SourceID       string `json:"source_id,omitempty"`
+	SourceClass    string `json:"source_class,omitempty"`
+	SourceRevision string `json:"source_revision,omitempty"`
+	ContentSHA     string `json:"content_sha256,omitempty"`
+	Locator        string `json:"provenance_locator,omitempty"`
 }
 
 // IdentityMatch describes whether a source row was joined to one unique row

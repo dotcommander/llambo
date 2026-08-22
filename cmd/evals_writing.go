@@ -121,7 +121,7 @@ func renderWritingCatalogMarkdown(catalog evals.WritingCatalog) string {
 	fmt.Fprintf(&out, "# Writing Benchmark Catalog\n\n")
 	fmt.Fprintf(&out, "Generated: `%s`  \n", writingCatalogTime(catalog.GeneratedAt))
 	fmt.Fprintf(&out, "Registry version: `%d`\n\n", catalog.RegistryVersion)
-	out.WriteString("This catalog keeps writing benchmark scores source-native. It does not mix these results into the LES-1 evaluation report.\n\n")
+	out.WriteString("This catalog keeps writing benchmark scores source-native. It does not mix local run results into LLAMBO-2 scores.\n\n")
 
 	out.WriteString("## Benchmarks\n\n")
 	out.WriteString("| Benchmark | Focus | Scoring | Scrape surface | Update cadence |\n")

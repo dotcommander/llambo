@@ -30,7 +30,7 @@ This documentation is organized into logical sections to help you get started, u
 
 ### 🛠️ **[Guides](./guides/README.md)**
 - [CLI Guide](./guides/cli.md) for catalog, OpenRouter metadata, quality imports, ping, prompt, jobs, and routing commands
-- [External Evaluation Scores](./guides/evals.md) for cache-only LES-1 rankings from LLM Stats and Artificial Analysis
+- [External Evaluation Scores](./guides/evals.md) for cache-only LLAMBO-2 category scores from frozen external benchmarks
 - Practical examples for smart gateway, routing backtests, and parallel jobs
 - Configuration guide (complete setup)
 - Job processing with streaming results
@@ -114,7 +114,7 @@ docs/
 ├── guides/
 │   ├── README.md                      # Guides overview
 │   ├── cli.md                         # CLI commands and model catalog workflow
-│   ├── evals.md                       # External-only LES-1 model rankings
+│   ├── evals.md                       # External-only LLAMBO-2 category scores
 │   ├── practical-examples.md          # Hands-on examples for common workflows
 │   └── configuration.md               # Configuration guide
 └── architecture/

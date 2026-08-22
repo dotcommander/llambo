@@ -34,6 +34,27 @@ func loadSource(ctx context.Context, opts Options, cacheName string, fetch func(
 	if cacheName == "artificial-analysis" {
 		name, url = "Artificial Analysis", ArtificialAnalysisURL
 	}
+	if cacheName == "writingbench" {
+		name, url = "WritingBench", opts.WritingBenchURL
+	}
+	if cacheName == "eqbench-creative-v3" {
+		name, url = "EQ-Bench Creative v3", opts.EQBenchCreativeURL
+	}
+	if cacheName == "official-lfm25-2.6b" {
+		name, url = "LiquidAI LFM2.5-2.6B card", opts.OfficialLFMURL
+	}
+	if cacheName == "official-qwen3.8-27b" {
+		name, url = "Qwen3.8-27B card", opts.OfficialQwenURL
+	}
+	if cacheName == "official-gpt-oss-20b" {
+		name, url = "OpenAI gpt-oss model card", opts.OfficialGPTOSSURL
+	}
+	if cacheName == "official-lfm25-vl-3b" {
+		name, url = "LiquidAI LFM2.5-VL-3B card", opts.OfficialLFMVLURL
+	}
+	if cacheName == "official-gemma4" {
+		name, url = "Google Gemma 4 model card", opts.OfficialGemmaURL
+	}
 	if !opts.Refresh && cacheErr == nil && opts.Now().Sub(cached.FetchedAt) < opts.TTL {
 		return cached, statusFor(name, url, cached, "fresh", nil), nil
 	}
@@ -54,8 +75,65 @@ func loadSource(ctx context.Context, opts Options, cacheName string, fetch func(
 	return sourceSnapshot{}, SourceStatus{Name: name, URL: url, Cache: "unavailable", Error: err.Error()}, fmt.Errorf("fetch %s: %w", name, err)
 }
 
+// loadOptionalOfficialSource preserves an otherwise usable catalog when a
+// reviewed model card is temporarily unavailable. A successful refresh still
+// goes through loadSource's atomic snapshot write; an unavailable card is
+// exposed in source status and never creates inferred evidence.
+func loadOptionalOfficialSource(ctx context.Context, opts Options, cacheName string, fetch func(context.Context) (sourceSnapshot, error)) (sourceSnapshot, SourceStatus) {
+	snapshot, status, err := loadSource(ctx, opts, cacheName, fetch)
+	if err == nil {
+		if err := validateOfficialCardSnapshot(cacheName, snapshot); err != nil {
+			return sourceSnapshot{}, invalidOfficialCardStatus(status, err)
+		}
+		return snapshot, status
+	}
+	return sourceSnapshot{}, status
+}
+
+func readOptionalOfficialSnapshot(opts Options, cacheName string) (sourceSnapshot, SourceStatus) {
+	path := filepath.Join(opts.CacheDir, cacheName+".json")
+	snapshot, err := readSnapshot(path)
+	name, url := "", ""
+	switch cacheName {
+	case "official-lfm25-2.6b":
+		name, url = "LiquidAI LFM2.5-2.6B card", opts.OfficialLFMURL
+	case "official-qwen3.8-27b":
+		name, url = "Qwen3.8-27B card", opts.OfficialQwenURL
+	case "official-gpt-oss-20b":
+		name, url = "OpenAI gpt-oss model card", opts.OfficialGPTOSSURL
+	case "official-lfm25-vl-3b":
+		name, url = "LiquidAI LFM2.5-VL-3B card", opts.OfficialLFMVLURL
+	case "official-gemma4":
+		name, url = "Google Gemma 4 model card", opts.OfficialGemmaURL
+	}
+	if err != nil {
+		return sourceSnapshot{}, SourceStatus{Name: name, URL: url, Cache: "unavailable", Error: err.Error()}
+	}
+	if err := validateOfficialCardSnapshot(cacheName, snapshot); err != nil {
+		return sourceSnapshot{}, SourceStatus{Name: name, URL: url, Cache: "unavailable", Error: "invalid official card cache: " + err.Error()}
+	}
+	stale := opts.Now().Sub(snapshot.FetchedAt) > opts.TTL
+	markSnapshotStale(&snapshot, stale)
+	cache := "cached"
+	if stale {
+		cache = "stale"
+	}
+	return snapshot, statusFor(name, url, snapshot, cache, nil)
+}
+
+func invalidOfficialCardStatus(status SourceStatus, err error) SourceStatus {
+	status.Cache = "unavailable"
+	status.Models = 0
+	status.Error = "invalid official card cache: " + err.Error()
+	return status
+}
+
 func statusFor(name, url string, snapshot sourceSnapshot, cache string, err error) SourceStatus {
-	s := SourceStatus{Name: name, URL: url, FetchedAt: snapshot.FetchedAt, Cache: cache, Models: len(snapshot.Models)}
+	s := SourceStatus{
+		Name: name, URL: url, FetchedAt: snapshot.FetchedAt, Cache: cache, Models: len(snapshot.Models),
+		Version: snapshot.Version, CommitSHA: snapshot.CommitSHA, ContentSHA: snapshot.ContentSHA, Methodology: snapshot.Method,
+		Observations: snapshot.Observations, RegistryVersion: snapshot.RegistryVersion, EvidenceGrade: snapshot.EvidenceGrade,
+	}
 	if err != nil {
 		s.Error = err.Error()
 	}

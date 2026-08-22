@@ -1,6 +1,6 @@
 package evals
 
-// Local evaluation contracts intentionally live outside the LES-1 scorer. They
+// Local evaluation contracts intentionally live outside the LLAMBO-2 scorer. They
 // describe sealed, task-specific evidence only and are never catalog imports.
 
 import (
@@ -240,6 +240,7 @@ type LocalRunIdentity struct {
 	TimeoutSeconds  int          `json:"timeout_seconds"`
 	MaxOutputTokens int          `json:"max_output_tokens"`
 	Pricing         LocalPricing `json:"pricing"`
+	LocalUseCase    string       `json:"local_use_case,omitempty"`
 }
 type LocalRunManifest struct {
 	SchemaVersion int              `json:"schema_version"`
@@ -269,6 +270,11 @@ func LocalRunIdentityHash(m LocalRunManifest) string {
 	b, _ := json.Marshal(m.Identity)
 	h := sha256.Sum256(b)
 	return hex.EncodeToString(h[:])
+}
+
+func SealLocalRunUseCase(m *LocalRunManifest, useCase string) {
+	m.Identity.LocalUseCase = strings.TrimSpace(useCase)
+	m.RunID = LocalRunIdentityHash(*m)[:16]
 }
 
 type LocalCall struct {

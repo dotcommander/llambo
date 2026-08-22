@@ -8,7 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dotcommander/llambo/internal/catalog"
 	"github.com/dotcommander/llambo/internal/evals"
+	"github.com/dotcommander/llambo/providers"
 )
 
 func TestWritingIterations(t *testing.T) {
@@ -130,5 +132,49 @@ func TestWritingObservedCostFailsClosedWhenPaidUsageIsMissing(t *testing.T) {
 	got := writingObservedCost(manifest, []evals.WritingGenerationRecord{record}, nil)
 	if got == nil || *got != 0.002 {
 		t.Fatalf("known paid usage = %v, want 0.002", got)
+	}
+}
+
+func TestWritingRuntimeConfigUsesResolvedPricing(t *testing.T) {
+	t.Parallel()
+	model := evals.WritingModelSpec{InputPer1M: 0.75, OutputPer1M: 3.75}
+	cfg := writingRuntimeConfig(providers.Config{InputCostPM: 99, OutputCostPM: 99}, model)
+	if cfg.InputCostPM != model.InputPer1M || cfg.OutputCostPM != model.OutputPer1M {
+		t.Fatalf("runtime pricing = (%v, %v), want (%v, %v)", cfg.InputCostPM, cfg.OutputCostPM, model.InputPer1M, model.OutputPer1M)
+	}
+}
+
+func TestWritingExternalEvidenceDoesNotPromoteLocalPerformanceOrQuality(t *testing.T) {
+	t.Parallel()
+	cat := &catalog.Catalog{Providers: map[string]*catalog.ProviderCatalog{
+		"omlx": {Models: map[string]*catalog.ModelEntry{
+			"local-only": {
+				Quality:    map[string]catalog.QualityEvidence{"writing": {Score: 0.9, Source: ".work/local-report.json"}},
+				Benchmarks: map[string]catalog.BenchmarkEvidence{"speed": {SpeedTokensPerSecond: 12, Source: "local-receipt.json"}},
+			},
+		}},
+	}}
+	class, _, _, err := writingExternalEvidence(cat, "omlx", "local-only")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if class != "missing" {
+		t.Fatalf("local-only evidence class = %q, want missing", class)
+	}
+}
+
+func TestWritingExternalEvidenceAcceptsKnownExternalQualitySource(t *testing.T) {
+	t.Parallel()
+	cat := &catalog.Catalog{Providers: map[string]*catalog.ProviderCatalog{
+		"gemini": {Models: map[string]*catalog.ModelEntry{
+			"model": {Quality: map[string]catalog.QualityEvidence{"overall": {Score: 0.8, Source: "artificial_analysis,llm_stats"}}},
+		}},
+	}}
+	class, source, note, err := writingExternalEvidence(cat, "gemini", "model")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if class != "exact" || source != "artificial_analysis,llm_stats" || note != "overall" {
+		t.Fatalf("external evidence = %q, %q, %q", class, source, note)
 	}
 }

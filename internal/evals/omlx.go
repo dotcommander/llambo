@@ -276,6 +276,9 @@ func sortedUnique(values []string) []string {
 // discovery. Canonical rows and formula diagnostics are never modified. A
 // discovery error omits projections whose live availability cannot be proven.
 func FilterProjectedRowsToLiveOMLX(report *Report, discovery OMLXDiscovery, discoveryErr error) {
+	if report == nil {
+		return
+	}
 	diagnostics := &OMLXDiagnostics{Attempts: append([]string(nil), discovery.Attempts...), ExcludedModels: append([]string(nil), discovery.Excluded...)}
 	if discoveryErr != nil {
 		diagnostics.Status = "unavailable"
@@ -291,6 +294,7 @@ func FilterProjectedRowsToLiveOMLX(report *Report, discovery OMLXDiscovery, disc
 		diagnostics.InactiveReviewedModels = sortedUnique(diagnostics.InactiveReviewedModels)
 		report.Models = filtered
 		report.OMLX = diagnostics
+		refreshCoverageCampaign(report)
 		return
 	}
 	diagnostics.Status = "filtered"
@@ -330,4 +334,12 @@ func FilterProjectedRowsToLiveOMLX(report *Report, discovery OMLXDiscovery, disc
 	diagnostics.ExcludedModels = sortedUnique(diagnostics.ExcludedModels)
 	report.Models = filtered
 	report.OMLX = diagnostics
+	refreshCoverageCampaign(report)
+}
+
+func refreshCoverageCampaign(report *Report) {
+	campaign, err := buildCoverageCampaign(report.Models)
+	if err == nil {
+		report.CoverageCampaign = campaign
+	}
 }

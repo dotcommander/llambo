@@ -50,6 +50,19 @@ type MissingProjection struct {
 	SourceKey   string `json:"source_key"`
 }
 
+func ReviewedProjectionForArtifact(artifactKey string) (ProjectionInfo, bool, error) {
+	registry, err := loadProjectionRegistry("")
+	if err != nil {
+		return ProjectionInfo{}, false, err
+	}
+	for _, projection := range registry.Projections {
+		if projection.ArtifactKey == artifactKey {
+			return ProjectionInfo{SourceKey: projection.SourceKey, Confidence: projection.Confidence, Basis: projection.Basis, ReviewedAt: projection.ReviewedAt}, true, nil
+		}
+	}
+	return ProjectionInfo{}, false, nil
+}
+
 func loadProjectionRegistry(path string) (projectionRegistry, error) {
 	data := builtInProjectionRegistry
 	if path != "" {
@@ -142,17 +155,63 @@ func appendProjectedRows(rows []ReportModel, projections []projectionSpec) ([]Re
 				score.Confidence = lowerConfidence(score.Confidence, projection.Confidence)
 			}
 		}
+		for _, score := range projected.LlamboScores {
+			if score != nil {
+				multiplier := projectionMultiplier(projected.Projection)
+				score.Score = 50 + (score.Score-50)*multiplier
+				score.TrustedCoverage *= multiplier
+				score.Confidence = "low"
+			}
+		}
+		fillMissingProjectedCategoryEstimates(&projected)
 		removeProjectedOperationalEvidence(&projected)
 		result = append(result, projected)
 	}
 	return result, missing, nil
 }
 
+const crossCategoryEstimateMethod = "cross-category-remote-shrink-v1"
+
+// fillMissingProjectedCategoryEstimates closes only projection-row blanks after
+// inherited benchmark scores receive the ordinary identity-confidence shrink.
+// Canonical/source rows remain strictly benchmark-backed or unresolved.
+func fillMissingProjectedCategoryEstimates(projected *ReportModel) {
+	if projected == nil || projected.Projection == nil {
+		return
+	}
+	sources := make([]string, 0, len(categorySpecs))
+	values := make([]float64, 0, len(categorySpecs))
+	stale := false
+	for _, category := range categorySpecs {
+		score := projected.LlamboScores[category.name]
+		if score == nil || score.Estimated {
+			continue
+		}
+		sources = append(sources, category.name)
+		values = append(values, score.Score)
+		stale = stale || score.Stale
+	}
+	if len(values) == 0 {
+		return
+	}
+	sort.Strings(sources)
+	estimate := 50 + (mean(values)-50)*.25
+	for _, category := range categorySpecs {
+		if projected.LlamboScores[category.name] != nil {
+			continue
+		}
+		projected.LlamboScores[category.name] = &LlamboScore{
+			Score: estimate, Confidence: "low", Stale: stale, Estimated: true,
+			EstimateMethod: crossCategoryEstimateMethod, EstimateSources: append([]string(nil), sources...),
+		}
+		delete(projected.UnresolvedReasons, category.name)
+	}
+}
+
 func removeProjectedOperationalEvidence(projected *ReportModel) {
 	projected.Scores["price"] = nil
 	projected.Scores["speed"] = nil
-	projected.Scores["value"] = nil
-	for _, metric := range externalMetrics {
+	for _, metric := range operationalMetrics {
 		if metric.dimension == "price" || metric.dimension == "speed" {
 			delete(projected.MetricPercentiles, metric.name)
 		}
@@ -172,6 +231,22 @@ func removeProjectedOperationalEvidence(projected *ReportModel) {
 	}
 }
 
+func projectionMultiplier(projection *ProjectionInfo) float64 {
+	if projection == nil {
+		return 1
+	}
+	switch projection.Confidence {
+	case "high":
+		return 1
+	case "medium":
+		return .75
+	case "low":
+		return .50
+	default:
+		return 0
+	}
+}
+
 func cloneReportModel(source ReportModel) ReportModel {
 	clone := source
 	clone.Open = cloneBool(source.Open)
@@ -185,6 +260,33 @@ func cloneReportModel(source ReportModel) ReportModel {
 		clonedScore.Sources = append([]string(nil), score.Sources...)
 		clonedScore.Disagreement = cloneFloat64(score.Disagreement)
 		clone.Scores[name] = &clonedScore
+	}
+	clone.LlamboScores = make(map[string]*LlamboScore, len(source.LlamboScores))
+	for name, score := range source.LlamboScores {
+		if score == nil {
+			clone.LlamboScores[name] = nil
+			continue
+		}
+		cloned := *score
+		if score.Primary != nil {
+			primary := *score.Primary
+			primary.RawScore = cloneFloat64(score.Primary.RawScore)
+			primary.Percentile = cloneFloat64(score.Primary.Percentile)
+			cloned.Primary = &primary
+		}
+		cloned.Checks = append([]benchmarkEvidence(nil), score.Checks...)
+		cloned.Contributions = append([]benchmarkEvidence(nil), score.Contributions...)
+		for i := range cloned.Contributions {
+			cloned.Contributions[i].RawScore = cloneFloat64(score.Contributions[i].RawScore)
+			cloned.Contributions[i].Percentile = cloneFloat64(score.Contributions[i].Percentile)
+		}
+		for i := range cloned.Checks {
+			cloned.Checks[i].RawScore = cloneFloat64(score.Checks[i].RawScore)
+			cloned.Checks[i].Percentile = cloneFloat64(score.Checks[i].Percentile)
+		}
+		cloned.Agreement = cloneFloat64(score.Agreement)
+		cloned.EstimateSources = append([]string(nil), score.EstimateSources...)
+		clone.LlamboScores[name] = &cloned
 	}
 	clone.MetricPercentiles = make(map[string]float64, len(source.MetricPercentiles))
 	for name, value := range source.MetricPercentiles {

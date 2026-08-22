@@ -14,11 +14,13 @@ import (
 )
 
 type commandWritingExecutor struct {
-	run      *promptRun
-	configs  map[string]providers.Config
-	timeout  time.Duration
-	mu       sync.Mutex
-	identity map[string]*evals.IdentityTracker
+	run        *promptRun
+	configs    map[string]providers.Config
+	timeout    time.Duration
+	mu         sync.Mutex
+	identity   map[string]*evals.IdentityTracker
+	providerMu sync.Mutex
+	providers  map[string]*providers.OpenAIProvider
 }
 
 func newCommandWritingExecutor(errOut io.Writer, configs map[string]providers.Config, timeout time.Duration) (*commandWritingExecutor, error) {
@@ -26,7 +28,7 @@ func newCommandWritingExecutor(errOut io.Writer, configs map[string]providers.Co
 	if err != nil {
 		return nil, err
 	}
-	return &commandWritingExecutor{run: run, configs: configs, timeout: timeout, identity: make(map[string]*evals.IdentityTracker)}, nil
+	return &commandWritingExecutor{run: run, configs: configs, timeout: timeout, identity: make(map[string]*evals.IdentityTracker), providers: make(map[string]*providers.OpenAIProvider)}, nil
 }
 
 func (e *commandWritingExecutor) Execute(parent context.Context, call evals.WritingExecutionCall) (evals.WritingExecutionResult, error) {
@@ -53,11 +55,10 @@ func (e *commandWritingExecutor) Execute(parent context.Context, call evals.Writ
 		return evals.WritingExecutionResult{}, err
 	}
 	defer release()
-	provider, err := providers.NewOpenAIWithSharedRoutingMetrics(map[string]providers.Config{entry.Name: entry.Config}, e.run.metrics)
+	provider, err := e.providerFor(call.Kind, entry)
 	if err != nil {
 		return evals.WritingExecutionResult{}, fmt.Errorf("create writing provider: %w", err)
 	}
-	defer provider.Shutdown()
 	result, callErr := provider.ChatWithInfoContext(ctx, call.SystemPrompt, call.UserPrompt)
 	output := evals.WritingExecutionResult{
 		Content:      result.Content,
@@ -70,14 +71,21 @@ func (e *commandWritingExecutor) Execute(parent context.Context, call evals.Writ
 		output.Usage.PromptTokens = result.Usage.PromptTokens
 		output.Usage.CompletionTokens = result.Usage.CompletionTokens
 		output.Usage.TotalTokens = result.Usage.TotalTokens
+		output.Usage.CacheReadTokens = result.Usage.CacheReadTokens
+		output.Usage.CacheWriteTokens = result.Usage.CacheWriteTokens
+		output.Usage.ReasoningTokens = result.Usage.ReasoningTokens
 		if result.Usage.Cost != nil {
 			output.Usage.CostUSD = result.Usage.Cost.TotalCost
+			output.Usage.CostKnown = true
 		} else {
-			output.Usage.CostUSD = float64(output.Usage.PromptTokens)*call.Model.InputPer1M/1_000_000 + float64(output.Usage.CompletionTokens)*call.Model.OutputPer1M/1_000_000
+			uncached := max(output.Usage.PromptTokens-output.Usage.CacheReadTokens, 0)
+			output.Usage.CostUSD = float64(uncached)*call.Model.InputPer1M/1_000_000 + float64(output.Usage.CacheReadTokens)*call.Model.CacheReadPer1M/1_000_000 + float64(output.Usage.CacheWriteTokens)*call.Model.CacheWritePer1M/1_000_000 + float64(output.Usage.CompletionTokens)*call.Model.OutputPer1M/1_000_000
+			output.Usage.CostKnown = (output.Usage.CacheReadTokens == 0 || call.Model.CacheReadPer1M > 0) && (output.Usage.CacheWriteTokens == 0 || call.Model.CacheWritePer1M > 0)
 		}
 	}
 	if call.Model.InputPer1M == 0 && call.Model.OutputPer1M == 0 {
 		output.Usage.Known = true
+		output.Usage.CostKnown = true
 	}
 	if result.Route != nil {
 		output.Route = result.Route.Chosen
@@ -89,6 +97,21 @@ func (e *commandWritingExecutor) Execute(parent context.Context, call evals.Writ
 		return output, err
 	}
 	return output, nil
+}
+
+func (e *commandWritingExecutor) providerFor(kind string, entry providers.ProviderEntry) (*providers.OpenAIProvider, error) {
+	key := kind + "\x00" + entry.Name + "\x00" + entry.Config.Model
+	e.providerMu.Lock()
+	defer e.providerMu.Unlock()
+	if provider := e.providers[key]; provider != nil {
+		return provider, nil
+	}
+	provider, err := providers.NewOpenAIWithSharedRoutingMetrics(map[string]providers.Config{entry.Name: entry.Config}, e.run.metrics)
+	if err != nil {
+		return nil, err
+	}
+	e.providers[key] = provider
+	return provider, nil
 }
 
 func (e *commandWritingExecutor) validateExecutionResult(requested evals.WritingModelSpec, provider, model, content string) error {
@@ -116,7 +139,16 @@ func validateWritingExecutionResult(requested evals.WritingModelSpec, provider, 
 }
 
 func (e *commandWritingExecutor) Close() {
-	if e != nil && e.run != nil {
+	if e == nil {
+		return
+	}
+	e.providerMu.Lock()
+	for key, provider := range e.providers {
+		provider.Shutdown()
+		delete(e.providers, key)
+	}
+	e.providerMu.Unlock()
+	if e.run != nil {
 		e.run.close()
 	}
 }

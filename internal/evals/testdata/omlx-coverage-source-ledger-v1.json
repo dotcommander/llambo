@@ -1,0 +1,1245 @@
+{
+  "schema_version": "llambo-source-ledger-v1",
+  "target_version": "omlx-score-coverage-2026-08-21",
+  "sources": [
+    {
+      "id": "llambo-2-reference",
+      "locator": "https://github.com/dotcommander/llambo/blob/LLAMBO-2/internal/evals/testdata/les-v1-reference.json",
+      "owner": "Llambo",
+      "title": "LLAMBO-2 frozen reference distribution",
+      "revision": "LLAMBO-2",
+      "content_sha256": "74d5049896f5c8de4c01d22d15357e5451209d215b7e6410b9169dc6cb30ffed",
+      "methodology": "Frozen source-native reference distribution used by the LLAMBO-2 campaign baseline; it is not an external benchmark observation.",
+      "accessed_at": "2026-08-21T06:11:58Z",
+      "artifact_kind": "checked-in-raw-reference",
+      "verification": "sha256-verified",
+      "source_class": "campaign-baseline",
+      "independence": "derived",
+      "status": "frozen"
+    },
+    {
+      "id": "lfm2.5-8b-a1b-card",
+      "locator": "https://huggingface.co/LiquidAI/LFM2.5-8B-A1B/raw/b9aebfcbe28b6cb374042f495d733037550ab146/README.md",
+      "owner": "Liquid AI",
+      "title": "LFM2.5-8B-A1B model card",
+      "revision": "b9aebfcbe28b6cb374042f495d733037550ab146",
+      "content_sha256": "10950a8975d3f43c4b51a74def690603ac82be6c53a2d8eb509e6e31177b6efc",
+      "methodology": "LiquidAI official LFM2.5-8B-A1B model-card Knowledge and instruction following comparison table; IFEval column. The raw model-card bytes are not sealed by this ledger; the hash is normalized snapshot metadata.",
+      "accessed_at": "2026-08-21T06:11:58Z",
+      "artifact_kind": "normalized-snapshot",
+      "verification": "metadata-only",
+      "source_class": "first-party-model-card",
+      "independence": "first-party",
+      "status": "normalized-frozen"
+    },
+    {
+      "id": "writingbench-score-xlsx",
+      "locator": "https://huggingface.co/spaces/WritingBench/WritingBench/resolve/main/score.xlsx",
+      "owner": "WritingBench",
+      "title": "WritingBench official score.xlsx",
+      "revision": "d9338ce9b09792ea7167279fee7ccc1910e28c5d",
+      "content_sha256": "623a59886c6b755724828a5e302df30e93b5aa30cd86bfff09ec512746d4b3d9",
+      "methodology": "WritingBench official score.xlsx Overall; SHA-256 verifies the checked-in normalized 54-row identity inventory, not raw workbook bytes.",
+      "accessed_at": "2026-08-21T06:05:41.053902Z",
+      "artifact_kind": "normalized-identity-snapshot",
+      "verification": "sha256-verified",
+      "source_class": "official-benchmark-owner",
+      "independence": "benchmark-owner",
+      "status": "normalized-frozen"
+    }
+  ],
+  "claims": [
+    {
+      "id": "lfm2.5-8b-a1b-ifeval-boundary",
+      "claim": "The normalized Liquid AI snapshot records a first-party IFEval comparison row for LFM2.5-8B-A1B, but it is not an exact OMLX target observation.",
+      "supporting_source_ids": [
+        "lfm2.5-8b-a1b-card"
+      ],
+      "kind": "direct",
+      "confidence": 0.8,
+      "change_condition": "The pinned model-card revision or exact-target identity mapping changes."
+    },
+    {
+      "id": "writingbench-target-boundary",
+      "claim": "The normalized WritingBench snapshot metadata records 54 official score rows but no matching target-family row for this frozen campaign.",
+      "supporting_source_ids": [
+        "writingbench-score-xlsx"
+      ],
+      "kind": "direct",
+      "confidence": 0.8,
+      "change_condition": "The official WritingBench score.xlsx revision or exact-target identity mapping changes."
+    }
+  ],
+  "searches": [
+    {
+      "id": "agents-primary-ladder",
+      "source_class": "campaign-baseline",
+      "query": "agents primary authority ladder",
+      "result": "No eligible official agents cohort is frozen.",
+      "revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_search_differs": "Recheck only after an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "id": "coding-primary-ladder",
+      "source_class": "campaign-baseline",
+      "query": "coding primary authority ladder",
+      "result": "No eligible official coding cohort is frozen.",
+      "revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_search_differs": "Recheck only after an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "id": "instruction-primary-ladder",
+      "source_class": "campaign-baseline",
+      "query": "instruction following primary authority ladder",
+      "result": "No eligible official instruction cohort is frozen.",
+      "revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference",
+        "lfm2.5-8b-a1b-card"
+      ],
+      "next_search_differs": "Recheck only after an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "id": "long-context-primary-ladder",
+      "source_class": "campaign-baseline",
+      "query": "long context primary authority ladder",
+      "result": "No eligible official long-context cohort is frozen.",
+      "revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_search_differs": "Recheck only after an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "id": "reasoning-primary-ladder",
+      "source_class": "campaign-baseline",
+      "query": "reasoning primary authority ladder",
+      "result": "No eligible official reasoning cohort is frozen.",
+      "revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_search_differs": "Recheck only after an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "id": "writing-primary-ladder",
+      "source_class": "official-benchmark-owner",
+      "query": "WritingBench official score.xlsx target-family lookup",
+      "result": "Official WritingBench snapshot has no matching target-family row.",
+      "revision": "d9338ce9b09792ea7167279fee7ccc1910e28c5d",
+      "source_ids": [
+        "llambo-2-reference",
+        "writingbench-score-xlsx"
+      ],
+      "next_search_differs": "Recheck only when the official WritingBench snapshot revision changes."
+    }
+  ],
+  "scoped_null_receipts": [
+    {
+      "model_key": "LFM2.5-2.6B-4bit",
+      "category": "agents",
+      "ordered_source_classes": [
+        "mcp-atlas",
+        "bfcl-v4",
+        "tau2-bench",
+        "tau3-bench",
+        "toolsandbox"
+      ],
+      "reason": "No eligible official agents cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "LFM2.5-2.6B-4bit",
+      "category": "coding",
+      "ordered_source_classes": [
+        "swe-bench-verified",
+        "swe-bench-pro",
+        "scicode",
+        "livecodebench-v6"
+      ],
+      "reason": "No eligible official coding cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "LFM2.5-2.6B-4bit",
+      "category": "instruction-following",
+      "ordered_source_classes": [
+        "instruction-following-index",
+        "ifeval-official",
+        "ifbench",
+        "multi-if",
+        "ifstruct"
+      ],
+      "reason": "No eligible official instruction cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "LFM2.5-2.6B-4bit",
+      "category": "long-context",
+      "ordered_source_classes": [
+        "long-context-index",
+        "longbench-v2",
+        "ruler",
+        "helmet"
+      ],
+      "reason": "No eligible official long-context cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "LFM2.5-2.6B-4bit",
+      "category": "reasoning",
+      "ordered_source_classes": [
+        "gpqa",
+        "aime-versioned"
+      ],
+      "reason": "No eligible official reasoning cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "LFM2.5-2.6B-4bit",
+      "category": "writing",
+      "ordered_source_classes": [
+        "writingbench"
+      ],
+      "reason": "Official WritingBench snapshot has no matching target-family row.",
+      "status": "externally-blocked",
+      "last_checked_revision": "d9338ce9b09792ea7167279fee7ccc1910e28c5d",
+      "source_ids": [
+        "llambo-2-reference",
+        "writingbench-score-xlsx"
+      ],
+      "next_check": "Recheck only when the official WritingBench snapshot revision changes."
+    },
+    {
+      "model_key": "LFM2.5-2.6B-bf16",
+      "category": "agents",
+      "ordered_source_classes": [
+        "mcp-atlas",
+        "bfcl-v4",
+        "tau2-bench",
+        "tau3-bench",
+        "toolsandbox"
+      ],
+      "reason": "No eligible official agents cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "LFM2.5-2.6B-bf16",
+      "category": "coding",
+      "ordered_source_classes": [
+        "swe-bench-verified",
+        "swe-bench-pro",
+        "scicode",
+        "livecodebench-v6"
+      ],
+      "reason": "No eligible official coding cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "LFM2.5-2.6B-bf16",
+      "category": "instruction-following",
+      "ordered_source_classes": [
+        "instruction-following-index",
+        "ifeval-official",
+        "ifbench",
+        "multi-if",
+        "ifstruct"
+      ],
+      "reason": "No eligible official instruction cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "LFM2.5-2.6B-bf16",
+      "category": "long-context",
+      "ordered_source_classes": [
+        "long-context-index",
+        "longbench-v2",
+        "ruler",
+        "helmet"
+      ],
+      "reason": "No eligible official long-context cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "LFM2.5-2.6B-bf16",
+      "category": "reasoning",
+      "ordered_source_classes": [
+        "gpqa",
+        "aime-versioned"
+      ],
+      "reason": "No eligible official reasoning cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "LFM2.5-2.6B-bf16",
+      "category": "writing",
+      "ordered_source_classes": [
+        "writingbench"
+      ],
+      "reason": "Official WritingBench snapshot has no matching target-family row.",
+      "status": "externally-blocked",
+      "last_checked_revision": "d9338ce9b09792ea7167279fee7ccc1910e28c5d",
+      "source_ids": [
+        "llambo-2-reference",
+        "writingbench-score-xlsx"
+      ],
+      "next_check": "Recheck only when the official WritingBench snapshot revision changes."
+    },
+    {
+      "model_key": "LFM2.5-2.6B-oQ4",
+      "category": "agents",
+      "ordered_source_classes": [
+        "mcp-atlas",
+        "bfcl-v4",
+        "tau2-bench",
+        "tau3-bench",
+        "toolsandbox"
+      ],
+      "reason": "No eligible official agents cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "LFM2.5-2.6B-oQ4",
+      "category": "coding",
+      "ordered_source_classes": [
+        "swe-bench-verified",
+        "swe-bench-pro",
+        "scicode",
+        "livecodebench-v6"
+      ],
+      "reason": "No eligible official coding cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "LFM2.5-2.6B-oQ4",
+      "category": "instruction-following",
+      "ordered_source_classes": [
+        "instruction-following-index",
+        "ifeval-official",
+        "ifbench",
+        "multi-if",
+        "ifstruct"
+      ],
+      "reason": "No eligible official instruction cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "LFM2.5-2.6B-oQ4",
+      "category": "long-context",
+      "ordered_source_classes": [
+        "long-context-index",
+        "longbench-v2",
+        "ruler",
+        "helmet"
+      ],
+      "reason": "No eligible official long-context cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "LFM2.5-2.6B-oQ4",
+      "category": "reasoning",
+      "ordered_source_classes": [
+        "gpqa",
+        "aime-versioned"
+      ],
+      "reason": "No eligible official reasoning cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "LFM2.5-2.6B-oQ4",
+      "category": "writing",
+      "ordered_source_classes": [
+        "writingbench"
+      ],
+      "reason": "Official WritingBench snapshot has no matching target-family row.",
+      "status": "externally-blocked",
+      "last_checked_revision": "d9338ce9b09792ea7167279fee7ccc1910e28c5d",
+      "source_ids": [
+        "llambo-2-reference",
+        "writingbench-score-xlsx"
+      ],
+      "next_check": "Recheck only when the official WritingBench snapshot revision changes."
+    },
+    {
+      "model_key": "LFM2.5-8B-A1B-MLX-4bit",
+      "category": "agents",
+      "ordered_source_classes": [
+        "mcp-atlas",
+        "bfcl-v4",
+        "tau2-bench",
+        "tau3-bench",
+        "toolsandbox"
+      ],
+      "reason": "No eligible official agents cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "LFM2.5-8B-A1B-MLX-4bit",
+      "category": "coding",
+      "ordered_source_classes": [
+        "swe-bench-verified",
+        "swe-bench-pro",
+        "scicode",
+        "livecodebench-v6"
+      ],
+      "reason": "No eligible official coding cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "LFM2.5-8B-A1B-MLX-4bit",
+      "category": "instruction-following",
+      "ordered_source_classes": [
+        "instruction-following-index",
+        "ifeval-official",
+        "ifbench",
+        "multi-if",
+        "ifstruct"
+      ],
+      "reason": "No eligible official instruction cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "LFM2.5-8B-A1B-MLX-4bit",
+      "category": "long-context",
+      "ordered_source_classes": [
+        "long-context-index",
+        "longbench-v2",
+        "ruler",
+        "helmet"
+      ],
+      "reason": "No eligible official long-context cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "LFM2.5-8B-A1B-MLX-4bit",
+      "category": "reasoning",
+      "ordered_source_classes": [
+        "gpqa",
+        "aime-versioned"
+      ],
+      "reason": "No eligible official reasoning cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "LFM2.5-8B-A1B-MLX-4bit",
+      "category": "writing",
+      "ordered_source_classes": [
+        "writingbench"
+      ],
+      "reason": "Official WritingBench snapshot has no matching target-family row.",
+      "status": "externally-blocked",
+      "last_checked_revision": "d9338ce9b09792ea7167279fee7ccc1910e28c5d",
+      "source_ids": [
+        "llambo-2-reference",
+        "writingbench-score-xlsx"
+      ],
+      "next_check": "Recheck only when the official WritingBench snapshot revision changes."
+    },
+    {
+      "model_key": "LFM2.5-VL-3B-MLX-4bit",
+      "category": "agents",
+      "ordered_source_classes": [
+        "mcp-atlas",
+        "bfcl-v4",
+        "tau2-bench",
+        "tau3-bench",
+        "toolsandbox"
+      ],
+      "reason": "No eligible official agents cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "LFM2.5-VL-3B-MLX-4bit",
+      "category": "coding",
+      "ordered_source_classes": [
+        "swe-bench-verified",
+        "swe-bench-pro",
+        "scicode",
+        "livecodebench-v6"
+      ],
+      "reason": "No eligible official coding cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "LFM2.5-VL-3B-MLX-4bit",
+      "category": "instruction-following",
+      "ordered_source_classes": [
+        "instruction-following-index",
+        "ifeval-official",
+        "ifbench",
+        "multi-if",
+        "ifstruct"
+      ],
+      "reason": "No eligible official instruction cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "LFM2.5-VL-3B-MLX-4bit",
+      "category": "long-context",
+      "ordered_source_classes": [
+        "long-context-index",
+        "longbench-v2",
+        "ruler",
+        "helmet"
+      ],
+      "reason": "No eligible official long-context cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "LFM2.5-VL-3B-MLX-4bit",
+      "category": "reasoning",
+      "ordered_source_classes": [
+        "gpqa",
+        "aime-versioned"
+      ],
+      "reason": "No eligible official reasoning cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "LFM2.5-VL-3B-MLX-4bit",
+      "category": "writing",
+      "ordered_source_classes": [
+        "writingbench"
+      ],
+      "reason": "Official WritingBench snapshot has no matching target-family row.",
+      "status": "externally-blocked",
+      "last_checked_revision": "d9338ce9b09792ea7167279fee7ccc1910e28c5d",
+      "source_ids": [
+        "llambo-2-reference",
+        "writingbench-score-xlsx"
+      ],
+      "next_check": "Recheck only when the official WritingBench snapshot revision changes."
+    },
+    {
+      "model_key": "Qwen3.6-27B-MLX-4bit",
+      "category": "agents",
+      "ordered_source_classes": [
+        "mcp-atlas",
+        "bfcl-v4",
+        "tau2-bench",
+        "tau3-bench",
+        "toolsandbox"
+      ],
+      "reason": "No eligible official agents cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "Qwen3.6-27B-MLX-4bit",
+      "category": "coding",
+      "ordered_source_classes": [
+        "swe-bench-verified",
+        "swe-bench-pro",
+        "scicode",
+        "livecodebench-v6"
+      ],
+      "reason": "No eligible official coding cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "Qwen3.6-27B-MLX-4bit",
+      "category": "instruction-following",
+      "ordered_source_classes": [
+        "instruction-following-index",
+        "ifeval-official",
+        "ifbench",
+        "multi-if",
+        "ifstruct"
+      ],
+      "reason": "No eligible official instruction cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "Qwen3.6-27B-MLX-4bit",
+      "category": "long-context",
+      "ordered_source_classes": [
+        "long-context-index",
+        "longbench-v2",
+        "ruler",
+        "helmet"
+      ],
+      "reason": "No eligible official long-context cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "Qwen3.6-27B-MLX-4bit",
+      "category": "reasoning",
+      "ordered_source_classes": [
+        "gpqa",
+        "aime-versioned"
+      ],
+      "reason": "No eligible official reasoning cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "Qwen3.6-27B-MLX-4bit",
+      "category": "writing",
+      "ordered_source_classes": [
+        "writingbench"
+      ],
+      "reason": "Official WritingBench snapshot has no matching target-family row.",
+      "status": "externally-blocked",
+      "last_checked_revision": "d9338ce9b09792ea7167279fee7ccc1910e28c5d",
+      "source_ids": [
+        "llambo-2-reference",
+        "writingbench-score-xlsx"
+      ],
+      "next_check": "Recheck only when the official WritingBench snapshot revision changes."
+    },
+    {
+      "model_key": "Qwen3.6-35B-A3B-oQ4-fp16-mtp",
+      "category": "agents",
+      "ordered_source_classes": [
+        "mcp-atlas",
+        "bfcl-v4",
+        "tau2-bench",
+        "tau3-bench",
+        "toolsandbox"
+      ],
+      "reason": "No eligible official agents cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "Qwen3.6-35B-A3B-oQ4-fp16-mtp",
+      "category": "coding",
+      "ordered_source_classes": [
+        "swe-bench-verified",
+        "swe-bench-pro",
+        "scicode",
+        "livecodebench-v6"
+      ],
+      "reason": "No eligible official coding cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "Qwen3.6-35B-A3B-oQ4-fp16-mtp",
+      "category": "instruction-following",
+      "ordered_source_classes": [
+        "instruction-following-index",
+        "ifeval-official",
+        "ifbench",
+        "multi-if",
+        "ifstruct"
+      ],
+      "reason": "No eligible official instruction cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "Qwen3.6-35B-A3B-oQ4-fp16-mtp",
+      "category": "long-context",
+      "ordered_source_classes": [
+        "long-context-index",
+        "longbench-v2",
+        "ruler",
+        "helmet"
+      ],
+      "reason": "No eligible official long-context cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "Qwen3.6-35B-A3B-oQ4-fp16-mtp",
+      "category": "reasoning",
+      "ordered_source_classes": [
+        "gpqa",
+        "aime-versioned"
+      ],
+      "reason": "No eligible official reasoning cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "Qwen3.6-35B-A3B-oQ4-fp16-mtp",
+      "category": "writing",
+      "ordered_source_classes": [
+        "writingbench"
+      ],
+      "reason": "Official WritingBench snapshot has no matching target-family row.",
+      "status": "externally-blocked",
+      "last_checked_revision": "d9338ce9b09792ea7167279fee7ccc1910e28c5d",
+      "source_ids": [
+        "llambo-2-reference",
+        "writingbench-score-xlsx"
+      ],
+      "next_check": "Recheck only when the official WritingBench snapshot revision changes."
+    },
+    {
+      "model_key": "gemma-4-26B-A4B-it-heretic-4bit",
+      "category": "agents",
+      "ordered_source_classes": [
+        "mcp-atlas",
+        "bfcl-v4",
+        "tau2-bench",
+        "tau3-bench",
+        "toolsandbox"
+      ],
+      "reason": "No eligible official agents cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "gemma-4-26B-A4B-it-heretic-4bit",
+      "category": "coding",
+      "ordered_source_classes": [
+        "swe-bench-verified",
+        "swe-bench-pro",
+        "scicode",
+        "livecodebench-v6"
+      ],
+      "reason": "No eligible official coding cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "gemma-4-26B-A4B-it-heretic-4bit",
+      "category": "instruction-following",
+      "ordered_source_classes": [
+        "instruction-following-index",
+        "ifeval-official",
+        "ifbench",
+        "multi-if",
+        "ifstruct"
+      ],
+      "reason": "No eligible official instruction cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "gemma-4-26B-A4B-it-heretic-4bit",
+      "category": "long-context",
+      "ordered_source_classes": [
+        "long-context-index",
+        "longbench-v2",
+        "ruler",
+        "helmet"
+      ],
+      "reason": "No eligible official long-context cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "gemma-4-26B-A4B-it-heretic-4bit",
+      "category": "reasoning",
+      "ordered_source_classes": [
+        "gpqa",
+        "aime-versioned"
+      ],
+      "reason": "No eligible official reasoning cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "gemma-4-26B-A4B-it-heretic-4bit",
+      "category": "writing",
+      "ordered_source_classes": [
+        "writingbench"
+      ],
+      "reason": "Official WritingBench snapshot has no matching target-family row.",
+      "status": "externally-blocked",
+      "last_checked_revision": "d9338ce9b09792ea7167279fee7ccc1910e28c5d",
+      "source_ids": [
+        "llambo-2-reference",
+        "writingbench-score-xlsx"
+      ],
+      "next_check": "Recheck only when the official WritingBench snapshot revision changes."
+    },
+    {
+      "model_key": "gpt-oss-20b-MXFP4-Q8",
+      "category": "agents",
+      "ordered_source_classes": [
+        "mcp-atlas",
+        "bfcl-v4",
+        "tau2-bench",
+        "tau3-bench",
+        "toolsandbox"
+      ],
+      "reason": "No eligible official agents cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "gpt-oss-20b-MXFP4-Q8",
+      "category": "coding",
+      "ordered_source_classes": [
+        "swe-bench-verified",
+        "swe-bench-pro",
+        "scicode",
+        "livecodebench-v6"
+      ],
+      "reason": "No eligible official coding cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "gpt-oss-20b-MXFP4-Q8",
+      "category": "instruction-following",
+      "ordered_source_classes": [
+        "instruction-following-index",
+        "ifeval-official",
+        "ifbench",
+        "multi-if",
+        "ifstruct"
+      ],
+      "reason": "No eligible official instruction cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "gpt-oss-20b-MXFP4-Q8",
+      "category": "long-context",
+      "ordered_source_classes": [
+        "long-context-index",
+        "longbench-v2",
+        "ruler",
+        "helmet"
+      ],
+      "reason": "No eligible official long-context cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "gpt-oss-20b-MXFP4-Q8",
+      "category": "reasoning",
+      "ordered_source_classes": [
+        "gpqa",
+        "aime-versioned"
+      ],
+      "reason": "No eligible official reasoning cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "gpt-oss-20b-MXFP4-Q8",
+      "category": "writing",
+      "ordered_source_classes": [
+        "writingbench"
+      ],
+      "reason": "Official WritingBench snapshot has no matching target-family row.",
+      "status": "externally-blocked",
+      "last_checked_revision": "d9338ce9b09792ea7167279fee7ccc1910e28c5d",
+      "source_ids": [
+        "llambo-2-reference",
+        "writingbench-score-xlsx"
+      ],
+      "next_check": "Recheck only when the official WritingBench snapshot revision changes."
+    },
+    {
+      "model_key": "granite-4.1-8b-nvfp4",
+      "category": "agents",
+      "ordered_source_classes": [
+        "mcp-atlas",
+        "bfcl-v4",
+        "tau2-bench",
+        "tau3-bench",
+        "toolsandbox"
+      ],
+      "reason": "No eligible official agents cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "granite-4.1-8b-nvfp4",
+      "category": "coding",
+      "ordered_source_classes": [
+        "swe-bench-verified",
+        "swe-bench-pro",
+        "scicode",
+        "livecodebench-v6"
+      ],
+      "reason": "No eligible official coding cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "granite-4.1-8b-nvfp4",
+      "category": "instruction-following",
+      "ordered_source_classes": [
+        "instruction-following-index",
+        "ifeval-official",
+        "ifbench",
+        "multi-if",
+        "ifstruct"
+      ],
+      "reason": "No eligible official instruction cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "granite-4.1-8b-nvfp4",
+      "category": "long-context",
+      "ordered_source_classes": [
+        "long-context-index",
+        "longbench-v2",
+        "ruler",
+        "helmet"
+      ],
+      "reason": "No eligible official long-context cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "granite-4.1-8b-nvfp4",
+      "category": "reasoning",
+      "ordered_source_classes": [
+        "gpqa",
+        "aime-versioned"
+      ],
+      "reason": "No eligible official reasoning cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "granite-4.1-8b-nvfp4",
+      "category": "writing",
+      "ordered_source_classes": [
+        "writingbench"
+      ],
+      "reason": "Official WritingBench snapshot has no matching target-family row.",
+      "status": "externally-blocked",
+      "last_checked_revision": "d9338ce9b09792ea7167279fee7ccc1910e28c5d",
+      "source_ids": [
+        "llambo-2-reference",
+        "writingbench-score-xlsx"
+      ],
+      "next_check": "Recheck only when the official WritingBench snapshot revision changes."
+    },
+    {
+      "model_key": "Qwen-AgentWorld-35B-A3B-oQ4-MLX",
+      "category": "agents",
+      "ordered_source_classes": [
+        "mcp-atlas",
+        "bfcl-v4",
+        "tau2-bench",
+        "tau3-bench",
+        "toolsandbox"
+      ],
+      "reason": "No eligible official agents cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "Qwen-AgentWorld-35B-A3B-oQ4-MLX",
+      "category": "coding",
+      "ordered_source_classes": [
+        "swe-bench-verified",
+        "swe-bench-pro",
+        "scicode",
+        "livecodebench-v6"
+      ],
+      "reason": "No eligible official coding cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "Qwen-AgentWorld-35B-A3B-oQ4-MLX",
+      "category": "instruction-following",
+      "ordered_source_classes": [
+        "instruction-following-index",
+        "ifeval-official",
+        "ifbench",
+        "multi-if",
+        "ifstruct"
+      ],
+      "reason": "No eligible official instruction cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "Qwen-AgentWorld-35B-A3B-oQ4-MLX",
+      "category": "long-context",
+      "ordered_source_classes": [
+        "long-context-index",
+        "longbench-v2",
+        "ruler",
+        "helmet"
+      ],
+      "reason": "No eligible official long-context cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "Qwen-AgentWorld-35B-A3B-oQ4-MLX",
+      "category": "reasoning",
+      "ordered_source_classes": [
+        "gpqa",
+        "aime-versioned"
+      ],
+      "reason": "No eligible official reasoning cohort is frozen.",
+      "status": "research-pending",
+      "last_checked_revision": "LLAMBO-2",
+      "source_ids": [
+        "llambo-2-reference"
+      ],
+      "next_check": "Recheck when an earlier ordered official source is sealed into a new formula version."
+    },
+    {
+      "model_key": "Qwen-AgentWorld-35B-A3B-oQ4-MLX",
+      "category": "writing",
+      "ordered_source_classes": [
+        "writingbench"
+      ],
+      "reason": "Official WritingBench snapshot has no matching target-family row.",
+      "status": "externally-blocked",
+      "last_checked_revision": "d9338ce9b09792ea7167279fee7ccc1910e28c5d",
+      "source_ids": [
+        "llambo-2-reference",
+        "writingbench-score-xlsx"
+      ],
+      "next_check": "Recheck only when the official WritingBench snapshot revision changes."
+    }
+  ]
+}

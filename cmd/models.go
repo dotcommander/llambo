@@ -13,6 +13,7 @@ import (
 
 	"github.com/dotcommander/llambo/internal/catalog"
 	"github.com/dotcommander/llambo/internal/costs"
+	"github.com/dotcommander/llambo/internal/evals"
 	"github.com/dotcommander/llambo/providers"
 )
 
@@ -25,14 +26,16 @@ var modelsProviderFilter string
 var modelsMetrics bool
 
 type modelRow struct {
-	Provider   string
-	Enabled    bool
-	Model      string
-	Primary    bool
-	Score      string
-	Speed      string
-	Latency    string
-	OutputCost string
+	Provider         string
+	Enabled          bool
+	Model            string
+	Primary          bool
+	LlamboScore      string
+	LlamboProvenance string
+	TaskScore        string
+	Speed            string
+	Latency          string
+	OutputCost       string
 }
 
 func runModels(cmd *commandIO, args []string) error {
@@ -44,6 +47,7 @@ func runModels(cmd *commandIO, args []string) error {
 
 	var metricsCatalog *catalog.Catalog
 	var costMap map[string]costs.ModelCost
+	var scoreSnapshot *evals.OMLXScoreSnapshot
 	if modelsMetrics {
 		catPath, err := catalog.CatalogPath()
 		if err != nil {
@@ -54,6 +58,14 @@ func runModels(cmd *commandIO, args []string) error {
 			return err
 		}
 		costMap, err = costs.LoadAll()
+		if err != nil {
+			return err
+		}
+		snapshotPath, err := evals.OMLXScoreSnapshotPath()
+		if err != nil {
+			return err
+		}
+		scoreSnapshot, err = evals.LoadOMLXScoreSnapshot(snapshotPath)
 		if err != nil {
 			return err
 		}
@@ -75,7 +87,7 @@ func runModels(cmd *commandIO, args []string) error {
 				models = avail
 			}
 		} else {
-			models = appendCatalogMetricModels(metricsCatalog, name, models)
+			models = appendCatalogMetricModels(metricsCatalog, scoreSnapshot, name, models)
 		}
 
 		for i, model := range models {
@@ -86,7 +98,7 @@ func runModels(cmd *commandIO, args []string) error {
 				Primary:  i == 0 && !modelsAvailable,
 			}
 			if modelsMetrics {
-				row.Score, row.Speed, row.Latency = modelMetricLabels(metricsCatalog, name, model)
+				row.LlamboScore, row.LlamboProvenance, row.TaskScore, row.Speed, row.Latency = modelMetricLabels(metricsCatalog, scoreSnapshot, name, model)
 				row.OutputCost = modelOutputCostLabel(costMap, metricsCatalog, name, model)
 			}
 			rows = append(rows, row)
@@ -116,7 +128,7 @@ func runModels(cmd *commandIO, args []string) error {
 	if modelsCSV {
 		header := []string{"provider", "enabled", "model", "primary"}
 		if modelsMetrics {
-			header = append(header, "score", "speed", "latency", "output_cost_per_1m_usd")
+			header = append(header, "llambo_score", "llambo_provenance", "task_score", "speed", "latency", "output_cost_per_1m_usd")
 		}
 		w := csv.NewWriter(out)
 		if err := w.Write(header); err != nil {
@@ -125,7 +137,7 @@ func runModels(cmd *commandIO, args []string) error {
 		for _, row := range rows {
 			values := []string{row.Provider, fmt.Sprintf("%t", row.Enabled), row.Model, fmt.Sprintf("%t", row.Primary)}
 			if modelsMetrics {
-				values = append(values, row.Score, row.Speed, row.Latency, row.OutputCost)
+				values = append(values, row.LlamboScore, row.LlamboProvenance, row.TaskScore, row.Speed, row.Latency, row.OutputCost)
 			}
 			if err := w.Write(values); err != nil {
 				return err
@@ -148,10 +160,10 @@ func runModels(cmd *commandIO, args []string) error {
 			fmt.Fprintf(out, "%-12s %-8t %s\n", grouped.Provider, grouped.Enabled, strings.Join(grouped.Models, ", "))
 		}
 	} else if modelsMetrics {
-		fmt.Fprintf(out, "%-12s %-8s %-28s %-14s %-12s %-14s %s\n", "PROVIDER", "ENABLED", "SCORE", "SPEED", "LATENCY", "OUTPUT $/1M", "MODEL")
-		fmt.Fprintln(out, strings.Repeat("-", 136))
+		fmt.Fprintf(out, "%-12s %-8s %-18s %-30s %-22s %-14s %-12s %-14s %s\n", "PROVIDER", "ENABLED", "LLAMBO SCORE", "LLAMBO PROVENANCE", "TASK SCORE", "SPEED", "LATENCY", "OUTPUT $/1M", "MODEL")
+		fmt.Fprintln(out, strings.Repeat("-", 236))
 		for _, row := range rows {
-			fmt.Fprintf(out, "%-12s %-8t %-28s %-14s %-12s %-14s %s\n", row.Provider, row.Enabled, row.Score, row.Speed, row.Latency, row.OutputCost, row.Model)
+			fmt.Fprintf(out, "%-12s %-8t %-18s %-30s %-22s %-14s %-12s %-14s %s\n", row.Provider, row.Enabled, row.LlamboScore, row.LlamboProvenance, row.TaskScore, row.Speed, row.Latency, row.OutputCost, row.Model)
 		}
 	} else {
 		fmt.Fprintf(out, "%-12s %-8s %-8s %s\n", "PROVIDER", "ENABLED", "PRIMARY", "MODEL")
@@ -204,29 +216,29 @@ func modelProviderAllowed(name string) bool {
 	return false
 }
 
-func modelMetricLabels(cat *catalog.Catalog, provider, model string) (score, speed, latency string) {
-	score, speed, latency = "—", "—", "—"
+func modelMetricLabels(cat *catalog.Catalog, snapshot *evals.OMLXScoreSnapshot, provider, model string) (llamboScore, llamboProvenance, taskScore, speed, latency string) {
+	llamboScore, llamboProvenance, taskScore, speed, latency = "—", "—", "—", "—", "—"
+	if provider == "omlx" && snapshot != nil && snapshot.Contains(model) {
+		scores := snapshot.CategoryScores[model]
+		llamboProvenance = formatLlamboProvenance(scores, snapshot)
+		llamboScore = formatLlamboCategories(scores)
+	}
 	if cat == nil {
-		return score, speed, latency
+		return llamboScore, llamboProvenance, taskScore, speed, latency
 	}
 	pc := cat.Providers[provider]
 	if pc == nil {
-		return score, speed, latency
+		return llamboScore, llamboProvenance, taskScore, speed, latency
 	}
 	entry := pc.Models[model]
 	if entry == nil {
-		return score, speed, latency
+		return llamboScore, llamboProvenance, taskScore, speed, latency
 	}
 	benchmarkName, benchmark, hasBenchmark := catalog.BestBenchmarkEvidence(entry)
-	if hasBenchmark && benchmark.Score > 0 {
-		// Benchmark scores are stored in [0,1]. Present them on the same
-		// 0-100 scale used by the external evaluation reports. Benchmark
-		// evidence stays separate from routing quality evidence.
-		score = fmt.Sprintf("%s %.1f/100", benchmarkName, benchmark.Score*100)
-	} else if task, evidence, ok := catalog.BestQualityEvidence(entry); ok {
-		// Catalog quality evidence is stored in [0,1]. Present it on the
-		// same 0-100 scale used by the external evaluation reports.
-		score = fmt.Sprintf("%s %.1f/100", task, evidence.Score*100)
+	_ = benchmarkName // benchmark metrics remain operational evidence only.
+	if task, evidence, ok := catalog.BestQualityEvidence(entry); ok {
+		// This stays task-labelled by contract and is never an overall input.
+		taskScore = fmt.Sprintf("%s %.1f/100", task, evidence.Score*100)
 	}
 	if hasBenchmark {
 		if benchmark.LatencyMS > 0 {
@@ -254,14 +266,70 @@ func modelMetricLabels(cat *catalog.Catalog, provider, model string) (score, spe
 			speed = fmt.Sprintf("%.1f tok/s", entry.LastPing.SpeedTokensPerSecond)
 		}
 	}
-	return score, speed, latency
+	return llamboScore, llamboProvenance, taskScore, speed, latency
+}
+
+func formatLlamboCategories(scores map[string]*evals.LlamboScore) string {
+	if len(scores) == 0 {
+		return "unresolved"
+	}
+	parts := make([]string, 0, len(scores))
+	for _, category := range []string{"agents", "coding", "instruction-following", "long-context", "reasoning", "writing"} {
+		score := scores[category]
+		if score == nil {
+			continue
+		}
+		label := fmt.Sprintf("%s=%.1f", category, score.Score)
+		if score.WinnerStatus != "" {
+			label += " (" + score.WinnerStatus + ")"
+		}
+		parts = append(parts, label)
+	}
+	if len(parts) == 0 {
+		return "unresolved"
+	}
+	return strings.Join(parts, ", ")
+}
+
+func formatLlamboProvenance(scores map[string]*evals.LlamboScore, snapshot *evals.OMLXScoreSnapshot) string {
+	if snapshot == nil {
+		return "unresolved; snapshot missing"
+	}
+	parts := []string{"formula=" + snapshot.FormulaVersion, "cache_fingerprint=" + snapshot.PopulationFingerprint}
+	for _, category := range []string{"agents", "coding", "instruction-following", "long-context", "reasoning", "writing"} {
+		score := scores[category]
+		if score == nil {
+			parts = append(parts, category+"=unresolved")
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%s={coverage=%.6f,trusted_coverage=%.6f,confidence=%s,winner=%s,stale=%t}", category, score.Coverage, score.TrustedCoverage, score.Confidence, score.WinnerStatus, score.Stale))
+	}
+	return strings.Join(parts, "; ")
 }
 
 // appendCatalogMetricModels adds catalog-only models that have saved benchmark
 // or quality evidence. The normal list remains immediate and config-driven for
 // unmeasured models, while saved metrics are not hidden just because a model is
 // no longer in the provider's preferred config model list.
-func appendCatalogMetricModels(cat *catalog.Catalog, provider string, models []string) []string {
+func appendCatalogMetricModels(cat *catalog.Catalog, snapshot *evals.OMLXScoreSnapshot, provider string, models []string) []string {
+
+	seen := make(map[string]struct{}, len(models))
+	for _, model := range models {
+		seen[model] = struct{}{}
+	}
+	additional := make([]string, 0)
+	if provider == "omlx" {
+		if snapshot == nil {
+			return models
+		}
+		for _, model := range snapshot.Inventory {
+			if _, exists := seen[model]; !exists {
+				additional = append(additional, model)
+			}
+		}
+		sort.Strings(additional)
+		return append(models, additional...)
+	}
 	if cat == nil {
 		return models
 	}
@@ -269,12 +337,6 @@ func appendCatalogMetricModels(cat *catalog.Catalog, provider string, models []s
 	if pc == nil || len(pc.Models) == 0 {
 		return models
 	}
-
-	seen := make(map[string]struct{}, len(models))
-	for _, model := range models {
-		seen[model] = struct{}{}
-	}
-	additional := make([]string, 0)
 	for model, entry := range pc.Models {
 		if model == "" {
 			continue
