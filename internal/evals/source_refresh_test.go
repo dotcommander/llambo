@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-func TestRefreshWritingEvidenceSourcesIsScopedAndValidatesProvenance(t *testing.T) {
+func TestRefreshEvaluationSourcesIsScopedAndValidatesProvenance(t *testing.T) {
 	var writingRequests, eqBenchRequests, lechRequests int
 	writing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		writingRequests++
@@ -37,7 +37,7 @@ func TestRefreshWritingEvidenceSourcesIsScopedAndValidatesProvenance(t *testing.
 
 	now := time.Unix(1, 0).UTC()
 	dir := t.TempDir()
-	statuses, err := refreshWritingEvidenceSources(context.Background(), Options{
+	statuses, _, err := RefreshEvaluationSources(context.Background(), Options{
 		CacheDir:            dir,
 		Client:              &http.Client{},
 		Now:                 func() time.Time { return now },
@@ -69,9 +69,9 @@ func TestRefreshWritingEvidenceSourcesIsScopedAndValidatesProvenance(t *testing.
 	}
 }
 
-func TestRefreshWritingEvidenceSourcesRejectsUnknownBeforeFetch(t *testing.T) {
+func TestRefreshEvaluationSourcesRejectsUnknownBeforeFetch(t *testing.T) {
 	dir := t.TempDir()
-	_, err := refreshWritingEvidenceSources(context.Background(), Options{CacheDir: dir}, []string{"writingbench", "artificial-analysis"})
+	_, _, err := RefreshEvaluationSources(context.Background(), Options{CacheDir: dir}, []string{"writingbench", "artificial-analysis"})
 	if err == nil || err.Error() != "unsupported evaluation source \"artificial-analysis\" (supported: arena-creative-writing, eqbench-creative-v3, lechmazur-writing, writingbench)" {
 		t.Fatalf("unexpected error: %v", err)
 	}

@@ -85,34 +85,23 @@ func preserveEvaluationSourceCaches(cacheDir string, names []string, now time.Ti
 
 // refreshWritingEvidenceSources fetches only the reviewed writing evidence
 // sources, validates their row-level provenance, and publishes their cache
-// snapshots. Fetches are staged in memory first so a later validation failure
-// cannot leave a partially refreshed source set.
+// snapshots. RefreshEvaluationSources supplies normalized, validated names.
+// Fetches are staged in memory first so a later validation failure cannot leave
+// a partially refreshed source set.
 func refreshWritingEvidenceSources(ctx context.Context, opts Options, names []string) ([]SourceStatus, error) {
-	if len(names) == 0 {
-		names = append([]string(nil), defaultWritingEvidenceSources...)
-	}
-	if err := validateWritingEvidenceSourceNames(names); err != nil {
-		return nil, err
-	}
 	fetchers := map[string]func(context.Context, Options) (sourceSnapshot, error){
 		"writingbench":        fetchWritingBench,
 		"eqbench-creative-v3": fetchEQBenchCreative,
 		WritingPrimaryID:      fetchLechMazurWriting,
 		ArenaCreativeSourceID: fetchArenaCreative,
 	}
-	normalized := make([]string, 0, len(names))
-	for _, name := range names {
-		name = strings.TrimSpace(strings.ToLower(name))
-		normalized = append(normalized, name)
-	}
 	opts.Refresh = true
-	opts.applyDefaults()
 	type stagedSource struct {
 		name     string
 		snapshot sourceSnapshot
 	}
-	staged := make([]stagedSource, 0, len(normalized))
-	for _, name := range normalized {
+	staged := make([]stagedSource, 0, len(names))
+	for _, name := range names {
 		snapshot, err := fetchers[name](ctx, opts)
 		if err != nil {
 			return nil, fmt.Errorf("fetch %s: %w", name, err)
