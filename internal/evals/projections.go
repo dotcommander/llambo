@@ -158,54 +158,14 @@ func appendProjectedRows(rows []ReportModel, projections []projectionSpec) ([]Re
 		for _, score := range projected.LlamboScores {
 			if score != nil {
 				multiplier := projectionMultiplier(projected.Projection)
-				score.Score = 50 + (score.Score-50)*multiplier
 				score.TrustedCoverage *= multiplier
 				score.Confidence = "low"
 			}
 		}
-		fillMissingProjectedCategoryEstimates(&projected)
 		removeProjectedOperationalEvidence(&projected)
 		result = append(result, projected)
 	}
 	return result, missing, nil
-}
-
-const crossCategoryEstimateMethod = "cross-category-remote-shrink-v1"
-
-// fillMissingProjectedCategoryEstimates closes only projection-row blanks after
-// inherited benchmark scores receive the ordinary identity-confidence shrink.
-// Canonical/source rows remain strictly benchmark-backed or unresolved.
-func fillMissingProjectedCategoryEstimates(projected *ReportModel) {
-	if projected == nil || projected.Projection == nil {
-		return
-	}
-	sources := make([]string, 0, len(categorySpecs))
-	values := make([]float64, 0, len(categorySpecs))
-	stale := false
-	for _, category := range categorySpecs {
-		score := projected.LlamboScores[category.name]
-		if score == nil || score.Estimated {
-			continue
-		}
-		sources = append(sources, category.name)
-		values = append(values, score.Score)
-		stale = stale || score.Stale
-	}
-	if len(values) == 0 {
-		return
-	}
-	sort.Strings(sources)
-	estimate := 50 + (mean(values)-50)*.25
-	for _, category := range categorySpecs {
-		if projected.LlamboScores[category.name] != nil {
-			continue
-		}
-		projected.LlamboScores[category.name] = &LlamboScore{
-			Score: estimate, Confidence: "low", Stale: stale, Estimated: true,
-			EstimateMethod: crossCategoryEstimateMethod, EstimateSources: append([]string(nil), sources...),
-		}
-		delete(projected.UnresolvedReasons, category.name)
-	}
 }
 
 func removeProjectedOperationalEvidence(projected *ReportModel) {

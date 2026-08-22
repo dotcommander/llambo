@@ -132,8 +132,7 @@ Content-Type: application/json
 ```json
 {
   "input": "Hello world",
-  "model": "text-embedding-3-small",
-  "dimensions": 1536
+  "model": "text-embedding-3-small"
 }
 ```
 
@@ -144,8 +143,7 @@ Content-Type: application/json
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `input` | string/array | Yes | Text(s) to embed |
-| `model` | string | No | Embedding model (default: `text-embedding-3-small`) |
-| `dimensions` | number | No | Output dimensions (default: 1536) |
+| `model` | string | No | Model hint; the configured embedding backend owns the effective model |
 
 ### Response
 

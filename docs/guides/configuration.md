@@ -14,6 +14,7 @@ Create with: `llambo config init`
 
 ```json
 {
+  "default_provider": "openai",
   "providers": {
     "openai": {
       "provider_type": "openai",
@@ -73,9 +74,28 @@ Create with: `llambo config init`
       "output_cost_per_1m": 1.5,
       "expected_latency_ms": 1800
     }
+  },
+  "gateway": {
+    "max_active_jobs": 64,
+    "max_requests_per_job": 500,
+    "auth_token_env": "LLAMBO_GATEWAY_TOKEN",
+    "allowed_origins": ["https://app.example.com"]
   }
 }
 ```
+
+## Gateway access and admission
+
+| Field | Default | Description |
+| --- | --- | --- |
+| `gateway.max_active_jobs` | `64` | Maximum active jobs |
+| `gateway.max_requests_per_job` | `500` | Maximum requests accepted in one job |
+| `gateway.auth_token_env` | none | Preferred environment variable containing the bearer token |
+| `gateway.auth_token` | none | Direct bearer token; prefer the environment-variable field |
+| `gateway.allowed_origins` | empty | Exact browser origins allowed by CORS; empty disables CORS |
+
+`llambo serve` binds to loopback by default. A non-loopback host requires
+`--allow-remote`; configure bearer authentication before remote exposure.
 
 ## Provider Configuration
 
@@ -321,6 +341,7 @@ Multiple providers with failover:
 
 ```json
 {
+  "default_provider": "openai-primary",
   "providers": {
     "openai-primary": {
       "provider_type": "openai",
@@ -350,6 +371,7 @@ High worker counts across multiple backends:
 
 ```json
 {
+  "default_provider": "openai",
   "providers": {
     "openai": {
       "provider_type": "openai",
@@ -379,6 +401,7 @@ Prefer cheaper models, fallback to premium:
 
 ```json
 {
+  "default_provider": "cheap",
   "providers": {
     "cheap": {
       "provider_type": "openrouter",

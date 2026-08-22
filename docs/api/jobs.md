@@ -4,7 +4,8 @@ Submit batch jobs for parallel processing across multiple LLM backends.
 
 ## Overview
 
-The batch jobs endpoints allow you to submit multiple chat completion requests for parallel processing. Jobs are processed across all healthy backends simultaneously, with results streaming back as they complete. This enables high-throughput processing without waiting for all requests to finish.
+Submit multiple chat requests for parallel processing across healthy backends.
+Poll the job endpoint to observe results as individual requests complete.
 
 ## Endpoints
 
@@ -13,6 +14,8 @@ The batch jobs endpoints allow you to submit multiple chat completion requests f
 POST /v1/jobs
 Content-Type: application/json
 ```
+
+Add `Authorization: Bearer <token>` when gateway authentication is configured.
 
 Submit a batch of requests for parallel processing.
 
@@ -100,7 +103,7 @@ curl -X POST http://localhost:8080/v1/jobs/job-abc123def456/cancel
 
 ## Response
 
-### Create Job Response (HTTP 200)
+### Create Job Response (HTTP 202)
 
 #### Response Body
 
@@ -259,29 +262,22 @@ curl -X POST http://localhost:8080/v1/jobs/job-abc123def456/cancel
 #### Success (HTTP 200)
 ```json
 {
-  "success": true,
-  "message": "Job cancelled successfully"
+  "job_id": "job-abc123def456",
+  "status": "cancelled",
+  "total": 3,
+  "completed": 1,
+  "failed": 0,
+  "created_at": 1704067200,
+  "updated_at": 1704067201
 }
 ```
 
-#### Failure - Job Not Found (HTTP 404)
+#### Failure - Job Missing or Already Terminal (HTTP 404)
 ```json
 {
   "error": {
-    "message": "Job not found",
-    "type": "invalid_request",
-    "code": "job_not_found"
-  }
-}
-```
-
-#### Failure - Job Already Terminal (HTTP 400)
-```json
-{
-  "error": {
-    "message": "Job cannot be cancelled because it is already completed",
-    "type": "invalid_request",
-    "code": "job_terminal"
+    "message": "Job not found or already completed",
+    "type": "not_found"
   }
 }
 ```
@@ -308,7 +304,7 @@ The following status values are used to track job progress:
 ### Parallel Processing
 - Requests are distributed across all healthy backends simultaneously
 - Each backend processes requests in parallel according to its configured `workers` count
-- Results stream back as they complete - no waiting for all requests to finish
+- Completed results appear in status polling while remaining requests continue
 
 ### System Prompt Handling
 - If `system_prompt` is provided in the request, it's applied to all requests

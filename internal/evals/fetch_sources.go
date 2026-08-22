@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 )
 
 type llmIdentity struct {
@@ -50,6 +51,9 @@ type indexEnvelope struct {
 }
 
 func fetchLLMStats(ctx context.Context, opts Options) (sourceSnapshot, error) {
+	if strings.TrimSpace(opts.LLMStatsAPIKey) != "" && opts.IngestLLMBenchmarks {
+		return fetchLLMStatsStatsV1Snapshot(ctx, opts)
+	}
 	var identities []llmIdentity
 	var full []llmFull
 	indexes := map[string]indexEnvelope{}
@@ -123,17 +127,30 @@ func fetchLLMStats(ctx context.Context, opts Options) (sourceSnapshot, error) {
 			LLMStats: &LLMStatsMetrics{InputPrice: input, OutputPrice: output, Throughput: f.Throughput, Latency: f.Latency, GPQA: f.GPQA, SWEVerified: f.SWEVerified, SWEPro: f.SWEPro, SciCode: f.SciCode, MCPAtlas: f.MCPAtlas, Indexes: indexByID[identity.ModelID]}})
 	}
 	observationCount := 0
+	method := "LLM Stats public discovery feeds; published benchmark rows use graded verification evidence"
+	fingerprintInput := append(append(append([]byte(nil), raw["models"]...), raw["full-results"]...), raw["indexes"]...)
 	if opts.IngestLLMBenchmarks {
-		observations, err := fetchLLMStatsBenchmarkLeads(ctx, opts)
+		var observations []Observation
+		var err error
+		if strings.TrimSpace(opts.LLMStatsAPIKey) != "" {
+			observations, err = fetchLLMStatsStatsV1BenchmarkLeads(ctx, opts)
+			method = "LLM Stats public discovery feeds plus Stats v1 benchmark scores; published rows use graded verification evidence"
+		} else {
+			observations, err = fetchLLMStatsBenchmarkLeads(ctx, opts)
+		}
 		if err != nil {
 			return sourceSnapshot{}, err
 		}
 		attachLLMStatsBenchmarkLeads(models, observations)
 		observationCount = len(observations)
+		normalized, err := EncodeObservationsJSONL(observations)
+		if err != nil {
+			return sourceSnapshot{}, err
+		}
+		fingerprintInput = append(fingerprintInput, normalized...)
 	}
 	sort.Slice(models, func(i, j int) bool { return models[i].Key < models[j].Key })
-	fingerprintInput := append(append(append([]byte(nil), raw["models"]...), raw["full-results"]...), raw["indexes"]...)
-	return sourceSnapshot{Models: models, ContentSHA: SealBytes(fingerprintInput), Method: "LLM Stats public discovery feeds; published benchmark rows use graded verification evidence", Observations: observationCount, RegistryVersion: SourceRegistryVersion, EvidenceGrade: "graded_aggregator"}, nil
+	return sourceSnapshot{Models: models, ContentSHA: SealBytes(fingerprintInput), Method: method, Observations: observationCount, RegistryVersion: SourceRegistryVersion, EvidenceGrade: "graded_aggregator"}, nil
 }
 
 type aaEnvelope struct {
@@ -220,4 +237,12 @@ func getJSON(ctx context.Context, client *http.Client, url, apiKey string, dst a
 		return fmt.Errorf("decode %s: %w", url, err)
 	}
 	return nil
+}
+
+func normalizeHTTPETag(value string) string {
+	value = strings.TrimSpace(value)
+	if strings.HasPrefix(value, "W/") {
+		value = strings.TrimSpace(strings.TrimPrefix(value, "W/"))
+	}
+	return strings.Trim(value, `"`)
 }

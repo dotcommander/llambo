@@ -9,10 +9,6 @@ import (
 
 const FormulaVersion = CategoryFormulaVersion
 
-// OverallFormulaVersion is retained only so a v1 snapshot can be recognized
-// and preserved. The active evaluation path never calculates an overall score.
-const OverallFormulaVersion = "LLAMBO-5"
-
 type Report struct {
 	ReportSchemaVersion int                        `json:"report_schema_version"`
 	GeneratedAt         time.Time                  `json:"generated_at"`
@@ -118,17 +114,18 @@ func BuildReportWithProjectionFile(result Result, rankBy, path string) (Report, 
 	if !isSupportedProfile(rankBy) {
 		return Report{}, fmt.Errorf("unsupported ranking profile %q (supported: %s)", rankBy, strings.Join(SupportedRankingProfiles(), ", "))
 	}
-	reference, err := loadFormulaReference()
+	context, err := loadScoringContext()
 	if err != nil {
-		return Report{}, err
+		return Report{}, fmt.Errorf("initialize scoring context: %w", err)
 	}
+	reference := context.reference
 	rows := make([]ReportModel, len(result.Models))
 	for i, model := range result.Models {
 		row := ReportModel{Key: model.Key, Name: model.Name, Organization: model.Organization, IdentityMatch: model.IdentityMatch, Open: model.Open, LLMStats: model.LLMStats, AA: model.AA, Benchmarks: model.Benchmarks, LlamboScores: make(map[string]*LlamboScore, len(categorySpecs)), UnresolvedReasons: map[string]string{}, Scores: map[string]*ExternalScore{}}
 		for _, category := range categorySpecs {
-			row.LlamboScores[category.name] = scoreCategoryV3(model, category, result.Models)
+			row.LlamboScores[category.name] = scoreCategoryV3WithContext(model, category, result.Models, context)
 			if row.LlamboScores[category.name] == nil {
-				row.UnresolvedReasons[category.name] = categoryUnresolvedReason(model, category)
+				row.UnresolvedReasons[category.name] = categoryUnresolvedReasonWithContext(model, category, context)
 			}
 		}
 		for _, dimension := range []string{"speed", "price"} {
@@ -159,17 +156,28 @@ func BuildReportWithProjectionFile(result Result, rankBy, path string) (Report, 
 	if len(driftModels) == 0 {
 		driftModels = result.Models
 	}
-	return Report{ReportSchemaVersion: 5, GeneratedAt: result.GeneratedAt, FormulaVersion: FormulaVersion, RankingProfile: rankBy, AAVersion: result.AAVersion, Sources: result.Sources, Projections: ProjectionDiagnostics{RegistrySource: projectionSource, Version: registry.Version, Configured: len(registry.Projections), Applied: len(registry.Projections) - len(missing), Missing: missing}, Formula: FormulaDiagnostics{Method: "LLAMBO-6 reviewed category registry; frozen revision percentiles; equal independent-family contribution; source and identity trust shrink partial evidence toward neutral 50", Population: len(result.Models), Reference: FormulaReferenceSummary{CreatedAt: reference.CreatedAt, AAVersion: reference.AAVersion, SourceModelCounts: sourceModelCounts(result.Models), SourceFingerprints: sourceFingerprints(result.Models)}, Drift: evaluateReferenceDrift(driftModels, result.AAVersion, reference, currentReferenceValues(driftModels))}, CoverageCampaign: coverageCampaign, Models: rows, CategoryRankings: rankings}, nil
+	return Report{ReportSchemaVersion: 5, GeneratedAt: result.GeneratedAt, FormulaVersion: FormulaVersion, RankingProfile: rankBy, AAVersion: result.AAVersion, Sources: result.Sources, Projections: ProjectionDiagnostics{RegistrySource: projectionSource, Version: registry.Version, Configured: len(registry.Projections), Applied: len(registry.Projections) - len(missing), Missing: missing}, Formula: FormulaDiagnostics{Method: "LLAMBO-7 reviewed category registry; common frozen-cohort percentiles; equal independent-family raw score; evidence and projection uncertainty reported separately as trusted coverage", Population: len(result.Models), Reference: FormulaReferenceSummary{CreatedAt: reference.CreatedAt, AAVersion: reference.AAVersion, SourceModelCounts: sourceModelCounts(result.Models), SourceFingerprints: sourceFingerprints(result.Models)}, Drift: evaluateReferenceDrift(driftModels, result.AAVersion, reference, currentReferenceValues(driftModels))}, CoverageCampaign: coverageCampaign, Models: rows, CategoryRankings: rankings}, nil
 }
 
 func categoryUnresolvedReason(model Model, category categorySpec) string {
+	context, err := loadScoringContext()
+	if err != nil {
+		return "frozen scoring context is unavailable"
+	}
+	return categoryUnresolvedReasonWithContext(model, category, context)
+}
+
+func categoryUnresolvedReasonWithContext(model Model, category categorySpec, context scoringContext) string {
 	for _, family := range category.families {
 		for _, benchmark := range family.benchmarks {
 			if result, ok := model.Benchmarks[benchmark]; ok {
 				if result.Quarantined {
 					return "quarantined benchmark conflict: " + result.Conflict
 				}
-				if reason := frozenLLMStatsCohortAdmissionReason(benchmark, result); reason != "" {
+				if reason := frozenLLMStatsCohortAdmissionReasonFromCohorts(benchmark, result, context.legacyCohorts); reason != "" {
+					return reason
+				}
+				if reason := frozenLLMStatsStatsV1CohortAdmissionReasonFromCohorts(benchmark, result, context.statsV1Cohorts); reason != "" {
 					return reason
 				}
 			}
@@ -192,10 +200,14 @@ func compareReportRows(left, right ReportModel, rankBy string) bool {
 	var leftScore, rightScore *float64
 	if isCapabilityCategory(rankBy) {
 		if s := left.LlamboScores[rankBy]; s != nil {
-			leftScore = &s.Score
+			if !s.Estimated {
+				leftScore = &s.Score
+			}
 		}
 		if s := right.LlamboScores[rankBy]; s != nil {
-			rightScore = &s.Score
+			if !s.Estimated {
+				rightScore = &s.Score
+			}
 		}
 	} else {
 		if s := left.Scores[rankBy]; s != nil {
@@ -226,7 +238,7 @@ func buildCategoryRankings(rows []ReportModel) map[string]CategoryRanking {
 		ranking := CategoryRanking{Category: spec.name, Status: "unresolved"}
 		for _, row := range rows {
 			score := row.LlamboScores[spec.name]
-			if score == nil {
+			if score == nil || score.Estimated {
 				continue
 			}
 			identity := 1.0
@@ -316,7 +328,7 @@ func applyCategoryWinnerStatuses(rows []ReportModel, rankings map[string]Categor
 
 func hasCapabilityScore(model ReportModel) bool {
 	for _, score := range model.LlamboScores {
-		if score != nil {
+		if score != nil && !score.Estimated {
 			return true
 		}
 	}

@@ -6,6 +6,17 @@ import (
 	"testing"
 )
 
+func TestBuildReportFailsClosedOnCorruptFrozenStatsV1Cohort(t *testing.T) {
+	original := llmStatsStatsV1FrozenCohortsJSON
+	llmStatsStatsV1FrozenCohortsJSON = []byte(`{"schema_version":"corrupt"}`)
+	t.Cleanup(func() { llmStatsStatsV1FrozenCohortsJSON = original })
+
+	_, err := BuildReport(Result{}, "matrix")
+	if err == nil || !strings.Contains(err.Error(), "initialize scoring context: load frozen Stats v1 cohorts:") {
+		t.Fatalf("corrupt authoritative cohort did not fail report construction: %v", err)
+	}
+}
+
 func TestLLAMBO2OrderedPrimaryFallback(t *testing.T) {
 	low, high := 10.0, 90.0
 	models := []Model{{Key: "low", Name: "low", IdentityMatch: IdentityMatchExact, LLMStats: &LLMStatsMetrics{SWEVerified: &low, SWEPro: &high, Indexes: map[string]Index{}}}, {Key: "missing", Name: "missing", IdentityMatch: IdentityMatchExact, Benchmarks: map[string]BenchmarkResult{"swe-bench-pro": sealedBenchmark(high)}}}

@@ -25,7 +25,7 @@ If you need Anthropic-compatible request and response envelopes, see [Messages](
 | `messages` | array[Message] | **Yes** | Array of conversation messages | Minimum 1 message |
 | `temperature` | float64 | No | Sampling temperature | 0.0 to 2.0, defaults to 1.0 |
 | `max_tokens` | integer | No | Maximum tokens to generate | Positive integer |
-| `stream` | boolean | No | Whether to stream response | Defaults to `false` (streaming not yet implemented) |
+| `stream` | boolean | No | Stream Server-Sent Events when `true` | Defaults to `false` |
 
 ### Message Object
 
@@ -162,8 +162,7 @@ curl -X POST http://localhost:8080/v1/chat/completions \
 {
   "error": {
     "message": "Messages array is required",
-    "type": "invalid_request",
-    "code": "missing_messages"
+    "type": "invalid_request"
   }
 }
 ```
@@ -173,21 +172,8 @@ curl -X POST http://localhost:8080/v1/chat/completions \
 ```json
 {
   "error": {
-    "message": "All backends failed: openai: rate limit exceeded, openrouter: quota exceeded",
-    "type": "upstream_error",
-    "code": "all_backends_failed"
-  }
-}
-```
-
-#### Streaming Not Implemented (HTTP 501)
-
-```json
-{
-  "error": {
-    "message": "Streaming not yet implemented",
-    "type": "not_implemented",
-    "code": "streaming_unsupported"
+    "message": "Upstream provider rate limit exceeded",
+    "type": "rate_limit"
   }
 }
 ```
@@ -199,13 +185,13 @@ curl -X POST http://localhost:8080/v1/chat/completions \
 | Header | Required | Description |
 |--------|----------|-------------|
 | `Content-Type` | Yes | Must be `application/json` |
-| `Authorization` | No | Not required - API keys are configured server-side |
+| `Authorization` | Conditional | Required as `Bearer <token>` when gateway authentication is configured |
 
 ### Response Headers
 
 | Header | Always Present | Description |
 |--------|----------------|-------------|
-| `Content-Type` | Yes | `application/json` |
+| `Content-Type` | Yes | `application/json`, or `text/event-stream` when streaming |
 | `X-Llambo-Provider` | When successful | Name of the backend that served the request |
 | `X-Llambo-Model` | When successful | Model identifier used for the completion |
 

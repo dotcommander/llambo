@@ -6,34 +6,43 @@ import (
 )
 
 const (
-	DefaultTTL             = 48 * time.Hour
-	LLMStatsLeaderboardURL = "https://llm-stats.com/leaderboards/open-llm-leaderboard"
-	ArtificialAnalysisURL  = "https://artificialanalysis.ai/"
+	DefaultTTL                   = 48 * time.Hour
+	LLMStatsLeaderboardURL       = "https://llm-stats.com/leaderboards/open-llm-leaderboard"
+	LLMStatsStatsV1ModelsURL     = "https://api.zeroeval.com/stats/v1/models"
+	LLMStatsStatsV1BenchmarksURL = "https://api.zeroeval.com/stats/v1/benchmarks"
+	LLMStatsStatsV1ScoresURL     = "https://api.zeroeval.com/stats/v1/scores"
+	ArtificialAnalysisURL        = "https://artificialanalysis.ai/"
 )
 
 type Options struct {
-	CacheDir             string
-	TTL                  time.Duration
-	Refresh              bool
-	RefreshOfficialCards bool
-	Offline              bool
-	AllowPartial         bool
-	AAAPIKey             string
-	Client               *http.Client
-	LLMModelsURL         string
-	LLMFullURL           string
-	LLMIndexURL          string
-	LLMBenchmarksURL     string
-	IngestLLMBenchmarks  bool
-	AAURL                string
-	WritingBenchURL      string
-	EQBenchCreativeURL   string
-	OfficialLFMURL       string
-	OfficialQwenURL      string
-	OfficialGPTOSSURL    string
-	OfficialLFMVLURL     string
-	OfficialGemmaURL     string
-	Now                  func() time.Time
+	CacheDir                     string
+	TTL                          time.Duration
+	Refresh                      bool
+	RefreshOfficialCards         bool
+	Offline                      bool
+	AllowPartial                 bool
+	AAAPIKey                     string
+	LLMStatsAPIKey               string
+	Client                       *http.Client
+	LLMModelsURL                 string
+	LLMFullURL                   string
+	LLMIndexURL                  string
+	LLMBenchmarksURL             string
+	LLMStatsStatsV1ModelsURL     string
+	LLMStatsStatsV1BenchmarksURL string
+	LLMStatsStatsV1ScoresURL     string
+	IngestLLMBenchmarks          bool
+	AAURL                        string
+	WritingBenchURL              string
+	EQBenchCreativeURL           string
+	LechMazurWritingURL          string
+	ArenaCreativeURL             string
+	OfficialLFMURL               string
+	OfficialQwenURL              string
+	OfficialGPTOSSURL            string
+	OfficialLFMVLURL             string
+	OfficialGemmaURL             string
+	Now                          func() time.Time
 }
 
 type Result struct {
@@ -41,9 +50,17 @@ type Result struct {
 	Models      []Model        `json:"models"`
 	Sources     []SourceStatus `json:"sources"`
 	AAVersion   float64        `json:"artificial_analysis_index_version,omitempty"`
+	// SourceModels preserves source-native rows with their ingest-source tag.
+	// They feed normalized exports without replacing the merged scoring model.
+	SourceModels []SourceModel `json:"-"`
 	// ReferenceModels preserves source-native rows for drift calculations. It is
 	// not report output and never participates in identity joins or scoring rows.
 	ReferenceModels []Model `json:"-"`
+}
+
+type SourceModel struct {
+	SourceID string `json:"source_id"`
+	Model    Model  `json:"model"`
 }
 
 type SourceStatus struct {

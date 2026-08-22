@@ -322,9 +322,9 @@ func TestModelMetricLabelsSeparatesLlamboAndTaskScore(t *testing.T) {
 			"model": {Quality: map[string]catalog.QualityEvidence{"writing": {Score: .98}}},
 		}},
 	}}
-	snapshot := &evals.OMLXScoreSnapshot{FormulaVersion: "LLAMBO-6-category-v1", PopulationFingerprint: "fingerprint", Inventory: []string{"model"}, CategoryScores: map[string]map[string]*evals.LlamboScore{"model": {"coding": {Score: 82.25, Coverage: .6, TrustedCoverage: .45, Confidence: "medium", WinnerStatus: "official"}}}}
+	snapshot := &evals.OMLXScoreSnapshot{FormulaVersion: evals.CategoryFormulaVersion, PopulationFingerprint: "fingerprint", Inventory: []string{"model"}, CategoryScores: map[string]map[string]*evals.LlamboScore{"model": {"coding": {Score: 82.25, Coverage: .6, TrustedCoverage: .45, Confidence: "medium", WinnerStatus: "official"}}}}
 	llambo, provenance, task, _, _ := modelMetricLabels(cat, snapshot, "omlx", "model")
-	if llambo != "coding=82.2 (official)" || task != "writing 98.0/100" || !strings.Contains(provenance, "formula=LLAMBO-6-category-v1") || !strings.Contains(provenance, "coding={coverage=0.600000,trusted_coverage=0.450000,confidence=medium,winner=official,stale=false}") || !strings.Contains(provenance, "writing=unresolved") {
+	if llambo != "coding=82.2 (official)" || task != "writing 98.0/100" || !strings.Contains(provenance, "formula=LLAMBO-7-category") || !strings.Contains(provenance, "coding={coverage=0.600000,trusted_coverage=0.450000,confidence=medium,winner=official,stale=false}") || !strings.Contains(provenance, "writing=unresolved") {
 		t.Fatalf("scores/provenance were incomplete: llambo=%q provenance=%q task=%q", llambo, provenance, task)
 	}
 	llambo, _, _, _, _ = modelMetricLabels(cat, snapshot, "hosted", "model")

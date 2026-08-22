@@ -38,7 +38,7 @@ func fetchWritingBench(ctx context.Context, opts Options) (sourceSnapshot, error
 		return sourceSnapshot{}, err
 	}
 	sum := sha256.Sum256(body)
-	version := strings.Trim(strings.TrimSpace(resp.Header.Get("ETag")), `"`)
+	version := normalizeHTTPETag(resp.Header.Get("ETag"))
 	commit := strings.TrimSpace(resp.Header.Get("X-Repo-Commit"))
 	if commit == "" {
 		commit = strings.TrimSpace(resp.Header.Get("X-Linked-ETag"))

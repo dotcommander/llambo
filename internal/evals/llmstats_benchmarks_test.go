@@ -65,8 +65,13 @@ func TestLLMStatsBenchmarkOffsetPaginationSealingAndGradedAdmission(t *testing.T
 	if len(snapshot.Models) != 21 || snapshot.Models[0].Benchmarks["gpqa"].EvidenceGrade != "aggregator_self_reported" {
 		t.Fatalf("graded rows were not attached: %#v", snapshot.Models[0])
 	}
-	if score := scoreCategoryV3(snapshot.Models[0], categorySpecs[4], snapshot.Models); score == nil || math.Abs(score.Coverage-.25) > 1e-12 || math.Abs(score.TrustedCoverage-.125) > 1e-12 || math.Abs(score.Score-(50+(empiricalPercentile(frozenBenchmarkCohort("gpqa", "public-leaderboard"), 0, true)-50)*.125)) > 1e-12 || score.Confidence != "low" {
-		t.Fatalf("graded LLM Stats rows did not use equal-family neutral calibration: %#v", score)
+	statsCohorts, err := loadFrozenLLMStatsStatsV1Cohorts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantPercentile := empiricalPercentile(statsCohorts.Benchmarks["gpqa"].Scores, 0, true)
+	if score := scoreCategoryV3(snapshot.Models[0], categorySpecs[4], snapshot.Models); score == nil || math.Abs(score.Coverage-.25) > 1e-12 || math.Abs(score.TrustedCoverage-.125) > 1e-12 || math.Abs(score.Score-wantPercentile) > 1e-12 || score.Confidence != "low" {
+		t.Fatalf("graded LLM Stats rows did not use the raw common cohort: %#v", score)
 	}
 	for _, pattern := range []string{filepath.Join(dir, "sealed", "llm-stats", "models-*.json"), filepath.Join(dir, "sealed", "llm-stats", "full-results-*.json"), filepath.Join(dir, "sealed", "llm-stats", "indexes-*.json"), filepath.Join(dir, "sealed", "llm-stats", "catalog-*.json"), filepath.Join(dir, "sealed", "llm-stats", "observations-*.jsonl"), filepath.Join(dir, "llm-stats-observations.sqlite")} {
 		matches, _ := filepath.Glob(pattern)

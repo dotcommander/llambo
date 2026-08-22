@@ -53,6 +53,9 @@ type evalsCommand struct {
 	Report               evalsReportCommand  `cmd:"" default:"1" hidden:""`
 	Writing              evalsWritingCommand `cmd:"" help:"List writing benchmarks and open-weight model coverage"`
 	Local                evalsLocalCommand   `cmd:"" help:"Run sealed task-specific local model evaluations"`
+	Export               evalsExportCommand  `cmd:"" help:"Export normalized evaluation evidence and scores"`
+	OMLX                 evalsOMLXCommand    `cmd:"" help:"Show cached OMLX LLAMBO scores; --live rediscovers and republishes"`
+	Sources              evalsSourcesCommand `cmd:"" help:"Manage sealed evaluation source caches"`
 	Refresh              bool                `help:"fetch fresh source snapshots or scrape the writing leaderboard"`
 	RefreshOfficialCards bool                `name:"refresh-official-model-cards" help:"fetch only the five pinned LiquidAI, Qwen, OpenAI, and Google model cards; all other sources stay cache-only"`
 	Format               string              `default:"markdown" help:"report/catalog format: markdown, json, or html (writing supports markdown or json)"`
@@ -65,7 +68,7 @@ type evalsCommand struct {
 	Limit                int                 `help:"maximum items (eval report defaults to 50; writing run defaults to 5 and requires 1..100); report value 0 includes all"`
 	AllowPartial         bool                `name:"allow-partial" help:"continue with an LLM Stats-only report when Artificial Analysis is unavailable"`
 	RankBy               string              `name:"rank-by" default:"matrix" help:"ranking profile: coding, agents, reasoning, writing, instruction-following, long-context, speed, or price (default: matrix)"`
-	Offline              bool                `help:"use cached external snapshots (LLAMBO-6 score generation is cache-only by default)"`
+	Offline              bool                `help:"use cached external snapshots (LLAMBO-7 score generation is cache-only by default)"`
 	LiveOMLX             bool                `name:"live-omlx" help:"query the OMLX admin inventory and restrict local score publication to those live model IDs"`
 	Projections          string              `help:"replace the built-in tracked local/OSS projection registry with this JSON file"`
 	ValidationReceipts   string              `name:"validation-receipts" help:"read sealed exact-ID local receipt JSON for a diagnostic only; never changes scores"`
@@ -82,6 +85,26 @@ type evalsReportCommand struct {
 type evalsWritingCommand struct {
 	Catalog evalsWritingCatalogCommand `cmd:"" default:"1" hidden:""`
 	Run     evalsWritingRunCommand     `cmd:"" help:"Run a bounded local writing evaluation"`
+}
+
+type evalsExportCommand struct {
+	Normalized evalsExportNormalizedCommand `cmd:"" default:"1" hidden:""`
+}
+
+type evalsExportNormalizedCommand struct {
+	OutputDir string `name:"output-dir" required:"" type:"path" help:"New directory for the normalized JSONL dataset"`
+}
+
+type evalsOMLXCommand struct {
+	Live bool `help:"discover the live OMLX text-model inventory and republish the score snapshot"`
+}
+
+type evalsSourcesCommand struct {
+	Refresh evalsSourcesRefreshCommand `cmd:"" help:"Refresh only named sealed evaluation sources"`
+}
+
+type evalsSourcesRefreshCommand struct {
+	Names []string `arg:"" optional:"" sep:"," help:"writingbench, eqbench-creative-v3, lechmazur-writing, arena-creative-writing, or llm-stats-stats-v1; writing sources default together"`
 }
 
 type evalsLocalCommand struct {

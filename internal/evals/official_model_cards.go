@@ -221,10 +221,17 @@ func validateOfficialCardSnapshot(cacheName string, snapshot sourceSnapshot) err
 	if snapshot.URL != pinnedOfficialCardURL(spec) {
 		return fmt.Errorf("source URL %q does not match pinned %q", snapshot.URL, pinnedOfficialCardURL(spec))
 	}
-	if snapshot.RegistryVersion != SourceRegistryVersion {
+	if !officialCardCompatibleRegistryVersion(snapshot.RegistryVersion) {
 		return fmt.Errorf("registry version %q does not match %q", snapshot.RegistryVersion, SourceRegistryVersion)
 	}
 	return validateOfficialCardSnapshotForSpec(spec, officialCardTargetScores[cacheName], snapshot)
+}
+
+func officialCardCompatibleRegistryVersion(version string) bool {
+	// Source registry v4/v5 added Stats v1 collection/scoring without changing
+	// official-card admission. Accept pinned predecessor caches so this source
+	// transition does not force unrelated card refreshes.
+	return version == SourceRegistryVersion || version == "LLAMBO-6-sources-v4" || version == "LLAMBO-6-sources-v3"
 }
 
 func expectedScoresForSpec(spec officialCardSpec) map[string]map[string]float64 {

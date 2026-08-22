@@ -14,8 +14,8 @@ import (
 	"time"
 )
 
-const SourceRegistryVersion = "LLAMBO-6-sources-v3"
-const CategoryFormulaVersion = "LLAMBO-6-category-v5"
+const SourceRegistryVersion = "LLAMBO-6-sources-v5"
+const CategoryFormulaVersion = "LLAMBO-7-category"
 
 type SourceClass string
 
@@ -44,6 +44,7 @@ var sourceRegistryV3 = []SourceRegistration{
 	{"llm-stats-indexes", SourceAggregatorLead, true, false},
 	{"llm-stats-benchmark-catalog", SourceDefinitionOnly, true, false},
 	{"llm-stats-benchmark-results", SourceAggregatorResult, true, true},
+	{"llm-stats-stats-v1-scores", SourceAggregatorResult, true, true},
 	{"hugging-face-leaderboards", SourceFirstPartyResult, true, true},
 	{"hugging-face-model-cards", SourceFirstPartyResult, true, true},
 	{"swe-bench", SourceOwnerResult, true, true},

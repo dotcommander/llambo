@@ -74,11 +74,11 @@ llambo evals --rank-by coding --format html --output /tmp/llambo-evals-coding.ht
 
 ## 🔑 Key Features
 
-- **🔥 Real-time Parallel Execution**: Send batch jobs across multiple providers concurrently. Results stream back the second each backend completes.
+- **🔥 Real-time Parallel Execution**: Send batch jobs across multiple providers concurrently. Poll completed results while the rest continue.
 - **🛡️ Auto-Failover & Key Rotation**: Configured with multiple API keys? Llambo automatically rotates keys on `429 Too Many Requests`. If a provider goes down, requests seamlessly fail over to the next healthy backend.
 - **🧠 Intelligent Intent Router**: Automatically classifies your prompt intent (`code`, `extraction`, `long_context`, `chat`) and picks the optimal backend based on your desired policy (`fastest`, `cheapest`, `quality`, or `balanced`).
-- **📊 Cache-First Evals (`llambo evals`)**: Compare six independent LLAMBO-2 capability scores from frozen external benchmarks without refreshing sources. Rank by a capability, speed, or price when needed.
-- **🔄 Drop-In Compatibility**: 100% compatible with OpenAI (`/v1/chat/completions`), Anthropic Messages (`/v1/messages`), and Embeddings (`/v1/embeddings`).
+- **📊 Cache-First Evals (`llambo evals`)**: Compare six independent LLAMBO-7 capability scores from frozen external benchmarks without refreshing sources. Rank by capability, speed, or price.
+- **🔄 Familiar APIs**: Use OpenAI-compatible chat, models, and embeddings endpoints or the Anthropic-compatible Messages endpoint.
 
 ---
 
@@ -88,6 +88,7 @@ Config file location: `~/.config/llambo/config.json`
 
 ```json
 {
+  "default_provider": "openai",
   "providers": {
     "openai": {
       "provider_type": "openai",
@@ -100,7 +101,7 @@ Config file location: `~/.config/llambo/config.json`
     "openrouter": {
       "provider_type": "openrouter",
       "base_url": "https://openrouter.ai/api",
-      "model": "~anthropic/claude-sonnet-latest",
+      "model": "anthropic/claude-3-5-sonnet",
       "workers": 2,
       "priority": 2,
       "enabled": true,
@@ -108,6 +109,10 @@ Config file location: `~/.config/llambo/config.json`
         "HTTP-Referer": "https://github.com/dotcommander/llambo"
       }
     }
+  },
+  "gateway": {
+    "auth_token_env": "LLAMBO_GATEWAY_TOKEN",
+    "allowed_origins": ["https://app.example.com"]
   },
   "routing": {
     "mode": "balanced",
@@ -123,12 +128,18 @@ Config file location: `~/.config/llambo/config.json`
 
 | Field | Description |
 | :--- | :--- |
-| `base_url` | API endpoint (**no** `/v1` suffix — SDK appends it automatically) |
+| `default_provider` | Required provider key used when a command omits a provider |
+| `base_url` | Provider root URL (**no** `/v1` suffix for OpenAI-compatible providers) |
 | `model` | Target model identifier |
 | `api_keys` | Array of API keys rotated on 429 rate limits |
 | `workers` | Max parallel request slots per backend |
 | `priority` | Load balancing priority order (lower number = higher priority) |
 | `capabilities` | Intent tags (e.g. `["chat", "code", "extraction"]`) |
+| `gateway.auth_token_env` | Preferred environment variable containing the gateway bearer token |
+| `gateway.allowed_origins` | Exact browser origins allowed by CORS; empty disables CORS |
+
+Non-loopback serving requires `--allow-remote`. Set gateway authentication
+before exposing Llambo beyond loopback.
 
 ---
 
@@ -153,7 +164,7 @@ route_preferences:
       any_phrases: ["refactor", "goroutine", "debug"]
     choose:
       provider: openrouter
-      model: ~anthropic/claude-sonnet-latest
+      model: anthropic/claude-3-5-sonnet
 ```
 
 ---
@@ -168,7 +179,7 @@ route_preferences:
 | `/v1/messages` | `POST` | Anthropic-compatible messages endpoint |
 | `/v1/embeddings` | `POST` | Vector embeddings generation |
 | `/v1/jobs` | `POST` | Submit parallel batch jobs |
-| `/v1/jobs/{id}` | `GET` | Fetch batch job status and streaming results |
+| `/v1/jobs/{id}` | `GET` | Poll batch job status and completed results |
 | `/v1/models` | `GET` | List available models |
 | `/health` | `GET` | Gateway health check & circuit breaker status |
 | `/stats` | `GET` | Token usage and cost tracking statistics |

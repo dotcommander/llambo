@@ -273,6 +273,7 @@ func evalFetchOptions(cacheDir string) evals.Options {
 		AllowPartial:         evalsPartial,
 		IngestLLMBenchmarks:  evalsRefresh,
 		AAAPIKey:             os.Getenv("AA_API_KEY"),
+		LLMStatsAPIKey:       os.Getenv("LLM_STATS_KEY"),
 	}
 }
 

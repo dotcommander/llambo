@@ -24,7 +24,7 @@ func TestErrorsHasHttpStatusCodes(t *testing.T) {
 	text := string(content)
 
 	// Check for required HTTP status codes
-	requiredCodes := []string{"400", "401", "429", "500", "503"}
+	requiredCodes := []string{"400", "401", "403", "404", "500", "502", "503"}
 	for _, code := range requiredCodes {
 		if !strings.Contains(text, "`"+code+"`") && !strings.Contains(text, "| `"+code+"`") {
 			t.Errorf("errors.md does not document HTTP status code %s", code)
@@ -103,7 +103,7 @@ func TestErrorsHasErrorTypesTable(t *testing.T) {
 	}
 
 	// Check for required error types
-	requiredTypes := []string{"invalid_request", "upstream_error", "not_found", "rate_limited"}
+	requiredTypes := []string{"invalid_request", "upstream_error", "not_found", "rate_limit", "quota", "auth", "transient"}
 	for _, typ := range requiredTypes {
 		if !strings.Contains(text, "`"+typ+"`") {
 			t.Errorf("errors.md does not document error type %s", typ)

@@ -8,7 +8,7 @@ llambo prompt --models free "Reply with exactly OK"
 
 Llambo is a **high-performance LLM gateway service** with parallel job processing, per-backend circuit breakers, model catalog health checks, and cross-backend load balancing.
 
-This documentation is organized into logical sections to help you get started, understand the architecture, configure the system, and use the API effectively.
+Start with the quickstart, then open only the reference for the surface you are using.
 
 ## 📚 Documentation Sections
 
@@ -30,10 +30,10 @@ This documentation is organized into logical sections to help you get started, u
 
 ### 🛠️ **[Guides](./guides/README.md)**
 - [CLI Guide](./guides/cli.md) for catalog, OpenRouter metadata, quality imports, ping, prompt, jobs, and routing commands
-- [External Evaluation Scores](./guides/evals.md) for cache-only LLAMBO-2 category scores from frozen external benchmarks
+- [External Evaluation Scores](./guides/evals.md) for cache-only LLAMBO-7 category scores from frozen external benchmarks
 - Practical examples for smart gateway, routing backtests, and parallel jobs
 - Configuration guide (complete setup)
-- Job processing with streaming results
+- Parallel job processing with pollable incremental results
 - Circuit breaker and failover patterns
 - Cost tracking and optimization
 
@@ -114,7 +114,7 @@ docs/
 ├── guides/
 │   ├── README.md                      # Guides overview
 │   ├── cli.md                         # CLI commands and model catalog workflow
-│   ├── evals.md                       # External-only LLAMBO-2 category scores
+│   ├── evals.md                       # External-only LLAMBO-7 category scores
 │   ├── practical-examples.md          # Hands-on examples for common workflows
 │   └── configuration.md               # Configuration guide
 └── architecture/

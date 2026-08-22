@@ -17,16 +17,24 @@ func TestBuiltInProjectionRegistryHasReviewedRows(t *testing.T) {
 	want := map[string]string{
 		"LFM2.5-2.6B-4bit": "lfm-2.5-2.6b", "LFM2.5-2.6B-bf16": "lfm-2.5-2.6b", "LFM2.5-2.6B-oQ4": "lfm-2.5-2.6b",
 		"LFM2.5-8B-A1B-MLX-4bit": "aa:lfm2-5-8b-a1b", "LFM2.5-VL-3B-MLX-4bit": "lfm-2.5-vl-3b",
-		"Qwen3.8-27B-4bit": "qwen3.8-27b", "Qwen3.8-27B-MLX-4bit": "qwen3.8-27b", "Qwen3.8-27B-oQ4e-mtp": "qwen3.8-27b",
+		"LFM2.5-VL-3B-OptiQ-4bit": "lfm-2.5-vl-3b",
+		"Qwen3.8-27B-4bit":        "qwen3.8-27b", "Qwen3.8-27B-MLX-4bit": "qwen3.8-27b", "Qwen3.8-27B-oQ4e-mtp": "qwen3.8-27b",
 		"gemma-4-31B-it-uncensored-heretic-4bit": "gemma-4-31b-it", "gemma-4-26B-A4B-it-heretic-4bit": "gemma-4-26b-a4b-it",
 	}
-	if registry.Version != 1 || len(registry.Projections) != 15 {
+	if registry.Version != 1 || len(registry.Projections) != 16 {
 		t.Fatalf("unexpected built-in registry: %#v", registry)
 	}
 	for _, projection := range registry.Projections {
 		if source, required := want[projection.ArtifactKey]; required && projection.SourceKey != source {
 			t.Fatalf("projection %q source = %q, want %q", projection.ArtifactKey, projection.SourceKey, source)
 		}
+	}
+	optiQ, err := json.Marshal(registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(optiQ), `"basis":"Reviewed LFM2.5 VL 3B base identity; OptiQ packaging may materially change capability."`) {
+		t.Fatalf("OptiQ projection lacks its reviewed low-confidence basis: %s", optiQ)
 	}
 }
 
@@ -65,22 +73,16 @@ func TestBuildReportAppendsProjectedRowsOutsideFormulaPopulation(t *testing.T) {
 			t.Fatalf("projection review provenance mismatch: %#v", row.Projection)
 		}
 		source, _ := reportModelByKey(report.Models, projection.SourceKey)
-		expected := 50 + (source.LlamboScores["coding"].Score-50)*projectionMultiplier(row.Projection)
-		if row.LlamboScores["coding"].Score != expected || row.LlamboScores["coding"].TrustedCoverage != source.LlamboScores["coding"].TrustedCoverage*projectionMultiplier(row.Projection) {
+		if row.LlamboScores["coding"].Score != source.LlamboScores["coding"].Score || row.LlamboScores["coding"].TrustedCoverage != source.LlamboScores["coding"].TrustedCoverage*projectionMultiplier(row.Projection) {
 			t.Fatalf("projection was not confidence-calibrated: projected=%#v source=%#v", row.LlamboScores["coding"], source.LlamboScores["coding"])
 		}
 		if row.LlamboScores["coding"].Confidence != "low" {
 			t.Fatalf("projection confidence was not capped at low: %#v", row.LlamboScores["coding"])
 		}
-		for _, category := range categorySpecs {
-			if row.LlamboScores[category.name] == nil {
-				t.Fatalf("projection %q left %s unresolved", projection.ArtifactKey, category.name)
-			}
-		}
 	}
 }
 
-func TestProjectionEstimatesOnlyMissingCategoriesWithExplicitProvenance(t *testing.T) {
+func TestProjectionLeavesMissingCategoriesUnresolved(t *testing.T) {
 	source := ReportModel{
 		Key: "upstream", Name: "Upstream", LlamboScores: map[string]*LlamboScore{
 			"agents": {Score: 90, Coverage: .5, TrustedCoverage: .5, Confidence: "medium", Families: []string{"tool-api-orchestration"}},
@@ -94,50 +96,17 @@ func TestProjectionEstimatesOnlyMissingCategoriesWithExplicitProvenance(t *testi
 		t.Fatal(err)
 	}
 	projected := rows[1]
-	if projected.LlamboScores["agents"].Score != 70 || projected.LlamboScores["coding"].Score != 60 || projected.LlamboScores["agents"].Estimated || projected.LlamboScores["coding"].Estimated {
-		t.Fatalf("benchmark-backed projected scores changed: %#v", projected.LlamboScores)
+	if projected.LlamboScores["agents"].Score != 90 || projected.LlamboScores["coding"].Score != 70 || projected.LlamboScores["agents"].Estimated || projected.LlamboScores["coding"].Estimated {
+		t.Fatalf("benchmark-backed projected raw scores changed: %#v", projected.LlamboScores)
 	}
-	estimated := projected.LlamboScores["writing"]
-	if estimated == nil || estimated.Score != 53.75 || !estimated.Estimated || estimated.EstimateMethod != crossCategoryEstimateMethod || !slices.Equal(estimated.EstimateSources, []string{"agents", "coding"}) || estimated.Coverage != 0 || estimated.TrustedCoverage != 0 || estimated.Confidence != "low" || estimated.Primary != nil || len(estimated.Contributions) != 0 || len(estimated.Families) != 0 || estimated.WinnerStatus != "" {
-		t.Fatalf("estimate provenance or calibration is invalid: %#v", estimated)
+	if projected.LlamboScores["writing"] != nil {
+		t.Fatalf("missing projected category was filled: %#v", projected.LlamboScores["writing"])
 	}
-	if _, unresolved := projected.UnresolvedReasons["writing"]; unresolved {
-		t.Fatalf("estimated category retained unresolved reason: %#v", projected.UnresolvedReasons)
-	}
-	data, err := json.Marshal(estimated)
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(data)
-	for _, want := range []string{`"estimated":true`, `"estimate_method":"cross-category-remote-shrink-v1"`, `"estimate_source_categories":["agents","coding"]`} {
-		if !strings.Contains(text, want) {
-			t.Fatalf("estimate JSON omitted %s: %s", want, text)
-		}
-	}
-	if strings.Contains(text, `"primary"`) || strings.Contains(text, `"contributions"`) {
-		t.Fatalf("estimate JSON invented benchmark provenance: %s", text)
+	if projected.UnresolvedReasons["writing"] == "" {
+		t.Fatalf("missing projected category lost its unresolved reason: %#v", projected.UnresolvedReasons)
 	}
 	if source.LlamboScores["agents"].Score != 90 || source.LlamboScores["coding"].Score != 70 {
 		t.Fatalf("projection estimate mutated canonical score: %#v", source.LlamboScores)
-	}
-}
-
-func TestProjectionEstimatePropagatesStalenessFromAnySourceCategory(t *testing.T) {
-	source := ReportModel{
-		Key: "upstream", Name: "upstream", LlamboScores: map[string]*LlamboScore{
-			"agents": {Score: 90, Stale: true},
-			"coding": {Score: 70},
-		},
-		UnresolvedReasons: map[string]string{"writing": "no eligible reviewed frozen benchmark observation"},
-		Scores:            map[string]*ExternalScore{},
-	}
-	rows, _, err := appendProjectedRows([]ReportModel{source}, []projectionSpec{{ArtifactKey: "local", SourceKey: "upstream", Confidence: "low"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	estimated := rows[1].LlamboScores["writing"]
-	if estimated == nil || !estimated.Estimated || !estimated.Stale {
-		t.Fatalf("estimate did not retain stale source provenance: %#v", estimated)
 	}
 }
 
@@ -146,7 +115,7 @@ func TestMissingProjectionSourceIsReported(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Projections.Applied != 1 || len(report.Projections.Missing) != 14 {
+	if report.Projections.Applied != 1 || len(report.Projections.Missing) != 15 {
 		t.Fatalf("missing projections were not diagnosed: %#v", report.Projections)
 	}
 	if _, ok := reportModelByKey(report.Models, "Qwen3.6-27B-MLX-4bit"); ok {
@@ -211,7 +180,7 @@ func TestProjectionRemovesHostedOperationalEvidence(t *testing.T) {
 		projected.AA.InputPrice != nil || projected.AA.OutputPrice != nil || projected.AA.OutputTokensPS != nil || projected.AA.TTFTSeconds != nil || projected.AA.E2ESeconds != nil {
 		t.Fatalf("projection retained hosted operational raw values: %#v %#v", projected.LLMStats, projected.AA)
 	}
-	if projected.LlamboScores["coding"] == nil || projected.LlamboScores["coding"].Score != 60 || projected.LlamboScores["coding"].Confidence != "low" || projected.MetricPercentiles["aa_intelligence_general"] != 70 {
+	if projected.LlamboScores["coding"] == nil || projected.LlamboScores["coding"].Score != 70 || projected.LlamboScores["coding"].Confidence != "low" || projected.MetricPercentiles["aa_intelligence_general"] != 70 {
 		t.Fatal("projection removed capability evidence")
 	}
 }

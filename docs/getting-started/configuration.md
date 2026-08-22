@@ -22,6 +22,7 @@ Here's a complete example configuration showing all available fields:
 
 ```json
 {
+  "default_provider": "openai",
   "providers": {
     "openai": {
       "base_url": "https://api.openai.com",
@@ -57,13 +58,34 @@ Here's a complete example configuration showing all available fields:
       },
       "api_path": null
     }
+  },
+  "gateway": {
+    "max_active_jobs": 64,
+    "max_requests_per_job": 500,
+    "auth_token_env": "LLAMBO_GATEWAY_TOKEN",
+    "allowed_origins": ["https://app.example.com"]
   }
 }
 ```
 
 ## Configuration Fields Reference
 
+### Gateway access and job limits
+
+| Field | Default | Description |
+| --- | --- | --- |
+| `gateway.max_active_jobs` | `64` | Maximum active jobs |
+| `gateway.max_requests_per_job` | `500` | Maximum requests accepted in one job |
+| `gateway.auth_token_env` | none | Preferred environment variable containing the bearer token |
+| `gateway.auth_token` | none | Direct bearer token; prefer the environment-variable field |
+| `gateway.allowed_origins` | empty | Exact browser origins allowed by CORS; empty disables CORS |
+
+Non-loopback serving requires `--allow-remote`. Configure gateway authentication
+before exposing Llambo beyond loopback.
+
 ### Required Fields
+
+The top-level `default_provider` must name an entry in `providers`.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
@@ -138,6 +160,7 @@ Add custom headers with `extra_headers`:
 
 ```json
 {
+  "default_provider": "openai-primary",
   "providers": {
     "openai-primary": {
       "base_url": "https://api.openai.com",
@@ -162,6 +185,7 @@ Add custom headers with `extra_headers`:
 
 ```json
 {
+  "default_provider": "ollama",
   "providers": {
     "ollama": {
       "base_url": "http://localhost:11434",

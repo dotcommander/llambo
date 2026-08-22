@@ -36,7 +36,7 @@ curl -X POST http://localhost:8080/v1/chat/completions \
 | Aspect | Description |
 |--------|-------------|
 | **Symptom** | Requests fail with HTTP 404 errors from OpenAI-compatible providers |
-| **Cause** | Double `/v1` in URL. The OpenAI SDK appends `/v1/chat/completions` to the BaseURL, so including `/v1` in config creates a double `/v1/v1/chat/completions` path |
+| **Cause** | Double `/v1` in the URL. OpenAI-compatible provider execution appends `/v1/chat/completions`, so including `/v1` in config creates `/v1/v1/chat/completions` |
 | **Solution** | Remove `/v1` from `base_url` in config.json |
 
 **Example Fix:**

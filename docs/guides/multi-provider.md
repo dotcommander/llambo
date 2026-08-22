@@ -265,7 +265,7 @@ curl -X POST http://localhost:8080/v1/jobs \
 1. Jobs allocated to providers based on priority and available `workers` slots
 2. Higher-priority providers get jobs first
 3. Within same priority, jobs round-robin distributed based on capacity
-4. Results stream back as they complete (no waiting for all jobs)
+4. Poll job status to read completed results while remaining requests continue
 
 ## Monitoring Multi-Provider Health
 

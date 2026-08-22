@@ -16,6 +16,7 @@ Configure multiple API keys via the `api_keys` array (the **api_keys array** for
 
 ```json
 {
+  "default_provider": "openai",
   "providers": {
     "openai": {
       "base_url": "https://api.openai.com",

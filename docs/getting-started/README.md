@@ -8,7 +8,7 @@ The service acts as a single entry point that handles provider abstraction, circ
 
 ## Key Features
 
-- **Parallel Job Processing**: Execute multiple requests concurrently across healthy backends with real-time streaming results
+- **Parallel Job Processing**: Execute multiple requests concurrently and poll results as they complete
 - **Circuit Breakers & Automatic Failover**: Per-backend health tracking with automatic failover to maintain service availability
 - **Multi-Provider Support**: Unified interface for OpenAI, Anthropic, Google, OpenRouter, and other LLM providers
 - **Key Rotation**: Intelligent rotation across multiple API keys to handle rate limits effectively
@@ -19,7 +19,7 @@ The service acts as a single entry point that handles provider abstraction, circ
 
 - **Developers** building applications that require high availability LLM access
 - **Teams** managing multiple API keys and providers across different environments
-- **Applications** needing parallel processing of batch requests with streaming results
+- **Applications** needing parallel batch processing with incremental status results
 - **Systems** requiring automatic failover and circuit breaker protection against provider outages
 - **Organizations** wanting centralized cost tracking and usage monitoring across LLM providers
 

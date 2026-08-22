@@ -43,7 +43,7 @@ Circuit breakers trigger based on these exact conditions:
 **Rate limit/quota errors** are detected by:
 - HTTP status code 429
 - Error messages containing: `rate limit`, `rate_limit`, `quota`, `too many requests`
-- Both OpenAI SDK errors and raw HTTP errors are classified
+- Provider protocol errors and raw HTTP errors are classified
 
 **Consecutive failures** count includes:
 - Any error from the backend (except those that trigger immediate disable)

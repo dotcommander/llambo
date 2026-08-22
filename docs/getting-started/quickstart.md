@@ -51,6 +51,7 @@ Find the `lmstudio` provider section and change `"enabled": false` to `"enabled"
 
 ```json
 {
+  "default_provider": "lmstudio",
   "providers": {
     "lmstudio": {
       "provider_type": "openai",
@@ -107,12 +108,11 @@ You should get a JSON response showing provider status:
 ```json
 {
   "status": "healthy",
-  "timestamp": "2026-01-17T22:52:00Z",
-  "providers": {
+  "uptime_seconds": 12,
+  "backends": {
     "lmstudio": {
       "healthy": true,
-      "circuit": "closed",
-      "last_error": null
+      "failures": 0
     }
   }
 }

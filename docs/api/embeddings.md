@@ -13,7 +13,9 @@ Content-Type: application/json
 
 The embeddings endpoint generates vector embeddings for text input using configured backend providers. Embeddings are numerical representations of text that capture semantic meaning, useful for search, clustering, and similarity comparisons.
 
-The endpoint automatically selects the best available embedding provider based on configuration priority and health status.
+Provider construction prefers an enabled provider named or typed `openai`, then
+falls back to the first enabled provider. This selection does not consult live
+circuit-breaker health.
 
 ## Request Body Schema
 
@@ -116,7 +118,7 @@ curl -X POST http://localhost:8080/v1/embeddings \
 | `data` | array[EmbeddingData] | Array of embedding objects |
 | `data[].object` | string | Always `"embedding"` |
 | `data[].index` | integer | Position of this embedding in the input array |
-| `data[].embedding` | array[float32] | Vector embedding values (1536 dimensions by default) |
+| `data[].embedding` | array[float32] | Vector values returned by the upstream embedding model |
 | `model` | string | Model used for embeddings |
 | `usage` | Usage | Token usage information |
 | `usage.prompt_tokens` | integer | Estimated tokens in input text |
@@ -170,7 +172,7 @@ curl -X POST http://localhost:8080/v1/embeddings \
 | Header | Required | Description |
 |--------|----------|-------------|
 | `Content-Type` | Yes | Must be `application/json` |
-| `Authorization` | No | Not required - API keys are configured server-side |
+| `Authorization` | Conditional | Required as `Bearer <token>` when gateway authentication is configured |
 
 ### Response Headers
 
@@ -222,9 +224,9 @@ The actual embedding model is configured server-side in `~/.config/llambo/config
 3. Uses default OpenAI configuration if no providers configured
 
 ### Embedding Dimensions
-- Default: **1536 dimensions** (text-embedding-3-small)
-- Configurable via `dimensions` in embed config
-- Each embedding is a `[]float32` array
+- `embed.dimensions` defaults to `1536` and records the expected vector width.
+- The upstream embedding response determines the actual returned vector length.
+- Each embedding is returned as a `[]float32` array.
 
 ### Token Estimation
 Since embedding providers typically don't return detailed token counts, Llambo estimates:
@@ -306,7 +308,7 @@ for embedding in response.data:
 ```
 
 ### Processing Embedding Results
-Embeddings are 1536-dimensional vectors by default (configurable):
+Use the returned vector length rather than assuming a fixed dimension:
 
 ```python
 # Calculate cosine similarity between two embeddings

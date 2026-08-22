@@ -1,6 +1,11 @@
 # Contributing Guide
 
-Thank you for your interest in contributing to Llambo! This guide will help you get started with development, understand our coding standards, and learn how to submit contributions effectively.
+Build and run the repository gate first:
+
+```bash
+go build -o llambo . && ln -sf $(pwd)/llambo ~/go/bin/llambo
+go test ./...
+```
 
 ## Development Setup
 
@@ -57,7 +62,7 @@ go test ./... -v
 ### Code Organization
 
 ```
-cmd/           - CLI commands (Cobra-based)
+cmd/           - Kong CLI commands and reporting
   serve.go     - Gateway server command
   config.go    - Config management
   root.go      - Root command
@@ -66,7 +71,7 @@ internal/      - Internal packages (not for external use)
   gateway/     - HTTP server, handlers, job processing
 
 providers/     - Backend integration and management
-  openai_provider.go    - OpenAI-compatible provider with failover
+  openai_provider.go    - Provider orchestration and failover
   circuit_breaker.go   - Per-backend health tracking
   queue.go              - Parallel job processing
   cost_tracker.go       - Token usage and cost aggregation
@@ -139,8 +144,8 @@ func TestFunctionName(t *testing.T) {
 
 ### Dependencies
 
-- **OpenAI SDK**: `github.com/openai/openai-go` - Native SDK for OpenAI, OpenRouter, etc.
-- **Cobra**: `github.com/spf13/cobra` - CLI framework
+- **Wormhole**: `github.com/garyblankenship/wormhole` - Provider protocol execution
+- **Kong**: `github.com/alecthomas/kong` - CLI framework
 - **Conc**: `github.com/sourcegraph/conc` - Concurrency utilities
 - **Testify**: `github.com/stretchr/testify` - Testing utilities
 

@@ -2,7 +2,7 @@
 
 ## 30-second category scorecard
 
-Generate all six cache-only LLAMBO-6 category scores without executing a model or
+Generate all six cache-only LLAMBO-7 category scores without executing a model or
 contacting a remote source:
 
 ```bash
@@ -22,6 +22,85 @@ llambo evals --live-omlx --rank-by matrix
 Each model can receive independent scores for agents, coding, instruction
 following, long context, reasoning, and writing. There is no overall composite.
 Speed, latency, memory, and price remain separate operational facts.
+
+## Export a normalized evidence dataset
+
+Create a cache-only JSONL dataset that joins source-native evidence to the six
+LLAMBO category scores:
+
+```bash
+llambo evals export normalized \
+  --output-dir /tmp/llambo-normalized-evals
+```
+
+The export writes a manifest plus JSONL records for sources, models, identity
+bridges, source observations, scores, score contributions, operational metrics,
+projections, frozen cohorts, and drift diagnostics. It makes no provider call,
+runs no local model, queries no live OMLX inventory, and never publishes the
+score snapshot.
+
+| Safety property | Contract |
+| --- | --- |
+| Semantic deduplication | Equivalent `identity + benchmark + revision + direction + score` rows collapse to one record; peers remain in `mirrors` |
+| Editorial selection | Benchmark owner > first party > aggregator, then evidence grade, identity confidence, and stable source ID |
+| Editorial score ranking | Category score descending, trusted coverage descending, identity confidence descending, then key ascending |
+| Score boundary | Operational metrics and local task scores never alter capability scores |
+| Admission transparency | Non-admitted source rows remain with `admission_status` and `admission_reason` |
+| Publication | The output directory must be new and is published atomically after all artifacts encode |
+
+## Show or republish only OMLX scores
+
+Use the dedicated OMLX view when you want the current score snapshot rather than
+the full external-model report:
+
+```bash
+# Immediate cached view; no network, provider, or local-model call
+llambo evals omlx
+
+# Explicit live admin discovery, OMLX-only rebuild, and snapshot publication
+llambo evals omlx --live
+
+# Machine-readable snapshot
+llambo evals omlx --format json
+```
+
+The cached view reads `~/.config/llambo/llambo-scores.json`. `--live` is the
+only mode that queries OMLX or replaces that snapshot. Hidden, helper, virtual,
+audio, and embedding models remain excluded and are reported with their IDs.
+Markdown cells include confidence and trusted coverage. Missing categories remain
+`—`; `ᵉ` is retained only for readable legacy LLAMBO-6 snapshots. The summary
+separately counts benchmark-backed, estimated, and unresolved cells.
+
+## Refresh sealed evaluation sources
+
+Source-scoped refresh avoids a full evaluation refresh:
+
+```bash
+# All reviewed writing sources
+llambo evals sources refresh
+
+# One source
+llambo evals sources refresh writingbench
+
+# Explicit comma-separated set
+llambo evals sources refresh writingbench,eqbench-creative-v3,lechmazur-writing,arena-creative-writing
+
+# Authenticated LLM Stats model and reviewed-benchmark refresh
+llambo evals sources refresh llm-stats-stats-v1
+```
+
+The source service fetches into memory, validates every row's source ID, source
+class, evidence grade, methodology, version, and content hash, preserves
+predecessor caches under the cache `backups/` directory, and only then replaces
+the named files. WritingBench, EQ-Bench Creative v3, and Lech Mazur Creative
+Story-Writing, and Arena Creative Writing all publish the same normalized
+snapshot contract. Arena ingestion reads the official `arena-catalog` JSON
+artifact's `creative_writing` category and emits `lmsys-writing` observations;
+it does not scrape the rendered leaderboard page.
+`llm-stats-stats-v1` performs the same staged replacement for
+the complete Stats v1 LLM identity inventory—359 models in the current sealed
+collection—and every reviewed benchmark with at least five unique models. It
+never runs provider or local-model inference.
 
 ## Cost-safe local evaluation
 
@@ -55,16 +134,24 @@ Use `--refresh` only when you deliberately want newer source snapshots:
 
 ```bash
 export AA_API_KEY=your-free-api-key
+export LLM_STATS_KEY=your-llm-stats-api-key
 llambo evals --refresh
 ```
+
+When `LLM_STATS_KEY` is present, full benchmark ingestion uses the authenticated
+LLM Stats Stats v1 `/v1/models`, `/v1/benchmarks`, and `/v1/scores` endpoints
+with HTTP Bearer authentication, cursor pagination, exact-model deduplication,
+and percent normalization. Without that key, refresh retains the legacy public
+leaderboard adapter. The source-scoped command performs the same Stats v1
+ingest without touching WritingBench, EQ-Bench, or Artificial Analysis.
 
 `--offline` disables the loopback OMLX request as well as external source access
 and cannot be combined with `--refresh`. `--no-omlx` skips only local discovery.
 
 ## Writing benchmark catalog
 
-Use the separate writing catalog when you want concrete prose tests rather than
-the LLAMBO-6 score matrix:
+Use the writing workspace when you want concrete prose tests and source
+discovery around the same normalized evaluation evidence:
 
 ```bash
 # Offline: show the reviewed source registry and current open-weight queue
@@ -84,9 +171,10 @@ llambo evals writing --refresh --prompt-source writingbench --prompt-limit 20 \
 llambo evals writing --refresh --discover-open-models --discover-limit 25
 ```
 
-The catalog keeps scores in the scale used by each upstream benchmark. It does
-not calculate category scores itself; admitted sealed results are normalized by
-the LLAMBO-6 scoring path. Refresh scrapes the public
+The workspace keeps scores in the scale used by each upstream benchmark. It does
+not maintain a parallel scoring system: admitted sealed results flow through the
+same source snapshots, identity reconciliation, and LLAMBO-7 family scorer.
+The standard source refresh ingests the public
 [Lech Mazur creative story-writing leaderboard](https://github.com/lechmazur/writing),
 which publishes pairwise comparison scores, estimated win chance, and an
 uncertainty range. Its public artifacts include the prompts and generated
@@ -298,7 +386,7 @@ price. JSON reports retain each source's raw `output_price` field.
 `llambo evals` includes a separate tracked-projections section for local model
 artifacts whose upstream identity has been reviewed. These rows inherit admitted
 upstream evidence after canonical scoring is complete. Projection confidence
-calibrates trusted coverage and pulls sparse projected scores toward neutral 50.
+calibrates trusted coverage and confidence; it never changes the raw score.
 Projected rows never duplicate a model in the reference population or change
 another model's percentile or rank.
 
@@ -370,54 +458,41 @@ Ambiguous identities stay separate and are labeled `ambiguous`.
 Each writing observation retains its URL, source version or pinned commit,
 content SHA-256, fetch time, methodology, judge version, and identity match.
 
-## LLAMBO-6 category formula
+## LLAMBO-7 category formula
 
-`LLAMBO-6-category-v5` reports six independent capability scores. A reviewed,
-versioned registry assigns every admitted benchmark to exactly one category and
-one independent capability family. Each category targets three to five families.
+`LLAMBO-7-category` reports six independent capability scores. A reviewed
+registry assigns every admitted benchmark to exactly one category and one
+independent capability family. Each category targets three to five families.
 
-Version 3 adds SHA-pinned official comparison-table evidence for LiquidAI
-LFM2.5-2.6B and LFM2.5-VL-3B, Qwen3.8-27B, OpenAI gpt-oss-20b, and Google
-Gemma 4 31B and 26B A4B. Each target score is normalized
-only against the compatible frozen population published in that same source.
-The gpt-oss population comprises six explicitly identified model-and-reasoning-
-effort configurations, not six distinct base models. Ordinary runs read these
-sources only from cache; use `--refresh-official-model-cards` to retrieve just
-the five pinned cards, or `--refresh` for the full source set.
-
-Version 4 preserves every benchmark-backed category score. For a reviewed local
-projection only, a missing category is filled from the mean of that artifact's
-existing shrunken remote category scores: `50 + (mean - 50) × 0.25`. These cells
-are serialized as `estimated=true` with method
-`cross-category-remote-shrink-v1` and their sorted source categories. They have
-zero coverage, low confidence, no benchmark evidence, and cannot be an official
-category winner. Canonical source rows remain benchmark-backed or unresolved.
-
-Version 5 adds six immutable LLM Stats public-leaderboard cohorts from the
-sealed 5,544-row artifact
-`de5462f48f2ac7d36713cdf96b57d63832588e598d0bae54e02f7c47737a4f8a`:
-`longbench-v2` (17), `math` (71), `humaneval` (66), `ifeval` (67),
-`arena-hard` (26), and `osworld` (20). A row activates only when its exact
-source ID/class, public-leaderboard version, public cohort, methodology,
-direction, source revision/content-SHA pair, and identity match the frozen
-contract. The several page digests that form one approved population share one
-immutable percentile scale; a mismatch remains unresolved. These are
-aggregator results, so their existing evidence multipliers remain unchanged.
-
-For every compatible benchmark revision, Llambo computes an empirical midrank
-percentile against that benchmark's frozen remote population. Represented families
-receive equal nominal weight. Source authority and identity confidence contribute
-trusted coverage; they do not make one family more important than another. Partial
-trust pulls the result toward neutral 50:
+For each represented family, Llambo computes an empirical midrank percentile
+against that benchmark's common frozen cohort. The category score is the
+unweighted mean of represented family percentiles:
 
 ```text
-category score = 50 + (observed family percentile - 50) × trusted coverage
+category score = mean(represented-family common-cohort percentiles)
 ```
+
+Source authority chooses a raw result; it does not choose a tiny source-native
+percentile population when a broad common cohort exists. Evidence grade,
+partial family coverage, projection identity, and stale state are reported as
+trusted coverage and confidence. They do not pull the score toward neutral 50.
+
+LLAMBO-7 freezes these 21 Stats v1 benchmark populations from sealed artifact
+`540bdcdff3b2eae7c816d993950789f15ca1685a7ba09ff679a056dc05478583`:
+`arena-hard` (26), `bfcl-v4` (15), `gpqa` (239), `humaneval` (66), `ifbench`
+(34), `ifeval` (67), `livecodebench` (75), `livecodebench-v6` (56),
+`longbench-v2` (17), `math` (71), `mbpp` (33), `mmlu-pro` (134), `multi-if`
+(23), `multipl-e` (13), `osworld` (20), `scicode` (21), `swe-bench-pro` (50),
+`swe-bench-verified` (111), `tau-bench-retail` (25), `tau3-bench` (5), and
+`writingbench` (15). Benchmarks outside that manifest retain their prior
+reviewed owner/first-party cohort lookup.
 
 No eligible canonical evidence renders `—`, never synthetic `0` or `50`. Valid stale cache
 entries remain usable and show their age and stale warning. Incompatible revisions
 never share a reference population. Mirrored results contribute once; lower-
 authority copies are corroboration, and unresolved peer conflicts are quarantined.
+Reviewed local projections do not synthesize missing categories; those cells
+remain unresolved and never enter rankings.
 
 | Category | Reviewed capability families |
 | --- | --- |
@@ -434,9 +509,10 @@ score, trusted coverage, then identity confidence; a remaining exact tie produce
 co-winners. Operational metrics and task-specific local evaluations never enter
 these rankings.
 
-Successful explicit generation atomically publishes a versioned local category
-snapshot. A failed run leaves the prior snapshot intact, and previous formula
-versions remain available for replay.
+Successful explicit generation atomically replaces the single local category
+snapshot at `~/.config/llambo/llambo-scores.json`. A failed run leaves the
+current snapshot intact. Older snapshots remain readable, but no longer create
+formula-specific archives or publication lineage.
 
 ## Read-only local validation
 
@@ -459,16 +535,16 @@ llambo evals --rank-by writing --format json --output /tmp/llambo-writing.json
 ```
 
 The writing category combines only the writing families admitted by the reviewed
-LLAMBO-6 registry. WritingBench supplies rubric-long-form evidence; EQ-Bench
+LLAMBO-7 registry. WritingBench supplies rubric-long-form evidence; EQ-Bench
 Creative v3 supplies an independent creative-writing family when its frozen
 revision is compatible. Local writing runs remain separate diagnostics and never
 alter the score.
 
 ## Trust and drift
 
-LLAMBO-6 embeds the source distributions from its reference snapshot, including
-model counts, Artificial Analysis index version, and source fingerprints. A
-refresh does not silently redefine old percentiles.
+LLAMBO-7 retains the reference snapshot for drift diagnostics, including source
+model counts, Artificial Analysis index version, and fingerprints. A refresh does
+not silently redefine the pinned scoring cohorts.
 
 The report marks reference drift when:
 

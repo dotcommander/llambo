@@ -1,6 +1,8 @@
 # Error Handling
 
-Llambo provides consistent error responses across all API endpoints. This guide covers HTTP status codes, error response format, and circuit breaker behavior.
+Endpoint handlers return structured JSON errors. Gateway authentication and
+CORS middleware reject requests with plain-text `401` or `403` responses before
+an endpoint handler runs.
 
 ## HTTP Status Codes
 
@@ -11,31 +13,27 @@ Llambo uses standard HTTP status codes with specific meanings:
 | Code | Name | Description | When Returned |
 |------|------|-------------|---------------|
 | `400` | Bad Request | Invalid request format or missing required fields | Invalid JSON, missing required parameters, malformed requests |
-| `401` | Unauthorized | Authentication failed | Invalid or missing API key in provider configuration |
-| `403` | Forbidden | Insufficient permissions | Valid API key but insufficient permissions for requested resource |
+| `401` | Unauthorized | Gateway authentication failed | Missing or invalid configured gateway bearer token |
+| `403` | Forbidden | Browser origin rejected | Origin is outside `gateway.allowed_origins` |
 | `404` | Not Found | Resource not found | Requested job ID doesn't exist, invalid endpoint |
-| `429` | Too Many Requests | Rate limit exceeded | Provider rate limit reached, circuit breaker activated |
-| `451` | Unavailable For Legal Reasons | Provider blocked by policy | Legal/regional restrictions on provider |
 
 ### Server Errors (5xx)
 
 | Code | Name | Description | When Returned |
 |------|------|-------------|---------------|
-| `500` | Internal Server Error | Unexpected server error | Unhandled exceptions, programming errors |
-| `502` | Bad Gateway | Upstream provider error | Provider returned 5xx error, connection issues |
-| `503` | Service Unavailable | Service overloaded or degraded | No healthy providers available, circuit breakers active |
-| `504` | Gateway Timeout | Upstream timeout | Provider request timeout exceeded |
+| `500` | Internal Server Error | Internal stream setup failed | Streaming became unavailable before headers were written |
+| `502` | Bad Gateway | Sanitized upstream failure | Provider rate limit, quota, auth, transient, no-content, or other failure |
+| `503` | Service Unavailable | Job admission unavailable | Job manager is shutting down or the queue is saturated |
 
 ## Error Response Format
 
-All error responses follow the same JSON structure:
+Endpoint-handler errors use this JSON structure:
 
 ```json
 {
   "error": {
     "message": "Human-readable error description",
-    "type": "error_type",
-    "code": "optional_error_code"
+    "type": "error_type"
   }
 }
 ```
@@ -45,11 +43,17 @@ All error responses follow the same JSON structure:
 | Type | Description | Example |
 |------|-------------|---------|
 | `invalid_request` | Request validation failed | Missing required field, invalid JSON |
-| `upstream_error` | Provider returned error | Provider API error, timeout |
+| `upstream_error` | Unclassified upstream failure | Provider request failed |
+| `rate_limit` | Upstream rate limit | Provider rejected request volume |
+| `quota` | Upstream quota exhausted | Provider account quota unavailable |
+| `auth` | Upstream authentication failed | Provider credential rejected |
+| `transient` | Temporary upstream failure | Provider temporarily unavailable |
+| `no_content` | No assistant-visible content | Provider ended without usable content |
 | `not_found` | Resource doesn't exist | Job ID not found |
-| `rate_limited` | Rate limit exceeded | Too many requests to provider |
-| `not_implemented` | Feature not available | Streaming not supported |
+| `not_implemented` | Feature not available | Selected provider does not support streaming |
 | `not_configured` | Missing configuration | Embedding provider not configured |
+| `queue_saturated` | Job queue full | Active-job limit reached |
+| `server_shutting_down` | Shutdown in progress | Job manager is no longer admitting work |
 
 ### Example Error Responses
 
@@ -77,8 +81,8 @@ All error responses follow the same JSON structure:
 ```json
 {
   "error": {
-    "message": "Provider error: 429 Too Many Requests",
-    "type": "upstream_error"
+    "message": "Upstream provider rate limit exceeded",
+    "type": "rate_limit"
   }
 }
 ```
@@ -100,7 +104,7 @@ When a provider returns HTTP 429:
 2. **Circuit breaker activation**:
    - Provider marked as unhealthy
    - Requests fail over to next available provider
-   - 5-minute cooldown before retrying provider
+   - Respect `Retry-After`; otherwise use a 60-second initial cooldown
 
 ### Multi-Key Configuration
 
@@ -135,18 +139,18 @@ The circuit breaker protects against unhealthy providers and implements intellig
 
 | Failure Pattern | Action | Cooldown |
 |-----------------|--------|----------|
-| HTTP 429 (no keys left) | Immediate disable | 5 minutes |
-| "rate limit" in error message | Immediate disable | 5 minutes |
-| "quota" in error message | Immediate disable | 5 minutes |
+| HTTP 429 (no keys left) | Immediate disable | `Retry-After`, otherwise 60 seconds initially |
+| Rate-limit or quota error | Immediate disable | `Retry-After`, otherwise 60 seconds initially |
+| Unsupported model | Immediate disable | 5 minutes |
 | 3+ consecutive failures | Disable | 60 seconds |
 | Success after cooldown | Re-enable, reset counter | - |
 
 ### Auto-Recovery
 
 Circuit breakers auto-recover after cooldown:
-- **Rate limit errors**: 5 minutes (`RateLimitCooldown`)
+- **Rate limit errors**: provider `Retry-After`, otherwise the general cooldown initially
 - **General failures**: 60 seconds (`FailureCooldown`)
-- **Quota errors**: Use rate limit cooldown if failures ≥ 10
+- **Repeated quota/rate-limit errors**: 5 minutes after 10 failures
 
 ### Health Monitoring
 
@@ -174,7 +178,7 @@ Llambo classifies errors for appropriate handling:
 | Category | HTTP Codes | String Patterns | Handling |
 |----------|------------|-----------------|----------|
 | **Rate Limit** | 429 | "rate limit", "too many requests", "throttl" | Circuit breaker, key rotation |
-| **Quota** | - | "quota", "exceeded your current quota", "billing" | Circuit breaker (5 min) |
+| **Quota** | - | "quota", "exceeded your current quota", "billing" | Circuit breaker with adaptive cooldown |
 | **Auth** | 401, 403 | "invalid api key", "authentication", "unauthorized" | Circuit breaker, config fix required |
 | **Config** | - | "invalid model", "unsupported value", "does not exist" | Circuit breaker, code/config fix |
 | **Transient** | 502, 503, 504 | "connection reset", "timeout", "temporary failure" | Retry with backoff |
@@ -193,7 +197,7 @@ Errors are classified using:
 
 1. **Check error types**:
    ```javascript
-   if (error.type === 'rate_limited') {
+   if (error.type === 'rate_limit') {
      // Implement exponential backoff
    }
    ```
@@ -205,7 +209,7 @@ Errors are classified using:
 
 3. **Use job queue for batch processing**:
    - Submit jobs via `/v1/jobs`
-   - Results stream as they complete
+   - Completed results appear in job-status polling as they finish
    - Handles provider failures automatically
 
 ### Configuration

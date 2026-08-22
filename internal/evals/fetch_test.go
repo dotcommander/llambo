@@ -33,6 +33,10 @@ func TestFetchSourcesAndFreshCache(t *testing.T) {
 			body = string(syntheticWritingBenchXLSX(t))
 		case "/creative_writing.js":
 			body = string(syntheticEQBenchCreativeJS())
+		case "/lechmazur-writing.md":
+			body = writingLeaderboardFixture
+		case "/arena-creative.json":
+			body = arenaCreativeFixture
 		default:
 			return &http.Response{StatusCode: http.StatusNotFound, Body: io.NopCloser(strings.NewReader("not found")), Header: make(http.Header)}, nil
 		}
@@ -40,7 +44,7 @@ func TestFetchSourcesAndFreshCache(t *testing.T) {
 	})}
 
 	now := time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC)
-	opts := Options{CacheDir: t.TempDir(), AAAPIKey: "secret", Client: client, Now: func() time.Time { return now }, LLMModelsURL: "https://test/models", LLMFullURL: "https://test/full", LLMIndexURL: "https://test/indexes", AAURL: "https://test/aa", WritingBenchURL: "https://test/score.xlsx", EQBenchCreativeURL: "https://test/creative_writing.js"}
+	opts := Options{CacheDir: t.TempDir(), AAAPIKey: "secret", Client: client, Now: func() time.Time { return now }, LLMModelsURL: "https://test/models", LLMFullURL: "https://test/full", LLMIndexURL: "https://test/indexes", AAURL: "https://test/aa", WritingBenchURL: "https://test/score.xlsx", EQBenchCreativeURL: "https://test/creative_writing.js", LechMazurWritingURL: "https://test/lechmazur-writing.md", ArenaCreativeURL: "https://test/arena-creative.json"}
 	result, err := Fetch(context.Background(), opts)
 	if err != nil {
 		t.Fatal(err)
@@ -48,7 +52,7 @@ func TestFetchSourcesAndFreshCache(t *testing.T) {
 	if len(result.Models) != 2 {
 		t.Fatalf("unexpected merged models: %#v", result.Models)
 	}
-	if len(result.ReferenceModels) != 13 || sourceModelCounts(result.ReferenceModels)["writingbench"] != 1 || sourceModelCounts(result.ReferenceModels)["eqbench_creative_v3"] != 1 || sourceModelCounts(result.ReferenceModels)["ifeval_official"] != 8 {
+	if len(result.ReferenceModels) != 17 || sourceModelCounts(result.ReferenceModels)["writingbench"] != 1 || sourceModelCounts(result.ReferenceModels)["eqbench_creative_v3"] != 1 || sourceModelCounts(result.ReferenceModels)["ifeval_official"] != 8 {
 		t.Fatalf("source-native drift population was not preserved: %#v", result.ReferenceModels)
 	}
 	models := make(map[string]Model, len(result.Models))
@@ -65,7 +69,7 @@ func TestFetchSourcesAndFreshCache(t *testing.T) {
 	if closed.Open == nil || *closed.Open {
 		t.Fatalf("closed LLM was not retained: %#v", closed)
 	}
-	if len(result.Sources) != 11 || sourceStatusNamed(t, result.Sources, "LLM Stats").Cache != "fetched" || sourceStatusNamed(t, result.Sources, "LLM Stats frozen cohorts").Cache != "unavailable" || sourceStatusNamed(t, result.Sources, "Artificial Analysis").Cache != "fetched" || sourceStatusNamed(t, result.Sources, "WritingBench").Cache != "fetched" || sourceStatusNamed(t, result.Sources, "EQ-Bench Creative v3").Cache != "fetched" || sourceStatusNamed(t, result.Sources, "Official IFEval").Cache != "frozen" {
+	if len(result.Sources) != 13 || sourceStatusNamed(t, result.Sources, "LLM Stats").Cache != "fetched" || sourceStatusNamed(t, result.Sources, "LLM Stats frozen cohorts").Cache != "unavailable" || sourceStatusNamed(t, result.Sources, "Artificial Analysis").Cache != "fetched" || sourceStatusNamed(t, result.Sources, "WritingBench").Cache != "fetched" || sourceStatusNamed(t, result.Sources, "EQ-Bench Creative v3").Cache != "fetched" || sourceStatusNamed(t, result.Sources, "Lech Mazur Creative Story-Writing").Cache != "fetched" || sourceStatusNamed(t, result.Sources, "Arena Creative Writing").Cache != "fetched" || sourceStatusNamed(t, result.Sources, "Official IFEval").Cache != "frozen" {
 		t.Fatalf("unexpected source status: %#v", result.Sources)
 	}
 	if sourceStatusNamed(t, result.Sources, "WritingBench").ContentSHA == "" || sourceStatusNamed(t, result.Sources, "WritingBench").Methodology == "" || sourceStatusNamed(t, result.Sources, "EQ-Bench Creative v3").CommitSHA == "" || sourceStatusNamed(t, result.Sources, "Official IFEval").Version == "" || sourceStatusNamed(t, result.Sources, "Official IFEval").ContentSHA == "" {
@@ -195,7 +199,7 @@ func TestFetchOfflineUsesOnlyExistingSnapshots(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if requests.Load() != 0 || len(result.Models) != 3 || len(result.Sources) != 11 || sourceStatusNamed(t, result.Sources, "LLM Stats").Cache != "cached" || sourceStatusNamed(t, result.Sources, "LLM Stats frozen cohorts").Cache != "unavailable" || sourceStatusNamed(t, result.Sources, "Artificial Analysis").Cache != "cached" || sourceStatusNamed(t, result.Sources, "WritingBench").Cache != "unavailable" || sourceStatusNamed(t, result.Sources, "EQ-Bench Creative v3").Cache != "unavailable" || sourceStatusNamed(t, result.Sources, "Official IFEval").Cache != "frozen" || sourceStatusNamed(t, result.Sources, "LiquidAI LFM2.5-2.6B card").Cache != "stale" {
+	if requests.Load() != 0 || len(result.Models) != 3 || len(result.Sources) != 13 || sourceStatusNamed(t, result.Sources, "LLM Stats").Cache != "cached" || sourceStatusNamed(t, result.Sources, "LLM Stats frozen cohorts").Cache != "unavailable" || sourceStatusNamed(t, result.Sources, "Artificial Analysis").Cache != "cached" || sourceStatusNamed(t, result.Sources, "WritingBench").Cache != "unavailable" || sourceStatusNamed(t, result.Sources, "EQ-Bench Creative v3").Cache != "unavailable" || sourceStatusNamed(t, result.Sources, "Lech Mazur Creative Story-Writing").Cache != "unavailable" || sourceStatusNamed(t, result.Sources, "Arena Creative Writing").Cache != "unavailable" || sourceStatusNamed(t, result.Sources, "Official IFEval").Cache != "frozen" || sourceStatusNamed(t, result.Sources, "LiquidAI LFM2.5-2.6B card").Cache != "stale" {
 		t.Fatalf("offline fetch touched network or lost cache state: requests=%d result=%#v", requests.Load(), result)
 	}
 }
@@ -245,7 +249,7 @@ func TestFetchRefreshOfficialCardsRequestsOnlyPinnedCards(t *testing.T) {
 	if unexpected.Load() != 0 || len(requested) != 5 || requested[0] != "https://huggingface.co/LiquidAI/LFM2.5-2.6B/resolve/a334ee78cd38458bb71eda24109ac42dcec1309d/README.md" || requested[1] != "https://huggingface.co/Qwen/Qwen3.8-27B/resolve/1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0/README.md" || requested[2] != "https://arxiv.org/html/2508.10925v1" || requested[3] != "https://huggingface.co/LiquidAI/LFM2.5-VL-3B/resolve/5a414ead75d45db003906d06fb62bd5b6846cec0/README.md" || requested[4] != "https://huggingface.co/google/gemma-4-31B/resolve/5bbc2fb1c1b2c611d06e3d9f23c170ba21659d89/README.md" {
 		t.Fatalf("source-scoped refresh requested unexpected URLs: requests=%#v non-card=%d", requested, unexpected.Load())
 	}
-	if len(result.Sources) != 11 || sourceStatusNamed(t, result.Sources, "LiquidAI LFM2.5-2.6B card").Cache != "fetched" || sourceStatusNamed(t, result.Sources, "Qwen3.8-27B card").Cache != "fetched" || sourceStatusNamed(t, result.Sources, "OpenAI gpt-oss model card").Cache != "fetched" || sourceStatusNamed(t, result.Sources, "LiquidAI LFM2.5-VL-3B card").Cache != "fetched" || sourceStatusNamed(t, result.Sources, "Google Gemma 4 model card").Cache != "fetched" {
+	if len(result.Sources) != 13 || sourceStatusNamed(t, result.Sources, "LiquidAI LFM2.5-2.6B card").Cache != "fetched" || sourceStatusNamed(t, result.Sources, "Qwen3.8-27B card").Cache != "fetched" || sourceStatusNamed(t, result.Sources, "OpenAI gpt-oss model card").Cache != "fetched" || sourceStatusNamed(t, result.Sources, "LiquidAI LFM2.5-VL-3B card").Cache != "fetched" || sourceStatusNamed(t, result.Sources, "Google Gemma 4 model card").Cache != "fetched" {
 		t.Fatalf("official card refresh did not retain fetched statuses: %#v", result.Sources)
 	}
 }

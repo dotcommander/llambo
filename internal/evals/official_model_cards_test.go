@@ -256,6 +256,14 @@ func TestOfficialCardExactKeyMergeKeepsOneCanonicalRowAndMirror(t *testing.T) {
 	}
 }
 
+func TestOfficialCardCacheAcceptsUnchangedV3Registry(t *testing.T) {
+	snapshot := validOfficialSnapshot(t, "official-lfm25-2.6b")
+	snapshot.RegistryVersion = "LLAMBO-6-sources-v3"
+	if err := validateOfficialCardSnapshot("official-lfm25-2.6b", snapshot); err != nil {
+		t.Fatalf("unchanged v3 official-card cache was rejected: %v", err)
+	}
+}
+
 func validOfficialSnapshot(t *testing.T, cacheName string) sourceSnapshot {
 	t.Helper()
 	spec, ok := officialCardSpecForCache(cacheName)

@@ -27,6 +27,14 @@ var formulaReferenceJSON []byte
 //go:embed testdata/llm-stats-frozen-cohorts-v1.json
 var llmStatsFrozenCohortsJSON []byte
 
+// llmStatsStatsV1FrozenCohortsJSON freezes the eligible reviewed benchmark
+// populations collected from the authenticated Stats v1 API. These populations
+// own LLAMBO-7 percentile scales; mutable API membership cannot move an
+// installed score.
+//
+//go:embed testdata/llm-stats-stats-v1-frozen-cohorts-v1.json
+var llmStatsStatsV1FrozenCohortsJSON []byte
+
 // formulaReferenceDigest pins the exact, versioned LLAMBO-2 cohort. Source
 // refreshes must generate and review a new formula version rather than silently
 // changing the percentile population used by an installed binary.
@@ -34,6 +42,8 @@ const formulaReferenceDigest = "74d5049896f5c8de4c01d22d15357e5451209d215b7e6410
 
 const llmStatsFrozenCohortsArtifactDigest = "de5462f48f2ac7d36713cdf96b57d63832588e598d0bae54e02f7c47737a4f8a"
 const llmStatsFrozenCohortsDigest = "0e47a655d96911e5f8db8ed83b645adf352d66b4dda803813e91ab1ff92ff8bb"
+const llmStatsStatsV1FrozenCohortsArtifactDigest = "540bdcdff3b2eae7c816d993950789f15ca1685a7ba09ff679a056dc05478583"
+const llmStatsStatsV1FrozenCohortsDigest = "5fe1b346fcd324bc2401c756a5df1b7b398b4ce326709353e8b889fa09e7331a"
 
 var frozenReferenceMetrics = []string{
 	"aa_agentic_coding", "aa_agentic_general", "aa_agentic_index", "aa_agentic_reasoning",
@@ -77,6 +87,31 @@ type frozenLLMStatsCohort struct {
 	RowCount         int       `json:"row_count"`
 	Digests          []string  `json:"digests"`
 	Scores           []float64 `json:"scores"`
+}
+
+// scoringContext owns the immutable reference data used by one report build.
+// Loading it once makes corrupt checked-in scoring inputs a report error and
+// avoids repeatedly decoding the same sealed cohorts in the category loops.
+type scoringContext struct {
+	reference      FormulaReference
+	legacyCohorts  frozenLLMStatsCohorts
+	statsV1Cohorts frozenLLMStatsCohorts
+}
+
+func loadScoringContext() (scoringContext, error) {
+	reference, err := loadFormulaReference()
+	if err != nil {
+		return scoringContext{}, fmt.Errorf("load formula reference: %w", err)
+	}
+	legacy, err := loadFrozenLLMStatsCohorts()
+	if err != nil {
+		return scoringContext{}, fmt.Errorf("load frozen LLM Stats cohorts: %w", err)
+	}
+	statsV1, err := loadFrozenLLMStatsStatsV1Cohorts()
+	if err != nil {
+		return scoringContext{}, fmt.Errorf("load frozen Stats v1 cohorts: %w", err)
+	}
+	return scoringContext{reference: reference, legacyCohorts: legacy, statsV1Cohorts: statsV1}, nil
 }
 
 var frozenLLMStatsCohortPopulations = map[string]int{
@@ -177,6 +212,14 @@ func normalizedFrozenRevision(benchmark string, result BenchmarkResult) string {
 }
 
 func frozenBenchmarkCohort(benchmark, revision string) []float64 {
+	reference, err := loadFormulaReference()
+	if err != nil {
+		return nil
+	}
+	return frozenBenchmarkCohortFromReference(benchmark, revision, reference)
+}
+
+func frozenBenchmarkCohortFromReference(benchmark, revision string, reference FormulaReference) []float64 {
 	if cohort := officialCardFrozenCohorts[benchmark][revision]; len(cohort) != 0 {
 		clone := append([]float64(nil), cohort...)
 		sort.Float64s(clone)
@@ -186,10 +229,6 @@ func frozenBenchmarkCohort(benchmark, revision string) []float64 {
 	if !ok {
 		return nil
 	}
-	reference, err := loadFormulaReference()
-	if err != nil {
-		return nil
-	}
 	values := reference.Metrics[metric]
 	if len(values) == 0 {
 		return nil
@@ -197,21 +236,34 @@ func frozenBenchmarkCohort(benchmark, revision string) []float64 {
 	return append([]float64(nil), values...)
 }
 
-// resolvedFrozenBenchmarkCohort is the scorer boundary for immutable
-// benchmark populations. The six LLM Stats cohorts need the complete result
-// because one benchmark-wide population spans several sealed page digests.
-// Every such row must therefore prove its exact membership contract before it
-// can use the frozen scale. Older reviewed cohorts retain their existing
-// revision-only lookup contracts.
+// resolvedFrozenBenchmarkCohort is the scorer boundary for immutable benchmark
+// populations. LLAMBO-7 prefers a broad common Stats v1 population; older
+// source-specific cohorts remain fallbacks for benchmarks without one.
 func resolvedFrozenBenchmarkCohort(benchmark string, result BenchmarkResult) []float64 {
-	if _, targeted := frozenLLMStatsCohortPopulations[benchmark]; !targeted {
-		return frozenBenchmarkCohort(benchmark, normalizedFrozenRevision(benchmark, result))
-	}
-	cohorts, err := loadFrozenLLMStatsCohorts()
+	context, err := loadScoringContext()
 	if err != nil {
 		return nil
 	}
-	cohort, ok := cohorts.Benchmarks[benchmark]
+	return context.resolvedFrozenBenchmarkCohort(benchmark, result)
+}
+
+func (context scoringContext) resolvedFrozenBenchmarkCohort(benchmark string, result BenchmarkResult) []float64 {
+	// LLAMBO-7 uses the broad Stats v1 population as the common percentile scale
+	// whenever one exists. Source authority may choose a raw result, but it must
+	// not replace that scale with a tiny source-native comparison table.
+	if cohort, ok := context.statsV1Cohorts.Benchmarks[benchmark]; ok {
+		if result.Direction != "" && result.Direction != cohort.Direction {
+			return nil
+		}
+		return append([]float64(nil), cohort.Scores...)
+	}
+	if result.SourceID == llmStatsStatsV1SourceID {
+		return nil
+	}
+	if _, targeted := frozenLLMStatsCohortPopulations[benchmark]; !targeted {
+		return frozenBenchmarkCohortFromReference(benchmark, normalizedFrozenRevision(benchmark, result), context.reference)
+	}
+	cohort, ok := context.legacyCohorts.Benchmarks[benchmark]
 	if !ok || !matchesFrozenLLMStatsCohort(result, cohort) {
 		return nil
 	}
@@ -230,6 +282,43 @@ func loadFrozenLLMStatsCohorts() (frozenLLMStatsCohorts, error) {
 		return frozenLLMStatsCohorts{}, err
 	}
 	return cohorts, nil
+}
+
+func loadFrozenLLMStatsStatsV1Cohorts() (frozenLLMStatsCohorts, error) {
+	if got := sha256Hex(llmStatsStatsV1FrozenCohortsJSON); got != llmStatsStatsV1FrozenCohortsDigest {
+		return frozenLLMStatsCohorts{}, fmt.Errorf("frozen Stats v1 cohort digest %s does not match pinned %s", got, llmStatsStatsV1FrozenCohortsDigest)
+	}
+	var cohorts frozenLLMStatsCohorts
+	if err := json.Unmarshal(llmStatsStatsV1FrozenCohortsJSON, &cohorts); err != nil {
+		return frozenLLMStatsCohorts{}, fmt.Errorf("decode frozen Stats v1 cohorts: %w", err)
+	}
+	if err := validateFrozenLLMStatsStatsV1Cohorts(cohorts); err != nil {
+		return frozenLLMStatsCohorts{}, err
+	}
+	return cohorts, nil
+}
+
+func validateFrozenLLMStatsStatsV1Cohorts(cohorts frozenLLMStatsCohorts) error {
+	if cohorts.SchemaVersion != "llm-stats-stats-v1-frozen-cohorts-v1" || cohorts.SealedArtifactSHA256 != llmStatsStatsV1FrozenCohortsArtifactDigest || len(cohorts.Benchmarks) == 0 {
+		return fmt.Errorf("frozen Stats v1 cohorts do not match the sealed artifact")
+	}
+	reviewed := reviewedBenchmarkSet()
+	for benchmark, cohort := range cohorts.Benchmarks {
+		if _, ok := reviewed[benchmark]; !ok || cohort.SourceID != llmStatsStatsV1SourceID || cohort.SourceClass != string(SourceAggregatorResult) || cohort.BenchmarkVersion != llmStatsStatsV1BenchmarkVersion || cohort.Cohort != llmStatsStatsV1Cohort || cohort.Methodology != llmStatsStatsV1Methodology || cohort.Direction != "higher" || cohort.MinPopulation != 5 || cohort.RowCount < 5 || cohort.RowCount != len(cohort.Scores) || len(cohort.Digests) == 0 {
+			return fmt.Errorf("frozen Stats v1 cohort %s has an invalid contract", benchmark)
+		}
+		for index, digest := range cohort.Digests {
+			if !validSHA256(digest) || index > 0 && cohort.Digests[index-1] >= digest {
+				return fmt.Errorf("frozen Stats v1 cohort %s has invalid digests", benchmark)
+			}
+		}
+		for index, score := range cohort.Scores {
+			if !finite(score) || index > 0 && cohort.Scores[index-1] > score {
+				return fmt.Errorf("frozen Stats v1 cohort %s has invalid scores", benchmark)
+			}
+		}
+	}
+	return nil
 }
 
 func validateFrozenLLMStatsCohorts(cohorts frozenLLMStatsCohorts) error {
@@ -279,12 +368,16 @@ func matchesFrozenLLMStatsCohort(result BenchmarkResult, cohort frozenLLMStatsCo
 // the report boundary. Non-target benchmarks deliberately retain the generic
 // unresolved reason so this contract does not broaden source admission.
 func frozenLLMStatsCohortAdmissionReason(benchmark string, result BenchmarkResult) string {
-	if _, targeted := frozenLLMStatsCohortPopulations[benchmark]; !targeted {
-		return ""
-	}
 	cohorts, err := loadFrozenLLMStatsCohorts()
 	if err != nil {
 		return "frozen LLM Stats cohort is unavailable"
+	}
+	return frozenLLMStatsCohortAdmissionReasonFromCohorts(benchmark, result, cohorts)
+}
+
+func frozenLLMStatsCohortAdmissionReasonFromCohorts(benchmark string, result BenchmarkResult, cohorts frozenLLMStatsCohorts) string {
+	if _, targeted := frozenLLMStatsCohortPopulations[benchmark]; !targeted {
+		return ""
 	}
 	cohort, ok := cohorts.Benchmarks[benchmark]
 	if !ok {
@@ -319,6 +412,34 @@ func frozenLLMStatsCohortAdmissionReason(benchmark string, result BenchmarkResul
 	return "frozen LLM Stats cohort source revision is outside the pinned digest set"
 }
 
+func frozenLLMStatsStatsV1CohortAdmissionReason(benchmark string, result BenchmarkResult) string {
+	cohorts, err := loadFrozenLLMStatsStatsV1Cohorts()
+	if err != nil {
+		return "frozen Stats v1 cohort is unavailable"
+	}
+	return frozenLLMStatsStatsV1CohortAdmissionReasonFromCohorts(benchmark, result, cohorts)
+}
+
+func frozenLLMStatsStatsV1CohortAdmissionReasonFromCohorts(benchmark string, result BenchmarkResult, cohorts frozenLLMStatsCohorts) string {
+	if result.SourceID != llmStatsStatsV1SourceID {
+		return ""
+	}
+	cohort, ok := cohorts.Benchmarks[benchmark]
+	if !ok {
+		return "frozen Stats v1 cohort is unavailable for this benchmark"
+	}
+	if result.Identity != IdentityMatchExact {
+		return "frozen Stats v1 cohort requires exact identity"
+	}
+	if result.SourceClass != cohort.SourceClass {
+		return "frozen Stats v1 cohort requires the reviewed source class"
+	}
+	if result.Direction != "" && result.Direction != cohort.Direction {
+		return "frozen Stats v1 cohort requires the pinned direction"
+	}
+	return ""
+}
+
 func frozenBenchmarkNames() []string {
 	set := make(map[string]struct{}, len(frozenBenchmarkReference)+len(officialCardFrozenCohorts)+len(frozenLLMStatsCohortPopulations))
 	for benchmark := range frozenBenchmarkReference {
@@ -329,6 +450,11 @@ func frozenBenchmarkNames() []string {
 	}
 	for benchmark := range frozenLLMStatsCohortPopulations {
 		set[benchmark] = struct{}{}
+	}
+	if cohorts, err := loadFrozenLLMStatsStatsV1Cohorts(); err == nil {
+		for benchmark := range cohorts.Benchmarks {
+			set[benchmark] = struct{}{}
+		}
 	}
 	names := make([]string, 0, len(set))
 	for benchmark := range set {

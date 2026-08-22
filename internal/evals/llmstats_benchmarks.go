@@ -258,11 +258,18 @@ func attachLLMStatsBenchmarkLeads(models []Model, observations []Observation) {
 }
 
 func getBytes(ctx context.Context, client *http.Client, endpoint string) ([]byte, error) {
+	return getBytesWithBearer(ctx, client, endpoint, "")
+}
+
+func getBytesWithBearer(ctx context.Context, client *http.Client, endpoint, bearerToken string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("User-Agent", "llambo-evals/1")
+	if bearerToken != "" {
+		req.Header.Set("Authorization", "Bearer "+bearerToken)
+	}
 	response, err := client.Do(req)
 	if err != nil {
 		return nil, err

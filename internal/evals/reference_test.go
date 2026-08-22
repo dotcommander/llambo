@@ -52,8 +52,8 @@ func TestEmbeddedLLMStatsFrozenCohortsAreComplete(t *testing.T) {
 			t.Fatalf("%s population = %#v, want %d", benchmark, cohort, population)
 		}
 	}
-	if got := len(frozenBenchmarkNames()); got != 24 {
-		t.Fatalf("frozen benchmark names = %d, want 24", got)
+	if got := len(frozenBenchmarkNames()); got != 28 {
+		t.Fatalf("frozen benchmark names = %d, want 28", got)
 	}
 }
 

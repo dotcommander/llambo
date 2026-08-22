@@ -1,68 +1,40 @@
-# Architecture Documentation
+# Architecture
 
-Deep dive into Llambo's internal architecture and design patterns.
-
-## Available Documentation
-
-- [Architecture Overview](architecture.md) - Complete architectural deep dive
-- [Request Flow](request-flow.md) - HTTP server and request handling
-- [Provider System](providers.md) - Backend abstraction and client management
-- [Circuit Breaker Pattern](../guides/circuit-breakers.md) - Health tracking and failover implementation
-- [Job Processing](../api/jobs.md) - Parallel job execution with streaming results
-- [Key Rotation](../guides/key-rotation.md) - Multi-key management for rate limits
-
-## System Components
-
-```
-cmd/
-  serve.go             # Gateway server command
-  config.go            # Config management
-  root.go              # Root command
-
-internal/
-  gateway/
-    server.go          # HTTP server setup
-    handlers.go        # Request handlers
-    jobs.go            # Parallel job processing
-    types.go           # OpenAI-compatible types
-
-providers/
-  openai_provider.go   # OpenAI-compatible provider with failover
-  client_factory.go    # Per-backend client management
-  key_rotator.go       # Multi-key rotation on 429
-  queue.go             # BackendQueue (parallel job processing)
-  circuit_breaker.go   # Per-backend health tracking
-  cost_tracker.go      # Token usage and cost aggregation
-  embeddings.go        # Embedding provider
-  config.go            # Config loading
+```bash
+go test ./internal/gateway ./providers ./cmd
 ```
 
-## Design Patterns
+Llambo separates command orchestration, HTTP protocol handling, provider
+execution, and persisted catalog/evaluation data. Start with the overview, then
+follow the request path you need.
 
-- **Gateway Pattern**: Single entry point for multiple LLM providers
-- **Circuit Breaker**: Per-backend health tracking with automatic failover
-- **Key Rotation**: Multi-key management to handle rate limits
-- **Parallel Processing**: Concurrent job execution across providers
-- **Streaming Results**: Real-time results as jobs complete
+| Document | Use it for |
+| --- | --- |
+| [Architecture overview](architecture.md) | Package ownership and boundaries |
+| [Request flow](request-flow.md) | Chat, streaming, embeddings, and job lifecycles |
+| [Provider system](providers.md) | Routing, wormhole clients, retries, keys, and circuit breakers |
+| [Module map](module-docs.md) | File-level navigation |
 
-## Configuration-Driven Architecture
+Related operational references:
 
-All provider configuration comes from `~/.config/llambo/config.json`:
+- [Circuit breakers](../guides/circuit-breakers.md)
+- [Key rotation](../guides/key-rotation.md)
+- [Jobs API](../api/jobs.md)
+- [Configuration](../guides/configuration.md)
 
-```json
-{
-  "providers": {
-    "openai": {
-      "base_url": "https://api.openai.com",
-      "model": "gpt-4o",
-      "api_keys": ["sk-key1", "sk-key2", "sk-key3"],
-      "max_tokens": 4096,
-      "workers": 3,
-      "priority": 1,
-      "enabled": true
-    }
-  }
-}
+## Current package map
+
+```text
+cmd/                 Kong commands, selectors, reporting, server startup
+internal/catalog/    persisted model metadata, health, tags, selection
+internal/costs/      price-file and models.dev cost data
+internal/evals/      sealed evaluation sources, scoring, projections, reports
+internal/gateway/    HTTP protocols, streaming, jobs, status endpoints
+internal/modelsdev/  models.dev fetch and configuration synchronization
+providers/           routing, queues, wormhole clients, retries, telemetry
 ```
 
-**Adding a new provider = just edit config.json.** No code changes needed.
+The gateway owns policy and lifecycle. Each configured backend owns a dedicated
+wormhole provider instance; wormhole performs leaf protocol execution while
+Llambo owns routing, failover, key rotation, queues, circuit breakers, and cost
+tracking.

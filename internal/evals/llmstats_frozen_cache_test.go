@@ -96,6 +96,24 @@ func TestPrepareFrozenLLMStatsCohortResultsStripsRefreshedTargetWithoutPinnedArt
 	}
 }
 
+func TestRemoveFrozenLLMStatsCohortResultsRetainsStatsV1Replacement(t *testing.T) {
+	cohorts, err := loadFrozenLLMStatsCohorts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := frozenLLMStatsResult(cohorts.Benchmarks["math"])
+	statsV1 := legacy
+	statsV1.SourceID = llmStatsStatsV1SourceID
+	statsV1.Version = llmStatsStatsV1BenchmarkVersion
+	statsV1.Cohort = llmStatsStatsV1Cohort
+	statsV1.Method = llmStatsStatsV1Methodology
+	model := Model{Benchmarks: map[string]BenchmarkResult{"math": statsV1}}
+	removeFrozenLLMStatsCohortResults([]Model{model})
+	if result := model.Benchmarks["math"]; result.SourceID != llmStatsStatsV1SourceID {
+		t.Fatalf("Stats v1 replacement was stripped with legacy cohort: %#v", result)
+	}
+}
+
 func TestFetchCachedOnlyAttachesFrozenTargetsAndReportsMissingArtifact(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
@@ -188,7 +206,7 @@ func TestFrozenLLMStatsCohortAdmissionReasonsAreSpecific(t *testing.T) {
 	}
 }
 
-func TestBuildReportUsesSpecificFrozenCohortAdmissionReason(t *testing.T) {
+func TestBuildReportCommonCohortSupersedesSourceNativeScale(t *testing.T) {
 	cohorts, err := loadFrozenLLMStatsCohorts()
 	if err != nil {
 		t.Fatal(err)
@@ -199,8 +217,11 @@ func TestBuildReportUsesSpecificFrozenCohortAdmissionReason(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := report.Models[0].UnresolvedReasons["reasoning"]; got != "frozen LLM Stats cohort requires the pinned methodology" {
-		t.Fatalf("report reason = %q", got)
+	if got := report.Models[0].UnresolvedReasons["reasoning"]; got != "" {
+		t.Fatalf("common cohort row remained unresolved with reason %q", got)
+	}
+	if score := report.Models[0].LlamboScores["reasoning"]; score == nil || score.Primary.ReferencePopulation != 71 {
+		t.Fatalf("common cohort row did not activate the broad Stats v1 scale: %#v", score)
 	}
 }
 

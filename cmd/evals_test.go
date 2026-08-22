@@ -36,7 +36,7 @@ func TestEvalsHelpAndRemovedContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	help := out.String()
-	for _, want := range []string{"LLAMBO-6", `--rank-by="matrix"`, "--min-score", "--validation-receipts", "cache-only", "--live-omlx", "--refresh-official-model-cards"} {
+	for _, want := range []string{"LLAMBO-7", `--rank-by="matrix"`, "--min-score", "--validation-receipts", "cache-only", "--live-omlx", "--refresh-official-model-cards"} {
 		if !strings.Contains(help, want) {
 			t.Fatalf("evals help missing %q:\n%s", want, help)
 		}
@@ -228,6 +228,28 @@ func TestRunEvalsStopsBeforePreparationWhenExplicitLiveDiscoveryFails(t *testing
 	}
 }
 
+func TestRunEvalsStopsBeforePreparationWhenReportConstructionFails(t *testing.T) {
+	previousRank, previousMin, previousMax, previousFetch, previousPrepare, previousCacheDir := evalsRankBy, evalsMinScore, evalsMaxOutputPrice, fetchEvalsReport, prepareEvalsOMLXScores, evalsCacheDir
+	t.Cleanup(func() {
+		evalsRankBy, evalsMinScore, evalsMaxOutputPrice, fetchEvalsReport, prepareEvalsOMLXScores, evalsCacheDir = previousRank, previousMin, previousMax, previousFetch, previousPrepare, previousCacheDir
+	})
+	fetchEvalsReport = func(context.Context, evals.Options) (evals.Result, error) { return evals.Result{}, nil }
+	prepared := false
+	prepareEvalsOMLXScores = func(*evals.Report, evals.OMLXDiscovery, bool) (pendingOMLXScores, error) {
+		prepared = true
+		return pendingOMLXScores{}, nil
+	}
+	evalsRankBy, evalsMinScore, evalsMaxOutputPrice, evalsCacheDir = "not-a-ranking-profile", -1, -1, t.TempDir()
+
+	err := runEvals(&commandIO{ctx: context.Background(), stdout: io.Discard}, nil)
+	if err == nil || !strings.Contains(err.Error(), "unsupported ranking profile") {
+		t.Fatalf("report construction failure did not terminate command: %v", err)
+	}
+	if prepared {
+		t.Fatal("report construction failure prepared a replacement snapshot")
+	}
+}
+
 type commandRoundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f commandRoundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
@@ -237,7 +259,7 @@ func (f commandRoundTripFunc) RoundTrip(request *http.Request) (*http.Response, 
 func TestWriteEvalsThenPublishPreservesPriorSnapshotWhenOutputFails(t *testing.T) {
 	dir := t.TempDir()
 	snapshotPath := filepath.Join(dir, "llambo-scores.json")
-	prior := evals.OMLXScoreSnapshot{Inventory: []string{"prior"}, FormulaVersion: "prior"}
+	prior := evals.OMLXScoreSnapshot{Inventory: []string{"prior"}, FormulaVersion: evals.CategoryFormulaVersion}
 	if err := evals.SaveOMLXScoreSnapshot(snapshotPath, prior); err != nil {
 		t.Fatal(err)
 	}
@@ -245,12 +267,12 @@ func TestWriteEvalsThenPublishPreservesPriorSnapshotWhenOutputFails(t *testing.T
 	if err := os.WriteFile(blocked, []byte("not a directory"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	pending := pendingOMLXScores{path: snapshotPath, snapshot: evals.OMLXScoreSnapshot{Inventory: []string{"replacement"}, FormulaVersion: "replacement"}}
+	pending := pendingOMLXScores{path: snapshotPath, snapshot: evals.OMLXScoreSnapshot{Inventory: []string{"replacement"}, FormulaVersion: evals.CategoryFormulaVersion}}
 	if err := writeEvalsThenPublish(&bytes.Buffer{}, filepath.Join(blocked, "report.md"), []byte("report"), pending); err == nil {
 		t.Fatal("output failure unexpectedly published score snapshot")
 	}
 	loaded, err := evals.LoadOMLXScoreSnapshot(snapshotPath)
-	if err != nil || loaded == nil || strings.Join(loaded.Inventory, ",") != "prior" || loaded.FormulaVersion != "prior" {
+	if err != nil || loaded == nil || strings.Join(loaded.Inventory, ",") != "prior" || loaded.FormulaVersion != evals.CategoryFormulaVersion {
 		t.Fatalf("prior snapshot was replaced after failed output: %#v %v", loaded, err)
 	}
 }

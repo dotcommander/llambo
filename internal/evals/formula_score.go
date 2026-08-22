@@ -116,9 +116,18 @@ func legacyCategorySpec(name string) categorySpec {
 }
 
 func scoreCategoryV3(model Model, spec categorySpec, models []Model) *LlamboScore {
+	context, err := loadScoringContext()
+	if err != nil {
+		return nil
+	}
+	return scoreCategoryV3WithContext(model, spec, models, context)
+}
+
+func scoreCategoryV3WithContext(model Model, spec categorySpec, models []Model, context scoringContext) *LlamboScore {
 	_ = models // Reference cohorts are checked-in, never rebuilt from cache rows.
 	contributions := make([]benchmarkEvidence, 0, len(spec.families))
-	weighted, trustedWeight := 0.0, 0.0
+	percentiles := make([]float64, 0, len(spec.families))
+	trustedWeight := 0.0
 	represented := make([]string, 0, len(spec.families))
 	conflicts := make([]string, 0)
 	stale := false
@@ -133,7 +142,7 @@ func scoreCategoryV3(model Model, spec categorySpec, models []Model) *LlamboScor
 			if !ok || !eligibleCanonicalResult(result) {
 				continue
 			}
-			cohort := resolvedFrozenBenchmarkCohort(benchmark, result)
+			cohort := context.resolvedFrozenBenchmarkCohort(benchmark, result)
 			if len(cohort) < 5 {
 				continue
 			}
@@ -152,7 +161,7 @@ func scoreCategoryV3(model Model, spec categorySpec, models []Model) *LlamboScor
 		}
 		contributions = append(contributions, *selected)
 		represented = append(represented, family.name)
-		weighted += selected.EffectiveWeight * *selected.Percentile
+		percentiles = append(percentiles, *selected.Percentile)
 		trustedWeight += selected.EffectiveWeight
 		stale = stale || selected.Stale
 	}
@@ -163,10 +172,10 @@ func scoreCategoryV3(model Model, spec categorySpec, models []Model) *LlamboScor
 	primary := contributions[0]
 	coverage := float64(len(represented)) / float64(len(spec.families))
 	trustedCoverage := trustedWeight / float64(len(spec.families))
-	// Sparse or low-trust evidence moves only partway from neutral 50. The
-	// underlying benchmark percentile remains in Contributions for audit.
-	raw := weighted / trustedWeight
-	score := 50 + (raw-50)*trustedCoverage
+	// LLAMBO-7 keeps the raw common-cohort percentile as the capability score.
+	// Evidence grade, partial family coverage, and projection identity describe
+	// uncertainty separately; they no longer erase the measured difference.
+	score := mean(percentiles)
 	confidence := "low"
 	if !stale && trustedCoverage >= .75 {
 		confidence = "high"

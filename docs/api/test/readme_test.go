@@ -123,6 +123,10 @@ func TestApiReadmeHasLinksToDetailedDocumentation(t *testing.T) {
 			if !strings.Contains(text, apiLinkPattern) && !strings.Contains(text, separateLinkPattern) {
 				t.Errorf("Endpoint %s in table should have link to api.md section or embeddings.md", endpoint)
 			}
+		} else if endpoint == "/v1/models" {
+			if !strings.Contains(text, "[`/v1/models`](models.md)") {
+				t.Errorf("Endpoint %s in table should link to models.md", endpoint)
+			}
 		} else if endpoint == "/health" || endpoint == "/providers" || endpoint == "/stats" {
 			// Health, providers, stats should link to either api.md or operations.md
 			apiLinkPattern := "[`" + endpoint + "`](api.md#"

@@ -1,7 +1,6 @@
 package evals
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -32,6 +31,13 @@ func TestOMLXScoreSnapshotRoundTripRetainsEmptyInventoryAndProvenance(t *testing
 	if loaded == nil || len(loaded.Inventory) != 1 || loaded.Inventory[0] != "model" || loaded.CategoryScores["model"]["coding"].Score != 71.25 || len(loaded.Scores) != 0 {
 		t.Fatalf("incomplete score snapshot: %#v", loaded)
 	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.FormulaVersion != CategoryFormulaVersion || strings.Contains(string(data), `"prior_formula_versions"`) {
+		t.Fatalf("rolling snapshot retained formula lineage: %s", data)
+	}
 	if err := SaveOMLXScoreSnapshot(path, OMLXScoreSnapshot{FormulaVersion: CategoryFormulaVersion, Inventory: []string{}, CategoryScores: map[string]map[string]*LlamboScore{}}); err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +55,7 @@ func TestNewOMLXScoreSnapshotRemovesStaleInventory(t *testing.T) {
 	}
 }
 
-func TestLoadV1SnapshotAndPreserveItBeforeCategoryUpgrade(t *testing.T) {
+func TestLoadLegacySnapshotsThenReplaceWithRollingSnapshot(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "llambo-scores.json")
 	legacy := `{"schema_version":1,"generated_at":"2026-08-21T00:00:00Z","formula_version":"LLAMBO-5","omlx_population_fingerprint":"legacy-fp","inventory":["model"],"scores":{"model":{"coverage":0.5,"confidence":"low","formula_version":"LLAMBO-5","population_fingerprint":"legacy-fp"}}}`
@@ -57,153 +63,41 @@ func TestLoadV1SnapshotAndPreserveItBeforeCategoryUpgrade(t *testing.T) {
 		t.Fatal(err)
 	}
 	loaded, err := LoadOMLXScoreSnapshot(path)
-	if err != nil || loaded.PopulationFingerprint != "legacy-fp" || loaded.Scores["model"] == nil {
+	if err != nil || loaded.FormulaVersion != "LLAMBO-5" || loaded.PopulationFingerprint != "legacy-fp" || loaded.Scores["model"] == nil {
 		t.Fatalf("legacy snapshot not decoded: %#v %v", loaded, err)
 	}
 	if err := SaveOMLXScoreSnapshot(path, OMLXScoreSnapshot{FormulaVersion: CategoryFormulaVersion, Inventory: []string{"model"}, CategoryScores: map[string]map[string]*LlamboScore{"model": {}}}); err != nil {
 		t.Fatal(err)
 	}
-	archived, err := os.ReadFile(filepath.Join(dir, "llambo-scores.LLAMBO-5.json"))
-	if err != nil || string(archived) != legacy {
-		t.Fatalf("legacy snapshot archive mismatch: %q %v", archived, err)
-	}
-}
-
-func TestSaveOMLXScoreSnapshotArchivesImmediateV1PredecessorAndRetainsLLAMBO5(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "llambo-scores.json")
-	v1 := OMLXScoreSnapshot{SchemaVersion: OMLXScoreSnapshotVersion, GeneratedAt: time.Unix(1, 0).UTC(), FormulaVersion: "LLAMBO-6-category-v1", Inventory: []string{"model"}, CategoryScores: map[string]map[string]*LlamboScore{"model": {"coding": {Score: 70}}}}
-	v1Bytes, err := json.Marshal(v1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, v1Bytes, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	next := NewOMLXScoreSnapshot(Report{}, []string{"model"}, "", time.Unix(2, 0))
-	if err := SaveOMLXScoreSnapshot(path, next); err != nil {
-		t.Fatal(err)
-	}
-	archivePath := filepath.Join(dir, "llambo-scores.LLAMBO-6-category-v1.json")
-	archived, err := os.ReadFile(archivePath)
-	if err != nil || string(archived) != string(v1Bytes) {
-		t.Fatalf("v1 archive is not an exact retained predecessor: %q %v", archived, err)
-	}
-	loaded, err := LoadOMLXScoreSnapshot(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if loaded.FormulaVersion != CategoryFormulaVersion || !containsFormulaVersion(loaded.PriorFormulaVersions, "LLAMBO-6-category-v4") || !containsFormulaVersion(loaded.PriorFormulaVersions, "LLAMBO-6-category-v3") || !containsFormulaVersion(loaded.PriorFormulaVersions, "LLAMBO-6-category-v2") || !containsFormulaVersion(loaded.PriorFormulaVersions, "LLAMBO-6-category-v1") || !containsFormulaVersion(loaded.PriorFormulaVersions, OverallFormulaVersion) {
-		t.Fatalf("active v5 snapshot omitted retained formula lineage: %#v", loaded)
-	}
-}
-
-func TestSaveOMLXScoreSnapshotCarriesV3LineageIntoRepeatedV4(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "llambo-scores.json")
-	v3 := OMLXScoreSnapshot{
-		SchemaVersion:        OMLXScoreSnapshotVersion,
-		GeneratedAt:          time.Unix(1, 0).UTC(),
-		FormulaVersion:       "LLAMBO-6-category-v3",
-		PriorFormulaVersions: []string{"LLAMBO-6-category-v2", "LLAMBO-6-category-v1", OverallFormulaVersion},
-		Inventory:            []string{"model"},
-		CategoryScores:       map[string]map[string]*LlamboScore{"model": {"coding": {Score: 70}}},
-	}
-	if err := SaveOMLXScoreSnapshot(path, v3); err != nil {
-		t.Fatal(err)
-	}
-	if err := SaveOMLXScoreSnapshot(path, NewOMLXScoreSnapshot(Report{}, []string{"model"}, "", time.Unix(2, 0))); err != nil {
-		t.Fatal(err)
-	}
-	loaded, err := LoadOMLXScoreSnapshot(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, version := range []string{"LLAMBO-6-category-v3", "LLAMBO-6-category-v2", "LLAMBO-6-category-v1", OverallFormulaVersion} {
-		if !containsFormulaVersion(loaded.PriorFormulaVersions, version) {
-			t.Fatalf("v4 snapshot dropped retained lineage %q: %#v", version, loaded.PriorFormulaVersions)
-		}
-	}
-	if _, err := os.Stat(filepath.Join(dir, "llambo-scores.LLAMBO-6-category-v3.json")); err != nil {
-		t.Fatalf("v3 predecessor was not archived: %v", err)
-	}
-	if err := SaveOMLXScoreSnapshot(path, NewOMLXScoreSnapshot(Report{}, []string{"model"}, "", time.Unix(3, 0))); err != nil {
-		t.Fatal(err)
+	if _, err := os.Stat(filepath.Join(dir, "llambo-scores.LLAMBO-5.json")); !os.IsNotExist(err) {
+		t.Fatalf("legacy snapshot archive exists: %v", err)
 	}
 	loaded, err = LoadOMLXScoreSnapshot(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !containsFormulaVersion(loaded.PriorFormulaVersions, "LLAMBO-6-category-v1") {
-		t.Fatalf("same-formula v4 publication dropped v1 lineage: %#v", loaded.PriorFormulaVersions)
+	if err != nil || loaded.FormulaVersion != CategoryFormulaVersion || loaded.Scores != nil {
+		t.Fatalf("legacy snapshot was not atomically replaced: %#v %v", loaded, err)
 	}
 }
 
-func TestSaveOMLXScoreSnapshotRejectsCorruptExistingArchiveWithoutReplacingActive(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "llambo-scores.json")
-	active := OMLXScoreSnapshot{SchemaVersion: OMLXScoreSnapshotVersion, FormulaVersion: "LLAMBO-6-category-v1", Inventory: []string{"model"}, CategoryScores: map[string]map[string]*LlamboScore{"model": {}}}
-	activeBytes, err := json.Marshal(active)
+func TestLoadLegacySnapshotAcceptsRetiredFormulaLineage(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "llambo-scores.json")
+	legacy := `{"schema_version":2,"generated_at":"2026-08-21T00:00:00Z","formula_version":"LLAMBO-6-category-v5","prior_formula_versions":["LLAMBO-6-category-v4"],"inventory":["model"],"category_scores":{"model":{"coding":{"score":70}}}}`
+	if err := os.WriteFile(path, []byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadOMLXScoreSnapshot(path)
+	if err != nil || loaded == nil || loaded.FormulaVersion != "LLAMBO-6-category-v5" || loaded.CategoryScores["model"]["coding"].Score != 70 {
+		t.Fatalf("legacy category snapshot not decoded: %#v %v", loaded, err)
+	}
+	if err := SaveOMLXScoreSnapshot(path, *loaded); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, activeBytes, 0o644); err != nil {
-		t.Fatal(err)
+	if !strings.Contains(string(data), fmt.Sprintf("\"formula_version\": %q", CategoryFormulaVersion)) || strings.Contains(string(data), `"prior_formula_versions"`) {
+		t.Fatalf("rolling replacement retained legacy formula lineage: %s", data)
 	}
-	archivePath := filepath.Join(dir, "llambo-scores.LLAMBO-6-category-v1.json")
-	if err := os.WriteFile(archivePath, []byte{}, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := SaveOMLXScoreSnapshot(path, NewOMLXScoreSnapshot(Report{}, []string{"replacement"}, "", time.Unix(2, 0))); err == nil || !strings.Contains(err.Error(), "validate prior LLAMBO score snapshot archive") {
-		t.Fatalf("corrupt archive did not fail closed: %v", err)
-	}
-	after, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(after) != string(activeBytes) {
-		t.Fatalf("corrupt archive allowed active replacement: got %q want %q", after, activeBytes)
-	}
-}
-
-func TestSaveOMLXScoreSnapshotRejectsSymlinkArchiveWithoutReplacingActive(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "llambo-scores.json")
-	active := OMLXScoreSnapshot{SchemaVersion: OMLXScoreSnapshotVersion, FormulaVersion: "LLAMBO-6-category-v1", Inventory: []string{"model"}, CategoryScores: map[string]map[string]*LlamboScore{"model": {}}}
-	activeBytes, err := json.Marshal(active)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, activeBytes, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	target := filepath.Join(dir, "archive-target.json")
-	if err := os.WriteFile(target, []byte("not an archive"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	archivePath := filepath.Join(dir, "llambo-scores.LLAMBO-6-category-v1.json")
-	if err := os.Symlink(target, archivePath); err != nil {
-		t.Fatal(err)
-	}
-	if err := SaveOMLXScoreSnapshot(path, NewOMLXScoreSnapshot(Report{}, []string{"replacement"}, "", time.Unix(2, 0))); err == nil || !strings.Contains(err.Error(), "not a regular file") {
-		t.Fatalf("symlink archive did not fail closed: %v", err)
-	}
-	after, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(after) != string(activeBytes) {
-		t.Fatalf("symlink archive allowed active replacement: got %q want %q", after, activeBytes)
-	}
-}
-
-func containsFormulaVersion(versions []string, expected string) bool {
-	for _, version := range versions {
-		if version == expected {
-			return true
-		}
-	}
-	return false
 }
 
 func TestSaveOMLXScoreSnapshotConcurrentWritersRemainAtomic(t *testing.T) {

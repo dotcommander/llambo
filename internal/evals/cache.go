@@ -40,6 +40,12 @@ func loadSource(ctx context.Context, opts Options, cacheName string, fetch func(
 	if cacheName == "eqbench-creative-v3" {
 		name, url = "EQ-Bench Creative v3", opts.EQBenchCreativeURL
 	}
+	if cacheName == WritingPrimaryID {
+		name, url = "Lech Mazur Creative Story-Writing", opts.LechMazurWritingURL
+	}
+	if cacheName == ArenaCreativeSourceID {
+		name, url = "Arena Creative Writing", opts.ArenaCreativeURL
+	}
 	if cacheName == "official-lfm25-2.6b" {
 		name, url = "LiquidAI LFM2.5-2.6B card", opts.OfficialLFMURL
 	}

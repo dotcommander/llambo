@@ -16,18 +16,20 @@ func llmStatsFrozenCohortArtifactPath(cacheDir string) string {
 }
 
 // removeFrozenLLMStatsCohortResults prevents a legacy llm-stats.json row from
-// bypassing the sealed-artifact gate. These six benchmarks are restored only
-// after the complete immutable population has passed validation.
+// bypassing the sealed-artifact gate. Stats v1 rows for the same benchmark are
+// retained when the source-scoped refresh supplied the newer frozen contract.
 func removeFrozenLLMStatsCohortResults(models []Model) {
 	for index := range models {
 		for benchmark := range frozenLLMStatsCohortPopulations {
-			delete(models[index].Benchmarks, benchmark)
+			if result := models[index].Benchmarks[benchmark]; result.SourceID == "llm-stats-benchmark-results" {
+				delete(models[index].Benchmarks, benchmark)
+			}
 		}
 	}
 }
 
 // loadFrozenLLMStatsCachedObservations reads only the exact sealed artifact
-// approved for LLAMBO-6-category-v5. It deliberately does not consult the
+// approved for LLAMBO-6-category. It deliberately does not consult the
 // SQLite index: that index is derived cache state, while this JSONL artifact is
 // the source of truth for the frozen percentile populations.
 func loadFrozenLLMStatsCachedObservations(cacheDir string) ([]Observation, error) {
@@ -44,8 +46,28 @@ func prepareFrozenLLMStatsCohortResults(models []Model, cacheDir string) error {
 	if err != nil {
 		return err
 	}
+	covered := statsV1BenchmarksPresent(models)
+	retained := make([]Observation, 0, len(observations))
+	for _, observation := range observations {
+		if _, ok := covered[observation.Benchmark]; !ok {
+			retained = append(retained, observation)
+		}
+	}
+	observations = retained
 	attachLLMStatsBenchmarkLeads(models, observations)
 	return nil
+}
+
+func statsV1BenchmarksPresent(models []Model) map[string]struct{} {
+	result := make(map[string]struct{})
+	for _, model := range models {
+		for benchmark, row := range model.Benchmarks {
+			if row.SourceID == llmStatsStatsV1SourceID {
+				result[benchmark] = struct{}{}
+			}
+		}
+	}
+	return result
 }
 
 func readFrozenLLMStatsObservationArtifact(path, expectedDigest string, expectedRows int) ([]Observation, error) {

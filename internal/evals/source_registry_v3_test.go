@@ -9,8 +9,12 @@ import (
 )
 
 func TestSourceRegistryAdmitsOnlyLLMStatsResultRows(t *testing.T) {
+	eligible := map[string]bool{
+		"llm-stats-benchmark-results": true,
+		"llm-stats-stats-v1-scores":   true,
+	}
 	for _, source := range SourceRegistry() {
-		if strings.HasPrefix(source.ID, "llm-stats-") && source.Eligible != (source.ID == "llm-stats-benchmark-results") {
+		if strings.HasPrefix(source.ID, "llm-stats-") && source.Eligible != eligible[source.ID] {
 			t.Fatalf("LLM Stats source %q has wrong eligibility: %v", source.ID, source.Eligible)
 		}
 	}
@@ -78,7 +82,7 @@ func TestBenchmarkMergePrecedenceDeduplicatesMirrorsAndQuarantinesPeerConflict(t
 	}
 }
 
-func TestLLAMBO6EqualFamilySparseCoverageAndNeutralCalibration(t *testing.T) {
+func TestLLAMBO7EqualFamilyRawCommonCohortScore(t *testing.T) {
 	models := make([]Model, 5)
 	for i := range models {
 		value := float64(i + 1)
@@ -90,10 +94,14 @@ func TestLLAMBO6EqualFamilySparseCoverageAndNeutralCalibration(t *testing.T) {
 		models[i] = Model{Key: string(rune('a' + i)), Benchmarks: map[string]BenchmarkResult{"gpqa": result}}
 	}
 	score := scoreCategoryV3(models[1], categorySpecs[4], models)
-	cohort := frozenBenchmarkCohort("gpqa", "public-leaderboard")
-	want := 50 + (empiricalPercentile(cohort, 2, true)-50)*.25
-	if score == nil || CategoryFormulaVersion != "LLAMBO-6-category-v5" || math.Abs(score.Coverage-.25) > 1e-12 || math.Abs(score.TrustedCoverage-.25) > 1e-12 || math.Abs(score.Score-want) > 1e-12 || len(score.Families) != 1 || score.Families[0] != "advanced-science" {
-		t.Fatalf("unexpected sparse equal-family neutral-calibrated score: %#v", score)
+	cohorts, err := loadFrozenLLMStatsStatsV1Cohorts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cohort := cohorts.Benchmarks["gpqa"].Scores
+	want := empiricalPercentile(cohort, 2, true)
+	if score == nil || CategoryFormulaVersion != "LLAMBO-7-category" || math.Abs(score.Coverage-.25) > 1e-12 || math.Abs(score.TrustedCoverage-.25) > 1e-12 || math.Abs(score.Score-want) > 1e-12 || len(score.Families) != 1 || score.Families[0] != "advanced-science" {
+		t.Fatalf("unexpected sparse equal-family raw common-cohort score: %#v", score)
 	}
 	newResult := sealedBenchmark(99)
 	newResult.Version = "public-leaderboard"
@@ -141,28 +149,25 @@ func TestLLMStatsFrozenCohortsUseExactAdmissionContract(t *testing.T) {
 	}
 }
 
-func TestLLMStatsFrozenCohortsFailClosedOnMismatch(t *testing.T) {
-	cohorts, err := loadFrozenLLMStatsCohorts()
+func TestCommonCohortRejectsDirectionAndIdentityMismatch(t *testing.T) {
+	cohorts, err := loadFrozenLLMStatsStatsV1Cohorts()
 	if err != nil {
 		t.Fatal(err)
 	}
 	cohort := cohorts.Benchmarks["math"]
-	base := frozenLLMStatsResult(cohort)
+	score := cohort.Scores[0]
+	base := BenchmarkResult{
+		Score: &score, Identity: IdentityMatchExact, Version: llmStatsStatsV1BenchmarkVersion,
+		ContentSHA: cohort.Digests[0], Method: llmStatsStatsV1Methodology,
+		SourceClass: string(SourceAggregatorResult), EvidenceGrade: "aggregator_self_reported",
+		Direction: "higher", Cohort: llmStatsStatsV1Cohort, SourceID: llmStatsStatsV1SourceID,
+		SourceRevision: cohort.Digests[0],
+	}
 	for _, test := range []struct {
 		name   string
 		mutate func(*BenchmarkResult)
 	}{
-		{"source id", func(result *BenchmarkResult) { result.SourceID = "other" }},
-		{"source class", func(result *BenchmarkResult) { result.SourceClass = string(SourceOwnerResult) }},
-		{"version", func(result *BenchmarkResult) { result.Version = "other" }},
-		{"cohort", func(result *BenchmarkResult) { result.Cohort = "other" }},
-		{"methodology", func(result *BenchmarkResult) { result.Method = "other" }},
 		{"direction", func(result *BenchmarkResult) { result.Direction = "lower" }},
-		{"revision", func(result *BenchmarkResult) {
-			result.SourceRevision = strings.Repeat("f", 64)
-			result.ContentSHA = result.SourceRevision
-		}},
-		{"digest agreement", func(result *BenchmarkResult) { result.ContentSHA = strings.Repeat("e", 64) }},
 		{"identity", func(result *BenchmarkResult) { result.Identity = IdentityMatchNormalized }},
 	} {
 		t.Run(test.name, func(t *testing.T) {

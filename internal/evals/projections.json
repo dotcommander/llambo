@@ -37,6 +37,13 @@
       "reviewed_at": "2026-08-21T00:00:00Z"
     },
     {
+      "artifact_key": "LFM2.5-VL-3B-OptiQ-4bit",
+      "source_key": "lfm-2.5-vl-3b",
+      "confidence": "low",
+      "basis": "Reviewed LFM2.5 VL 3B base identity; OptiQ packaging may materially change capability.",
+      "reviewed_at": "2026-08-22T00:00:00Z"
+    },
+    {
       "artifact_key": "Qwen3.6-27B-MLX-4bit",
       "source_key": "aa:qwen3.6-27b",
       "confidence": "medium",

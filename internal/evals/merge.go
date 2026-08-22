@@ -128,6 +128,14 @@ func mergeWritingBenchModels(models, writingBench []Model) []Model {
 	return models
 }
 
+func mergeWritingEvidenceModels(models, writingBench []Model, corroborators ...[]Model) []Model {
+	models = mergeWritingBenchModels(models, writingBench)
+	for _, source := range corroborators {
+		models = mergeEQBenchCreativeModels(models, source)
+	}
+	return models
+}
+
 // mergeEQBenchCreativeModels permits name-only matching only when the source
 // omits organization and both source and destination have exactly one normalized
 // name. This is the narrowest safe reconciliation for the official CSV.

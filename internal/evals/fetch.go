@@ -98,16 +98,28 @@ func Fetch(ctx context.Context, opts Options) (Result, error) {
 	if eqBenchErr != nil && !opts.AllowPartial {
 		return Result{}, eqBenchErr
 	}
+	fiction, fictionStatus, fictionErr := loadSource(ctx, opts, WritingPrimaryID, func(ctx context.Context) (sourceSnapshot, error) { return fetchLechMazurWriting(ctx, opts) })
+	if fictionErr != nil && !opts.AllowPartial {
+		return Result{}, fictionErr
+	}
+	arena, arenaStatus, arenaErr := loadSource(ctx, opts, ArenaCreativeSourceID, func(ctx context.Context) (sourceSnapshot, error) { return fetchArenaCreative(ctx, opts) })
+	if arenaErr != nil && !opts.AllowPartial {
+		return Result{}, arenaErr
+	}
 	markSnapshotStale(&llm, llmStatus.Cache == "stale")
 	markSnapshotStale(&writing, writingStatus.Cache == "stale")
 	markSnapshotStale(&eqBench, eqBenchStatus.Cache == "stale")
-	models := mergeWritingBenchModels(mergeEQBenchCreativeModels(mergeWritingBenchModels(mergeModels(llm.Models, aa.Models), writing.Models), eqBench.Models), ifeval.Models)
+	markSnapshotStale(&fiction, fictionStatus.Cache == "stale")
+	markSnapshotStale(&arena, arenaStatus.Cache == "stale")
+	sourceModels := evalsSourceModels(llm.Models, aa.Models, writing.Models, eqBench.Models, fiction.Models, arena.Models, ifeval.Models, lfm.Models, qwen.Models, gptOSS.Models, lfmVL.Models, gemma.Models)
+	models := mergeWritingEvidenceModels(mergeModels(llm.Models, aa.Models), writing.Models, eqBench.Models, fiction.Models, arena.Models, ifeval.Models)
 	models = mergeOfficialCardModels(models, lfm.Models, qwen.Models, gptOSS.Models, lfmVL.Models, gemma.Models)
 	return Result{
 		GeneratedAt:     opts.Now().UTC(),
 		Models:          models,
-		ReferenceModels: sourceNativeModels(llm.Models, aa.Models, writing.Models, eqBench.Models, ifeval.Models, lfm.Models, qwen.Models, gptOSS.Models, lfmVL.Models, gemma.Models),
-		Sources:         []SourceStatus{llmStatus, frozenLLMStatsCohortStatus(frozenErr), aaStatus, writingStatus, eqBenchStatus, statusFor("Official IFEval", ifeval.URL, ifeval, "frozen", nil), lfmStatus, qwenStatus, gptOSSStatus, lfmVLStatus, gemmaStatus},
+		SourceModels:    sourceModels,
+		ReferenceModels: sourceNativeModels(llm.Models, aa.Models, writing.Models, eqBench.Models, fiction.Models, arena.Models, ifeval.Models, lfm.Models, qwen.Models, gptOSS.Models, lfmVL.Models, gemma.Models),
+		Sources:         []SourceStatus{llmStatus, frozenLLMStatsCohortStatus(frozenErr), aaStatus, writingStatus, eqBenchStatus, fictionStatus, arenaStatus, statusFor("Official IFEval", ifeval.URL, ifeval, "frozen", nil), lfmStatus, qwenStatus, gptOSSStatus, lfmVLStatus, gemmaStatus},
 		AAVersion:       aa.AAVersion,
 	}, nil
 }
@@ -173,10 +185,15 @@ func fetchCachedOnly(opts Options, ifeval sourceSnapshot) (Result, error) {
 	}
 	writing, writingErr := readSnapshot(filepath.Join(opts.CacheDir, "writingbench.json"))
 	eqBench, eqBenchErr := readSnapshot(filepath.Join(opts.CacheDir, "eqbench-creative-v3.json"))
+	fiction, fictionErr := readSnapshot(filepath.Join(opts.CacheDir, WritingPrimaryID+".json"))
+	arena, arenaErr := readSnapshot(filepath.Join(opts.CacheDir, ArenaCreativeSourceID+".json"))
 	markSnapshotStale(&llm, opts.Now().Sub(llm.FetchedAt) > opts.TTL)
 	markSnapshotStale(&writing, !writing.FetchedAt.IsZero() && opts.Now().Sub(writing.FetchedAt) > opts.TTL)
 	markSnapshotStale(&eqBench, !eqBench.FetchedAt.IsZero() && opts.Now().Sub(eqBench.FetchedAt) > opts.TTL)
-	models := mergeWritingBenchModels(mergeEQBenchCreativeModels(mergeWritingBenchModels(mergeModels(llm.Models, aa.Models), writing.Models), eqBench.Models), ifeval.Models)
+	markSnapshotStale(&fiction, !fiction.FetchedAt.IsZero() && opts.Now().Sub(fiction.FetchedAt) > opts.TTL)
+	markSnapshotStale(&arena, !arena.FetchedAt.IsZero() && opts.Now().Sub(arena.FetchedAt) > opts.TTL)
+	sourceModels := evalsSourceModels(llm.Models, aa.Models, writing.Models, eqBench.Models, fiction.Models, arena.Models, ifeval.Models, lfm.Models, qwen.Models, gptOSS.Models, lfmVL.Models, gemma.Models)
+	models := mergeWritingEvidenceModels(mergeModels(llm.Models, aa.Models), writing.Models, eqBench.Models, fiction.Models, arena.Models, ifeval.Models)
 	models = mergeOfficialCardModels(models, lfm.Models, qwen.Models, gptOSS.Models, lfmVL.Models, gemma.Models)
 	writingCache := "cached"
 	if writingErr != nil {
@@ -186,14 +203,24 @@ func fetchCachedOnly(opts Options, ifeval sourceSnapshot) (Result, error) {
 	if eqBenchErr != nil {
 		eqBenchCache = "unavailable"
 	}
+	fictionCache := "cached"
+	if fictionErr != nil {
+		fictionCache = "unavailable"
+	}
+	arenaCache := "cached"
+	if arenaErr != nil {
+		arenaCache = "unavailable"
+	}
 	return Result{
-		GeneratedAt: opts.Now().UTC(), Models: models, ReferenceModels: sourceNativeModels(llm.Models, aa.Models, writing.Models, eqBench.Models, ifeval.Models, lfm.Models, qwen.Models, gptOSS.Models, lfmVL.Models, gemma.Models), AAVersion: aa.AAVersion,
+		GeneratedAt: opts.Now().UTC(), Models: models, SourceModels: sourceModels, ReferenceModels: sourceNativeModels(llm.Models, aa.Models, writing.Models, eqBench.Models, fiction.Models, arena.Models, ifeval.Models, lfm.Models, qwen.Models, gptOSS.Models, lfmVL.Models, gemma.Models), AAVersion: aa.AAVersion,
 		Sources: []SourceStatus{
 			statusFor("LLM Stats", LLMStatsLeaderboardURL, llm, "cached", nil),
 			frozenLLMStatsCohortStatus(frozenErr),
 			statusFor("Artificial Analysis", ArtificialAnalysisURL, aa, "cached", err),
 			statusFor("WritingBench", opts.WritingBenchURL, writing, writingCache, writingErr),
 			statusFor("EQ-Bench Creative v3", opts.EQBenchCreativeURL, eqBench, eqBenchCache, eqBenchErr),
+			statusFor("Lech Mazur Creative Story-Writing", opts.LechMazurWritingURL, fiction, fictionCache, fictionErr),
+			statusFor("Arena Creative Writing", opts.ArenaCreativeURL, arena, arenaCache, arenaErr),
 			statusFor("Official IFEval", ifeval.URL, ifeval, "frozen", nil),
 			lfmStatus,
 			qwenStatus,
@@ -202,6 +229,49 @@ func fetchCachedOnly(opts Options, ifeval sourceSnapshot) (Result, error) {
 			gemmaStatus,
 		},
 	}, nil
+}
+
+type sourceModelGroup struct {
+	sourceID string
+	models   []Model
+}
+
+func evalsSourceModels(llm, aa, writing, eqBench, fiction, arena, ifeval, lfm, qwen, gptOSS, lfmVL, gemma []Model) []SourceModel {
+	return taggedSourceModels([]sourceModelGroup{
+		{"llm-stats", llm},
+		{"artificial-analysis", aa},
+		{"writingbench", writing},
+		{"eqbench-creative-v3", eqBench},
+		{WritingPrimaryID, fiction},
+		{ArenaCreativeSourceID, arena},
+		{"ifeval-official", ifeval},
+		{"liquidai-lfm25-2.6b-card", lfm},
+		{"qwen3.8-27b-card", qwen},
+		{"openai-gpt-oss-model-card", gptOSS},
+		{"liquidai-lfm25-vl-3b-card", lfmVL},
+		{"google-gemma4-model-card", gemma},
+	})
+}
+
+func taggedSourceModels(groups []sourceModelGroup) []SourceModel {
+	total := 0
+	for _, group := range groups {
+		total += len(group.models)
+	}
+	result := make([]SourceModel, 0, total)
+	for _, group := range groups {
+		for _, model := range group.models {
+			if model.Benchmarks != nil {
+				benchmarks := make(map[string]BenchmarkResult, len(model.Benchmarks))
+				for name, observation := range model.Benchmarks {
+					benchmarks[name] = observation
+				}
+				model.Benchmarks = benchmarks
+			}
+			result = append(result, SourceModel{SourceID: group.sourceID, Model: model})
+		}
+	}
+	return result
 }
 
 func frozenLLMStatsCohortStatus(frozenErr error) SourceStatus {
@@ -312,6 +382,15 @@ func (o *Options) applyDefaults() {
 	if o.LLMBenchmarksURL == "" {
 		o.LLMBenchmarksURL = "https://api.zeroeval.com/leaderboard/benchmarks"
 	}
+	if o.LLMStatsStatsV1ModelsURL == "" {
+		o.LLMStatsStatsV1ModelsURL = LLMStatsStatsV1ModelsURL
+	}
+	if o.LLMStatsStatsV1BenchmarksURL == "" {
+		o.LLMStatsStatsV1BenchmarksURL = LLMStatsStatsV1BenchmarksURL
+	}
+	if o.LLMStatsStatsV1ScoresURL == "" {
+		o.LLMStatsStatsV1ScoresURL = LLMStatsStatsV1ScoresURL
+	}
 	if o.AAURL == "" {
 		o.AAURL = "https://artificialanalysis.ai/api/v2/language/models/free"
 	}
@@ -320,6 +399,12 @@ func (o *Options) applyDefaults() {
 	}
 	if o.EQBenchCreativeURL == "" {
 		o.EQBenchCreativeURL = "https://raw.githubusercontent.com/EQ-bench/EQ-bench-site/bf21868fd5dc4c48480e01ae354079eb1cec13fb/creative_writing.js"
+	}
+	if o.LechMazurWritingURL == "" {
+		o.LechMazurWritingURL = WritingPrimaryURL
+	}
+	if o.ArenaCreativeURL == "" {
+		o.ArenaCreativeURL = "https://raw.githubusercontent.com/lmarena/arena-catalog/main/data/leaderboard-text.json"
 	}
 	if o.OfficialLFMURL == "" {
 		o.OfficialLFMURL = "https://huggingface.co/LiquidAI/LFM2.5-2.6B/resolve/a334ee78cd38458bb71eda24109ac42dcec1309d/README.md"
