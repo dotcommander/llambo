@@ -22,8 +22,9 @@ func TestSourceRegistryAdmitsOnlyLLMStatsResultRows(t *testing.T) {
 
 func TestSourceRegistryAdmitsPinnedV3OfficialCards(t *testing.T) {
 	want := map[string]SourceClass{
-		"liquidai-lfm25-vl-3b-card": SourceFirstPartyResult,
-		"google-gemma4-model-card":  SourceFirstPartyResult,
+		"liquidai-lfm25-vl-3b-card":  SourceFirstPartyResult,
+		"liquidai-lfm25-8b-a1b-card": SourceFirstPartyResult,
+		"google-gemma4-model-card":   SourceFirstPartyResult,
 	}
 	for _, source := range SourceRegistry() {
 		if class, ok := want[source.ID]; ok {
@@ -100,7 +101,7 @@ func TestLLAMBO7EqualFamilyRawCommonCohortScore(t *testing.T) {
 	}
 	cohort := cohorts.Benchmarks["gpqa"].Scores
 	want := empiricalPercentile(cohort, 2, true)
-	if score == nil || CategoryFormulaVersion != "LLAMBO-7-category" || math.Abs(score.Coverage-.25) > 1e-12 || math.Abs(score.TrustedCoverage-.25) > 1e-12 || math.Abs(score.Score-want) > 1e-12 || len(score.Families) != 1 || score.Families[0] != "advanced-science" {
+	if score == nil || CategoryFormulaVersion != "LLAMBO-9-category" || math.Abs(score.Coverage-.25) > 1e-12 || math.Abs(score.TrustedCoverage-.25) > 1e-12 || math.Abs(score.Score-want) > 1e-12 || len(score.Families) != 1 || score.Families[0] != "advanced-science" {
 		t.Fatalf("unexpected sparse equal-family raw common-cohort score: %#v", score)
 	}
 	newResult := sealedBenchmark(99)

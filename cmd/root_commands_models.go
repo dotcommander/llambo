@@ -57,7 +57,7 @@ type evalsCommand struct {
 	OMLX                 evalsOMLXCommand    `cmd:"" help:"Show cached OMLX LLAMBO scores; --live rediscovers and republishes"`
 	Sources              evalsSourcesCommand `cmd:"" help:"Manage sealed evaluation source caches"`
 	Refresh              bool                `help:"fetch fresh source snapshots or scrape the writing leaderboard"`
-	RefreshOfficialCards bool                `name:"refresh-official-model-cards" help:"fetch only the five pinned LiquidAI, Qwen, OpenAI, and Google model cards; all other sources stay cache-only"`
+	RefreshOfficialCards bool                `name:"refresh-official-model-cards" help:"fetch only the six pinned LiquidAI, Qwen, OpenAI, and Google model cards; all other sources stay cache-only"`
 	Format               string              `default:"markdown" help:"report/catalog format: markdown, json, or html (writing supports markdown or json)"`
 	Output               string              `short:"o" help:"write the report or catalog to this file instead of stdout"`
 	ExportPrompts        string              `name:"export-prompts" help:"write normalized public writing prompts as JSONL (writing requires --refresh)"`
@@ -68,7 +68,7 @@ type evalsCommand struct {
 	Limit                int                 `help:"maximum items (eval report defaults to 50; writing run defaults to 5 and requires 1..100); report value 0 includes all"`
 	AllowPartial         bool                `name:"allow-partial" help:"continue with an LLM Stats-only report when Artificial Analysis is unavailable"`
 	RankBy               string              `name:"rank-by" default:"matrix" help:"ranking profile: coding, agents, reasoning, writing, instruction-following, long-context, speed, or price (default: matrix)"`
-	Offline              bool                `help:"use cached external snapshots (LLAMBO-7 score generation is cache-only by default)"`
+	Offline              bool                `help:"use cached external snapshots (LLAMBO-9 score generation is cache-only by default)"`
 	LiveOMLX             bool                `name:"live-omlx" help:"query the OMLX admin inventory and restrict local score publication to those live model IDs"`
 	Projections          string              `help:"replace the built-in tracked local/OSS projection registry with this JSON file"`
 	ValidationReceipts   string              `name:"validation-receipts" help:"read sealed exact-ID local receipt JSON for a diagnostic only; never changes scores"`

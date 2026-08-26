@@ -126,7 +126,7 @@ func buildCoverageCampaign(rows []ReportModel) (*CoverageCampaign, error) {
 		row, found := byKey[target.Key]
 		for _, category := range categorySpecs {
 			cell := target.Cells[category.name]
-			if found && row.LlamboScores[category.name] != nil {
+			if found && row.LlamboScores[category.name] != nil && !row.LlamboScores[category.name].Estimated {
 				campaign.PresentCells++
 				continue
 			}

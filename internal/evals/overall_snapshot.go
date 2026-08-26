@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-const OMLXScoreSnapshotVersion = 2
+const OMLXScoreSnapshotVersion = 3
 
 // OMLXScoreSnapshot is the sole durable LLAMBO-6 category-score state. It is a complete
 // evaluator artifact, intentionally separate from catalog.json so catalog
@@ -68,7 +68,7 @@ func LoadOMLXScoreSnapshot(path string) (*OMLXScoreSnapshot, error) {
 		return nil, fmt.Errorf("decode LLAMBO score snapshot: %w", err)
 	}
 	snapshot := decoded.OMLXScoreSnapshot
-	if snapshot.SchemaVersion != 1 && snapshot.SchemaVersion != OMLXScoreSnapshotVersion {
+	if snapshot.SchemaVersion != 1 && snapshot.SchemaVersion != 2 && snapshot.SchemaVersion != OMLXScoreSnapshotVersion {
 		return nil, fmt.Errorf("unsupported LLAMBO score snapshot version %d", snapshot.SchemaVersion)
 	}
 	if snapshot.PopulationFingerprint == "" {
@@ -96,7 +96,7 @@ func SaveOMLXScoreSnapshot(path string, snapshot OMLXScoreSnapshot) error {
 	snapshot.CategoryScores = categorySnapshotEntries(snapshot.Inventory, snapshot.CategoryScores)
 	// v1 values are preserved only when this is explicitly a legacy import;
 	// normal score publication must not serialize an overall composite.
-	if snapshot.SchemaVersion == OMLXScoreSnapshotVersion {
+	if snapshot.SchemaVersion >= 2 {
 		snapshot.Scores = nil
 		snapshot.OMLXPopulationFingerprint = ""
 	}

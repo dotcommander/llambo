@@ -162,7 +162,11 @@ func formatLlambo(score *LlamboScore) string {
 	if score.Estimated {
 		status += "; estimated"
 	}
-	return fmt.Sprintf("%.1f (%s; %.0f%% coverage%s)", score.Score, score.Confidence, 100*score.TrustedCoverage, status)
+	mark := ""
+	if score.Estimated {
+		mark = "ᵉ"
+	}
+	return fmt.Sprintf("%.1f%s (%s; %.0f%% coverage%s)", score.Score, mark, score.Confidence, 100*score.TrustedCoverage, status)
 }
 
 // formatOverall is retained for decoding and inspecting historical v1

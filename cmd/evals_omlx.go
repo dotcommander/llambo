@@ -138,7 +138,7 @@ func renderOMLXScoreSnapshot(snapshot *evals.OMLXScoreSnapshot, diagnostics *eva
 	fmt.Fprintf(&out, "**Estimated cells:** %d / %d\n", estimated, total)
 	fmt.Fprintf(&out, "**Unresolved cells:** %d / %d\n", unresolved, total)
 	if estimated > 0 {
-		out.WriteString("\n`ᵉ` marks a legacy cross-category estimate rather than benchmark evidence.\n")
+		out.WriteString("\n`ᵉ` marks a frozen calibrated estimate rather than benchmark evidence. Estimates have zero coverage, low confidence, and never satisfy the external evidence campaign.\n")
 	}
 	if diagnostics != nil {
 		fmt.Fprintf(&out, "\n**Live discovery:** %d eligible text/VLM model(s)", diagnostics.Discovered)

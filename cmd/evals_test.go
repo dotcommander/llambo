@@ -36,7 +36,7 @@ func TestEvalsHelpAndRemovedContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	help := out.String()
-	for _, want := range []string{"LLAMBO-7", `--rank-by="matrix"`, "--min-score", "--validation-receipts", "cache-only", "--live-omlx", "--refresh-official-model-cards"} {
+	for _, want := range []string{"LLAMBO-9", `--rank-by="matrix"`, "--min-score", "--validation-receipts", "cache-only", "--live-omlx", "--refresh-official-model-cards"} {
 		if !strings.Contains(help, want) {
 			t.Fatalf("evals help missing %q:\n%s", want, help)
 		}

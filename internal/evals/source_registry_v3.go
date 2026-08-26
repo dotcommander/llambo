@@ -14,8 +14,8 @@ import (
 	"time"
 )
 
-const SourceRegistryVersion = "LLAMBO-6-sources-v5"
-const CategoryFormulaVersion = "LLAMBO-7-category"
+const SourceRegistryVersion = "LLAMBO-6-sources-v6"
+const CategoryFormulaVersion = "LLAMBO-9-category"
 
 type SourceClass string
 
@@ -58,6 +58,7 @@ var sourceRegistryV3 = []SourceRegistration{
 	{"openai-gpt-oss-model-card", SourceFirstPartyResult, true, true},
 	{"liquidai-lfm25-vl-3b-card", SourceFirstPartyResult, true, true},
 	{"google-gemma4-model-card", SourceFirstPartyResult, true, true},
+	{"liquidai-lfm25-8b-a1b-card", SourceFirstPartyResult, true, true},
 }
 
 func SourceRegistry() []SourceRegistration {

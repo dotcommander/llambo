@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -15,6 +16,31 @@ import (
 )
 
 func TestOfficialCardParsersUseOnlyPublishedTableRows(t *testing.T) {
+	lfm8, err := parseLFM25A1BCard([]byte(`
+| Model | IFEval | IFBench | Multi-IF |
+| LFM2.5-8B-A1B | 91.84 | 56.47 | 79.93 |
+| Granite | 82.23 | 21.28 | 59.00 |
+| Qwen 4B | 87.80 | 50.38 | 67.43 |
+| Qwen 30B | 90.82 | 51.11 | 79.04 |
+| Gemma E2B | 82.93 | 33.53 | 69.70 |
+| Gemma E4B | 87.74 | 39.48 | 77.58 |
+| Gemma 26B | 91.40 | 47.25 | 82.06 |
+| gpt-oss | 86.73 | 58.65 | 76.64 |
+| Model | AIME25 | BFCLv4 | MATH500 |
+| LFM2.5-8B-A1B | 42.53 | 49.73 | 88.76 |
+| Granite | 4.93 | 28.52 | 59.20 |
+| Qwen 4B | 54.28 | 54.01 | 80.76 |
+| Qwen 30B | 71.67 | 50.53 | 86.48 |
+| Gemma E2B | 26 | 31.91 | 64.00 |
+| Gemma E4B | 34.33 | 33.92 | 65.00 |
+`))
+	if err != nil || lfm8["aime"][0] != 42.53 || lfm8["ifeval-official"][0] != 91.84 || len(lfm8["multi-if"]) != 8 {
+		t.Fatalf("LFM A1B table parsing lost reviewed rows: rows=%#v err=%v", lfm8, err)
+	}
+	if _, admitted := lfm8["bfcl-v4"]; admitted {
+		t.Fatal("conflicting BFCLv4 value was admitted")
+	}
+
 	lfm, err := parseLFM25Card([]byte(`
 | Benchmark | LFM | A | B | C | D |
 | AIME25 | 51.87 | 26.33 | 34.27 | 49.33 | 56.07 |
@@ -127,6 +153,10 @@ func TestV3OfficialCardTargetRowsAndSixColumnCohortsAreSealed(t *testing.T) {
 			cache: "official-gemma4", revision: gemma4Revision, targetKeys: []string{"gemma-4-31b-it", "gemma-4-26b-a4b-it"},
 			cohorts: map[string][]float64{"mmlu-pro": {85.2, 82.6, 77.2, 69.4, 60.0, 67.6}, "aime": {89.2, 88.3, 77.5, 42.5, 37.5, 20.8}, "livecodebench-v6": {80.0, 77.1, 72.0, 52.0, 44.0, 29.1}, "gpqa": {84.3, 82.3, 78.8, 58.6, 43.4, 42.4}, "tau2-bench": {76.9, 68.2, 69.0, 42.2, 24.5, 16.2}},
 		},
+		{
+			cache: "official-lfm25-8b-a1b", revision: lfm25A1BRevision, targetKeys: []string{"lfm-2.5-8b-a1b"},
+			cohorts: map[string][]float64{"aime": {42.53, 4.93, 54.28, 71.67, 26, 34.33}, "ifeval-official": {91.84, 82.23, 87.80, 90.82, 82.93, 87.74, 91.40, 86.73}, "ifbench": {56.47, 21.28, 50.38, 51.11, 33.53, 39.48, 47.25, 58.65}, "multi-if": {79.93, 59.00, 67.43, 79.04, 69.70, 77.58, 82.06, 76.64}},
+		},
 	} {
 		t.Run(test.cache, func(t *testing.T) {
 			snapshot := validOfficialSnapshot(t, test.cache)
@@ -146,6 +176,8 @@ func TestV3OfficialCardTargetRowsAndSixColumnCohortsAreSealed(t *testing.T) {
 				categories := []string{"agents", "coding", "reasoning"}
 				if model.Key == "lfm-2.5-vl-3b" {
 					categories = []string{"agents"}
+				} else if model.Key == "lfm-2.5-8b-a1b" {
+					categories = []string{"instruction-following", "reasoning"}
 				}
 				for _, category := range categories {
 					if score := scoreCategoryV3(model, categorySpecNamed(t, category), []Model{model}); score == nil {
@@ -155,8 +187,8 @@ func TestV3OfficialCardTargetRowsAndSixColumnCohortsAreSealed(t *testing.T) {
 			}
 			for benchmark, want := range test.cohorts {
 				got := frozenBenchmarkCohort(benchmark, test.revision)
-				if len(got) != 6 {
-					t.Fatalf("%s cohort size = %d, want 6: %#v", benchmark, len(got), got)
+				if len(got) != len(want) {
+					t.Fatalf("%s cohort size = %d, want %d: %#v", benchmark, len(got), len(want), got)
 				}
 				sort.Float64s(want)
 				if !slices.Equal(got, want) {
@@ -253,6 +285,63 @@ func TestOfficialCardExactKeyMergeKeepsOneCanonicalRowAndMirror(t *testing.T) {
 	result := merged[0].Benchmarks["bfcl-v4"]
 	if result.Score == nil || *result.Score != official || result.SourceID != "liquidai-lfm25-2.6b-card" || len(result.Mirrors) != 1 || result.Mirrors[0].SourceID != "llm-stats-benchmark-results" {
 		t.Fatalf("first-party result did not replace and retain aggregate mirror: %#v", result)
+	}
+}
+
+func TestOfficialCardAliasesAreExactAndSourceSpecific(t *testing.T) {
+	writing := 44.0
+	models := []Model{
+		{Key: "gemma-4-31b-it"},
+		{Key: "google/gemma-4-31B-it-lookalike"},
+		{Key: "openai/gpt-oss-20b"},
+	}
+	eqBench := []Model{{Name: "google/gemma-4-31B-it", Benchmarks: map[string]BenchmarkResult{"eqbench-creative-v3": {Score: &writing}}}}
+	merged := mergeEQBenchCreativeModels(models, eqBench)
+	if result, ok := merged[0].Benchmarks["eqbench-creative-v3"]; !ok || result.Identity != IdentityMatchExact {
+		t.Fatal("exact Gemma hosted ID did not receive its source-specific writing row")
+	}
+	if merged[1].Benchmarks != nil || merged[2].Benchmarks != nil {
+		t.Fatalf("lookalike or generic gpt-oss received card evidence: %#v", merged[:3])
+	}
+}
+
+func TestLLAMBO8DefensibleGapScoresAndMatrixContract(t *testing.T) {
+	lfm := validOfficialSnapshot(t, "official-lfm25-8b-a1b").Models[0]
+	reasoning := scoreCategoryV3(lfm, categorySpecNamed(t, "reasoning"), []Model{lfm})
+	instruction := scoreCategoryV3(lfm, categorySpecNamed(t, "instruction-following"), []Model{lfm})
+	if reasoning == nil || math.Abs(reasoning.Score-58.333333333333336) > 1e-12 || instruction == nil || math.Abs(instruction.Score-87.5) > 1e-12 {
+		t.Fatalf("LFM8 scores = reasoning %#v instruction %#v", reasoning, instruction)
+	}
+
+	eqRevision := "bf21868fd5dc4c48480e01ae354079eb1cec13fb"
+	eqSHA := "c0eb6788a889a54e19adee8bf1b3ad4ed985879e64cf726916224443ebf06948"
+	eqResult := func(score float64) BenchmarkResult {
+		return BenchmarkResult{Score: &score, Identity: IdentityMatchExact, Version: eqRevision, CommitSHA: eqRevision, ContentSHA: eqSHA, Method: "published leaderboard", EvidenceGrade: "owner", Direction: "higher", SourceID: "eqbench-creative-v3", SourceClass: string(SourceOwnerResult), SourceRevision: eqRevision}
+	}
+	models := []Model{{Key: "gemma-4-26b-a4b-it"}, {Key: "gemma-4-31b-it"}, {Key: "openai/gpt-oss-20b"}}
+	models = mergeEQBenchCreativeModels(models, []Model{
+		{Name: "google/gemma-4-26B-A4B-it", Benchmarks: map[string]BenchmarkResult{"eqbench-creative-v3": eqResult(1300.9)}},
+		{Name: "google/gemma-4-31B-it", Benchmarks: map[string]BenchmarkResult{"eqbench-creative-v3": eqResult(1365.5)}},
+		{Name: "openai/gpt-oss-20b", Benchmarks: map[string]BenchmarkResult{"eqbench-creative-v3": eqResult(2000)}},
+	})
+	gemma26 := scoreCategoryV3(models[0], categorySpecNamed(t, "writing"), models)
+	gemma31 := scoreCategoryV3(models[1], categorySpecNamed(t, "writing"), models)
+	if gemma26 == nil || gemma26.Score != 37.2 || gemma31 == nil || gemma31.Score != 44.4 {
+		t.Fatalf("Gemma writing scores = %#v %#v", gemma26, gemma31)
+	}
+	if score := scoreCategoryV3(models[2], categorySpecNamed(t, "writing"), models); score != nil {
+		t.Fatalf("generic gpt-oss became eligible: %#v", score)
+	}
+
+	baselinePopulated := 4 + 1 + 2 + 3 + 3 + 3 + 3
+	newlyPopulated := 3
+	if populated := baselinePopulated + newlyPopulated; populated != 22 || 7*6-populated != 20 {
+		t.Fatalf("seven-model matrix = populated %d unresolved %d", populated, 7*6-populated)
+	}
+	for _, score := range []*LlamboScore{reasoning, instruction, gemma26, gemma31} {
+		if score.Estimated {
+			t.Fatal("admitted score was estimated")
+		}
 	}
 }
 

@@ -16,7 +16,7 @@ func TestBuiltInProjectionRegistryHasReviewedRows(t *testing.T) {
 	}
 	want := map[string]string{
 		"LFM2.5-2.6B-4bit": "lfm-2.5-2.6b", "LFM2.5-2.6B-bf16": "lfm-2.5-2.6b", "LFM2.5-2.6B-oQ4": "lfm-2.5-2.6b",
-		"LFM2.5-8B-A1B-MLX-4bit": "aa:lfm2-5-8b-a1b", "LFM2.5-VL-3B-MLX-4bit": "lfm-2.5-vl-3b",
+		"LFM2.5-8B-A1B-MLX-4bit": "lfm-2.5-8b-a1b", "LFM2.5-VL-3B-MLX-4bit": "lfm-2.5-vl-3b",
 		"LFM2.5-VL-3B-OptiQ-4bit": "lfm-2.5-vl-3b",
 		"Qwen3.8-27B-4bit":        "qwen3.8-27b", "Qwen3.8-27B-MLX-4bit": "qwen3.8-27b", "Qwen3.8-27B-oQ4e-mtp": "qwen3.8-27b",
 		"gemma-4-31B-it-uncensored-heretic-4bit": "gemma-4-31b-it", "gemma-4-26B-A4B-it-heretic-4bit": "gemma-4-26b-a4b-it",

@@ -40,6 +40,7 @@ type CategoryRankedModel struct {
 	TrustedCoverage    float64 `json:"trusted_coverage"`
 	IdentityConfidence float64 `json:"identity_confidence"`
 	WinnerStatus       string  `json:"winner_status,omitempty"`
+	Estimated          bool    `json:"estimated,omitempty"`
 }
 
 type FormulaDiagnostics struct {
@@ -141,6 +142,11 @@ func BuildReportWithProjectionFile(result Result, rankBy, path string) (Report, 
 	if err != nil {
 		return Report{}, err
 	}
+	estimator, err := loadCategoryEstimator()
+	if err != nil {
+		return Report{}, err
+	}
+	estimateOMLXRows(rows, estimator)
 	projectionSource := "embedded"
 	if path != "" {
 		projectionSource = path
@@ -156,7 +162,7 @@ func BuildReportWithProjectionFile(result Result, rankBy, path string) (Report, 
 	if len(driftModels) == 0 {
 		driftModels = result.Models
 	}
-	return Report{ReportSchemaVersion: 5, GeneratedAt: result.GeneratedAt, FormulaVersion: FormulaVersion, RankingProfile: rankBy, AAVersion: result.AAVersion, Sources: result.Sources, Projections: ProjectionDiagnostics{RegistrySource: projectionSource, Version: registry.Version, Configured: len(registry.Projections), Applied: len(registry.Projections) - len(missing), Missing: missing}, Formula: FormulaDiagnostics{Method: "LLAMBO-7 reviewed category registry; common frozen-cohort percentiles; equal independent-family raw score; evidence and projection uncertainty reported separately as trusted coverage", Population: len(result.Models), Reference: FormulaReferenceSummary{CreatedAt: reference.CreatedAt, AAVersion: reference.AAVersion, SourceModelCounts: sourceModelCounts(result.Models), SourceFingerprints: sourceFingerprints(result.Models)}, Drift: evaluateReferenceDrift(driftModels, result.AAVersion, reference, currentReferenceValues(driftModels))}, CoverageCampaign: coverageCampaign, Models: rows, CategoryRankings: rankings}, nil
+	return Report{ReportSchemaVersion: 6, GeneratedAt: result.GeneratedAt, FormulaVersion: FormulaVersion, RankingProfile: rankBy, AAVersion: result.AAVersion, Sources: result.Sources, Projections: ProjectionDiagnostics{RegistrySource: projectionSource, Version: registry.Version, Configured: len(registry.Projections), Applied: len(registry.Projections) - len(missing), Missing: missing}, Formula: FormulaDiagnostics{Method: "LLAMBO-9 reviewed category registry; direct common frozen-cohort percentiles plus frozen calibrated OMLX-only gap estimates; evidence and estimates remain separate", Population: len(result.Models), Reference: FormulaReferenceSummary{CreatedAt: reference.CreatedAt, AAVersion: reference.AAVersion, SourceModelCounts: sourceModelCounts(result.Models), SourceFingerprints: sourceFingerprints(result.Models)}, Drift: evaluateReferenceDrift(driftModels, result.AAVersion, reference, currentReferenceValues(driftModels))}, CoverageCampaign: coverageCampaign, Models: rows, CategoryRankings: rankings}, nil
 }
 
 func categoryUnresolvedReason(model Model, category categorySpec) string {
@@ -200,14 +206,10 @@ func compareReportRows(left, right ReportModel, rankBy string) bool {
 	var leftScore, rightScore *float64
 	if isCapabilityCategory(rankBy) {
 		if s := left.LlamboScores[rankBy]; s != nil {
-			if !s.Estimated {
-				leftScore = &s.Score
-			}
+			leftScore = &s.Score
 		}
 		if s := right.LlamboScores[rankBy]; s != nil {
-			if !s.Estimated {
-				rightScore = &s.Score
-			}
+			rightScore = &s.Score
 		}
 	} else {
 		if s := left.Scores[rankBy]; s != nil {
@@ -238,14 +240,14 @@ func buildCategoryRankings(rows []ReportModel) map[string]CategoryRanking {
 		ranking := CategoryRanking{Category: spec.name, Status: "unresolved"}
 		for _, row := range rows {
 			score := row.LlamboScores[spec.name]
-			if score == nil || score.Estimated {
+			if score == nil {
 				continue
 			}
 			identity := 1.0
 			if row.Projection != nil {
 				identity = projectionMultiplier(row.Projection)
 			}
-			ranking.Entries = append(ranking.Entries, CategoryRankedModel{Key: row.Key, Score: score.Score, TrustedCoverage: score.TrustedCoverage, IdentityConfidence: identity})
+			ranking.Entries = append(ranking.Entries, CategoryRankedModel{Key: row.Key, Score: score.Score, TrustedCoverage: score.TrustedCoverage, IdentityConfidence: identity, Estimated: score.Estimated})
 		}
 		sort.Slice(ranking.Entries, func(i, j int) bool {
 			left, right := ranking.Entries[i], ranking.Entries[j]
@@ -278,7 +280,7 @@ func buildCategoryRankings(rows []ReportModel) map[string]CategoryRanking {
 					break
 				}
 			}
-			if official {
+			if official && !ranking.Entries[winner].Estimated {
 				ranking.Status, ranking.Winner = "official", ranking.Entries[winner].Key
 			} else {
 				ranking.Status, ranking.Winner = "provisional", leader.Key
@@ -328,7 +330,7 @@ func applyCategoryWinnerStatuses(rows []ReportModel, rankings map[string]Categor
 
 func hasCapabilityScore(model ReportModel) bool {
 	for _, score := range model.LlamboScores {
-		if score != nil && !score.Estimated {
+		if score != nil {
 			return true
 		}
 	}

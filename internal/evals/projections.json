@@ -24,7 +24,7 @@
     },
     {
       "artifact_key": "LFM2.5-8B-A1B-MLX-4bit",
-      "source_key": "aa:lfm2-5-8b-a1b",
+      "source_key": "lfm-2.5-8b-a1b",
       "confidence": "medium",
       "basis": "Reviewed LFM2.5 8B A1B base identity; MLX 4-bit quantization may change capability.",
       "reviewed_at": "2026-08-21T00:00:00Z"

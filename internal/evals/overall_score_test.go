@@ -62,7 +62,7 @@ func TestEstimatedProjectionCannotQualifyAsOfficialWinner(t *testing.T) {
 		{Key: "estimated", Projection: &ProjectionInfo{Confidence: "low"}, LlamboScores: map[string]*LlamboScore{"coding": {Score: 90, Confidence: "low", Estimated: true, EstimateMethod: "cross-category-remote-shrink-v1"}}},
 	}
 	ranking := buildCategoryRankings(rows)["coding"]
-	if ranking.Status != "official" || ranking.Winner != "official" || len(ranking.Entries) != 1 || ranking.Entries[0].Key != "official" {
-		t.Fatalf("estimated projection entered ranking: %#v", ranking)
+	if ranking.Status != "provisional" || ranking.Winner != "estimated" || len(ranking.Entries) != 2 || !ranking.Entries[0].Estimated || ranking.Entries[0].WinnerStatus != "provisional" {
+		t.Fatalf("estimated projection did not participate provisionally: %#v", ranking)
 	}
 }

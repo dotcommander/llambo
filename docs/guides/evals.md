@@ -2,7 +2,7 @@
 
 ## 30-second category scorecard
 
-Generate all six cache-only LLAMBO-7 category scores without executing a model or
+Generate all six cache-only LLAMBO-9 category scores without executing a model or
 contacting a remote source:
 
 ```bash
@@ -173,7 +173,7 @@ llambo evals writing --refresh --discover-open-models --discover-limit 25
 
 The workspace keeps scores in the scale used by each upstream benchmark. It does
 not maintain a parallel scoring system: admitted sealed results flow through the
-same source snapshots, identity reconciliation, and LLAMBO-7 family scorer.
+same source snapshots, identity reconciliation, and LLAMBO-9 family scorer.
 The standard source refresh ingests the public
 [Lech Mazur creative story-writing leaderboard](https://github.com/lechmazur/writing),
 which publishes pairwise comparison scores, estimated win chance, and an
@@ -352,7 +352,7 @@ they never refresh implicitly. OMLX inventory discovery is opt-in through
 | `--live-omlx` | boolean | `false` | Explicitly queries the loopback OMLX inventory, filters local projections to its exact live IDs, and uses that inventory for the published snapshot; failure stops the command before publication |
 | `--omlx-url` | URL | `http://127.0.0.1:8000` | Loopback OMLX base URL used for live local-model discovery |
 | `--refresh` | boolean | `false` | Fetches and replaces external source snapshots |
-| `--refresh-official-model-cards` | boolean | `false` | Fetches only the five pinned LiquidAI, Qwen, OpenAI, and Google model cards; LLM Stats, Artificial Analysis, WritingBench, and EQ-Bench remain cache-only. Cannot be combined with `--refresh` or `--offline` |
+| `--refresh-official-model-cards` | boolean | `false` | Fetches only the six pinned LiquidAI, Qwen, OpenAI, and Google model cards; LLM Stats, Artificial Analysis, WritingBench, and EQ-Bench remain cache-only. Cannot be combined with `--refresh` or `--offline` |
 | `--export-prompts` | path | unset | Writes normalized prompt JSONL; writing mode requires `--refresh` |
 | `--prompt-source` | string | `writingbench` | Selects `writingbench`, `eqbench-creative-v3`, `ifeval`, or `all` for prompt export |
 | `--prompt-limit` | integer | `0` | Limits exported prompt records; `0` exports all selected records |
@@ -367,6 +367,15 @@ browser. Markdown and JSON may be written to the same `--output` option.
 LLM Stats and Artificial Analysis remain the base inventory. WritingBench and
 EQ-Bench snapshots are cached separately; offline absence is reported and leaves
 writing evidence unavailable rather than failing or inventing a score.
+
+The sixth official-card adapter pins LiquidAI's LFM2.5-8B-A1B revision
+`b9aebfcbe28b6cb374042f495d733037550ab146` and admits only its consistent
+AIME25, IFEval, IFBench, and Multi-IF rows. BFCLv4 is excluded because the same
+revision reports two different target values. Other non-portfolio benchmark
+names remain inspectable in the source card but cannot enter LLAMBO scoring.
+Only `google/gemma-4-26B-A4B-it` and `google/gemma-4-31B-it` are exact hosted-ID
+aliases for the corresponding official Gemma rows; generic gpt-oss IDs and
+lookalikes do not inherit high-reasoning evidence.
 
 The default matrix has no capability cutoff and retains the maximum known output
 price ceiling of `$10/1M`. Filtering changes only displayed rows, never the
@@ -458,9 +467,9 @@ Ambiguous identities stay separate and are labeled `ambiguous`.
 Each writing observation retains its URL, source version or pinned commit,
 content SHA-256, fetch time, methodology, judge version, and identity match.
 
-## LLAMBO-7 category formula
+## LLAMBO-9 category formula
 
-`LLAMBO-7-category` reports six independent capability scores. A reviewed
+`LLAMBO-9-category` reports six independent capability scores. A reviewed
 registry assigns every admitted benchmark to exactly one category and one
 independent capability family. Each category targets three to five families.
 
@@ -477,7 +486,7 @@ percentile population when a broad common cohort exists. Evidence grade,
 partial family coverage, projection identity, and stale state are reported as
 trusted coverage and confidence. They do not pull the score toward neutral 50.
 
-LLAMBO-7 freezes these 21 Stats v1 benchmark populations from sealed artifact
+LLAMBO-9 preserves the 21 Stats v1 benchmark populations frozen by LLAMBO-8 from sealed artifact
 `540bdcdff3b2eae7c816d993950789f15ca1685a7ba09ff679a056dc05478583`:
 `arena-hard` (26), `bfcl-v4` (15), `gpqa` (239), `humaneval` (66), `ifbench`
 (34), `ifeval` (67), `livecodebench` (75), `livecodebench-v6` (56),
@@ -491,8 +500,14 @@ No eligible canonical evidence renders `—`, never synthetic `0` or `50`. Valid
 entries remain usable and show their age and stale warning. Incompatible revisions
 never share a reference population. Mirrored results contribute once; lower-
 authority copies are corroboration, and unresolved peer conflicts are quarantined.
-Reviewed local projections do not synthesize missing categories; those cells
-remain unresolved and never enter rankings.
+Canonical hosted rows remain evidence-only. For reviewed OMLX projection rows,
+LLAMBO-9 fills only missing cells from the sealed estimator artifact. Every estimate
+is marked `ᵉ`, has zero coverage and trusted coverage, low confidence, no benchmark
+families or contributions, and records its method, direct input categories, support,
+validation error, and calibration fingerprint. Each target is predicted independently
+from the row's original direct scores; estimates never feed other estimates. With no
+direct category input or reviewed identity, the frozen category prior is used and
+marked `prior-only`. New direct evidence automatically replaces the estimate.
 
 | Category | Reviewed capability families |
 | --- | --- |
@@ -506,8 +521,9 @@ remain unresolved and never enter rankings.
 An official category winner requires evidence from at least two independent
 families. A lower-coverage leader is `provisional`. Ranking uses full-precision
 score, trusted coverage, then identity confidence; a remaining exact tie produces
-co-winners. Operational metrics and task-specific local evaluations never enter
-these rankings.
+co-winners. Estimates participate in provisional ordering and `--min-score`, but
+can never receive official-winner status. Operational metrics and task-specific
+local evaluations never enter these rankings.
 
 Successful explicit generation atomically replaces the single local category
 snapshot at `~/.config/llambo/llambo-scores.json`. A failed run leaves the
@@ -535,14 +551,14 @@ llambo evals --rank-by writing --format json --output /tmp/llambo-writing.json
 ```
 
 The writing category combines only the writing families admitted by the reviewed
-LLAMBO-7 registry. WritingBench supplies rubric-long-form evidence; EQ-Bench
+LLAMBO-9 registry. WritingBench supplies rubric-long-form evidence; EQ-Bench
 Creative v3 supplies an independent creative-writing family when its frozen
 revision is compatible. Local writing runs remain separate diagnostics and never
 alter the score.
 
 ## Trust and drift
 
-LLAMBO-7 retains the reference snapshot for drift diagnostics, including source
+LLAMBO-9 retains the reference snapshot for drift diagnostics, including source
 model counts, Artificial Analysis index version, and fingerprints. A refresh does
 not silently redefine the pinned scoring cohorts.
 

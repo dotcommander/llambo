@@ -20,6 +20,14 @@ var modelAliases = map[string]string{
 	"gemma-4-26b-a4b-it":     "gemma-4-26b-a4b-it",
 }
 
+// officialCardKeyAliases is intentionally source-specific. These exact hosted
+// IDs may receive the matching Gemma card row; generic gpt-oss IDs must not be
+// promoted to the card's high-reasoning configuration.
+var officialCardKeyAliases = map[string]string{
+	"google/gemma-4-26B-A4B-it": "gemma-4-26b-a4b-it",
+	"google/gemma-4-31B-it":     "gemma-4-31b-it",
+}
+
 // organizationFamilies is the reviewed boundary for source-native organization
 // labels. Values identify one model-producing family; unrelated organizations
 // must never be collapsed merely because a model name happens to match.
@@ -142,7 +150,9 @@ func mergeWritingEvidenceModels(models, writingBench []Model, corroborators ...[
 func mergeEQBenchCreativeModels(models, eqBench []Model) []Model {
 	byIdentity := make(map[string][]int, len(models))
 	byName := make(map[string][]int, len(models))
+	byKey := make(map[string]int, len(models))
 	for i, model := range models {
+		byKey[model.Key] = i
 		if identity, ok := externalIdentity(model); ok {
 			byIdentity[identity] = append(byIdentity[identity], i)
 		}
@@ -153,6 +163,12 @@ func mergeEQBenchCreativeModels(models, eqBench []Model) []Model {
 	benchIdentity := make(map[string][]Model, len(eqBench))
 	benchName := make(map[string][]Model, len(eqBench))
 	for _, model := range eqBench {
+		if alias, ok := officialCardKeyAliases[model.Name]; ok {
+			if index, found := byKey[alias]; found {
+				attachBenchmark(&models[index], model, IdentityMatchExact)
+				continue
+			}
+		}
 		if identity, ok := externalIdentity(model); ok {
 			benchIdentity[identity] = append(benchIdentity[identity], model)
 		}

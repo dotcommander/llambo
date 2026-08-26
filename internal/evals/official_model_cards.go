@@ -21,6 +21,8 @@ const (
 	lfm25VLContentSHA   = "2ad0e4f36a755e3c70b338f0118e6a603a4cb7b65c034263dc10a4d3d9ce7a03"
 	gemma4Revision      = "5bbc2fb1c1b2c611d06e3d9f23c170ba21659d89"
 	gemma4ContentSHA    = "9871799033826e5aca148dfd2c8167c5386fedb669aa486846dadbd11d42a872"
+	lfm25A1BRevision    = "b9aebfcbe28b6cb374042f495d733037550ab146"
+	lfm25A1BContentSHA  = "10950a8975d3f43c4b51a74def690603ac82be6c53a2d8eb509e6e31177b6efc"
 	modelCardUnit       = "percent"
 	modelCardDirection  = "higher"
 	modelCardEvidence   = "first_party"
@@ -47,6 +49,9 @@ var officialCardTargetScores = map[string]map[string]map[string]float64{
 		"gemma-4-31b-it":     {"mmlu-pro": 85.2, "aime": 89.2, "livecodebench-v6": 80.0, "gpqa": 84.3, "tau2-bench": 76.9},
 		"gemma-4-26b-a4b-it": {"mmlu-pro": 82.6, "aime": 88.3, "livecodebench-v6": 77.1, "gpqa": 82.3, "tau2-bench": 68.2},
 	},
+	"official-lfm25-8b-a1b": {"lfm-2.5-8b-a1b": {
+		"aime": 42.53, "ifeval-official": 91.84, "ifbench": 56.47, "multi-if": 79.93,
+	}},
 }
 
 type officialCardTarget struct {
@@ -108,6 +113,13 @@ func gemma4CardSpec() officialCardSpec {
 	}
 }
 
+func lfm25A1BCardSpec() officialCardSpec {
+	return officialCardSpec{
+		sourceID: "liquidai-lfm25-8b-a1b-card", modelKey: "lfm-2.5-8b-a1b", modelName: "LFM2.5-8B-A1B", organization: "Liquid AI", revision: lfm25A1BRevision, contentSHA: lfm25A1BContentSHA,
+		url: func(opts Options) string { return opts.OfficialLFM8URL }, parse: parseLFM25A1BCard,
+	}
+}
+
 func officialCardSpecForCache(cacheName string) (officialCardSpec, bool) {
 	switch cacheName {
 	case "official-lfm25-2.6b":
@@ -120,6 +132,8 @@ func officialCardSpecForCache(cacheName string) (officialCardSpec, bool) {
 		return lfm25VLCardSpec(), true
 	case "official-gemma4":
 		return gemma4CardSpec(), true
+	case "official-lfm25-8b-a1b":
+		return lfm25A1BCardSpec(), true
 	default:
 		return officialCardSpec{}, false
 	}
@@ -143,6 +157,10 @@ func fetchOfficialLFMVL(ctx context.Context, opts Options) (sourceSnapshot, erro
 
 func fetchOfficialGemma4(ctx context.Context, opts Options) (sourceSnapshot, error) {
 	return fetchOfficialCard(ctx, opts, gemma4CardSpec())
+}
+
+func fetchOfficialLFM25A1B(ctx context.Context, opts Options) (sourceSnapshot, error) {
+	return fetchOfficialCard(ctx, opts, lfm25A1BCardSpec())
 }
 
 func fetchOfficialCard(ctx context.Context, opts Options, spec officialCardSpec) (sourceSnapshot, error) {
@@ -231,7 +249,7 @@ func officialCardCompatibleRegistryVersion(version string) bool {
 	// Source registry v4/v5 added Stats v1 collection/scoring without changing
 	// official-card admission. Accept pinned predecessor caches so this source
 	// transition does not force unrelated card refreshes.
-	return version == SourceRegistryVersion || version == "LLAMBO-6-sources-v4" || version == "LLAMBO-6-sources-v3"
+	return version == SourceRegistryVersion || version == "LLAMBO-6-sources-v5" || version == "LLAMBO-6-sources-v4" || version == "LLAMBO-6-sources-v3"
 }
 
 func expectedScoresForSpec(spec officialCardSpec) map[string]map[string]float64 {
@@ -312,6 +330,60 @@ func parseGemma4Card(data []byte) (map[string][]float64, error) {
 	return parseMarkdownTable(data, map[string]string{
 		"MMLU Pro": "mmlu-pro", "AIME 2026 no tools": "aime", "LiveCodeBench v6": "livecodebench-v6", "GPQA Diamond": "gpqa", "Tau2 (average over 3)": "tau2-bench",
 	})
+}
+
+// parseLFM25A1BCard admits only exact current-portfolio benchmarks whose target
+// value is consistent everywhere in the pinned card. BFCLv4 is deliberately
+// absent: this revision reports both 48.50 and 49.73 for the same target.
+func parseLFM25A1BCard(data []byte) (map[string][]float64, error) {
+	labels := map[string]string{"IFEval": "ifeval-official", "IFBench": "ifbench", "Multi-IF": "multi-if", "AIME25": "aime"}
+	rows := make(map[string][]float64, len(labels))
+	columns := map[int]string{}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "|") {
+			columns = map[int]string{}
+			continue
+		}
+		cells := strings.Split(strings.Trim(line, "|"), "|")
+		for i := range cells {
+			cells[i] = strings.TrimSpace(cells[i])
+		}
+		if len(cells) > 1 && cells[0] == "Model" {
+			columns = map[int]string{}
+			for i, cell := range cells {
+				if benchmark, ok := labels[cell]; ok {
+					columns[i] = benchmark
+				}
+			}
+			continue
+		}
+		if len(columns) == 0 || strings.HasPrefix(cells[0], ":---") || strings.HasPrefix(cells[0], "---") {
+			continue
+		}
+		for column, benchmark := range columns {
+			if column >= len(cells) {
+				continue
+			}
+			values := parseScoreCells([]string{cells[column]})
+			if len(values) == 1 {
+				rows[benchmark] = append(rows[benchmark], values[0])
+			}
+		}
+	}
+	if _, err := checkedCardRows(rows, labels); err != nil {
+		return nil, err
+	}
+	for benchmark, values := range rows {
+		minimum := 8
+		if benchmark == "aime" {
+			minimum = 6
+		}
+		if len(values) < minimum {
+			return nil, fmt.Errorf("%s comparison cohort has %d values, want at least %d", benchmark, len(values), minimum)
+		}
+	}
+	return rows, nil
 }
 
 func parseMarkdownTable(data []byte, labels map[string]string) (map[string][]float64, error) {

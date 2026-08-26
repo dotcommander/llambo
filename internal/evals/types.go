@@ -42,6 +42,7 @@ type Options struct {
 	OfficialGPTOSSURL            string
 	OfficialLFMVLURL             string
 	OfficialGemmaURL             string
+	OfficialLFM8URL              string
 	Now                          func() time.Time
 }
 

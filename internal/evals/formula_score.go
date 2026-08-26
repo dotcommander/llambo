@@ -35,21 +35,25 @@ type benchmarkEvidence struct {
 // LlamboScore is one category-specific score. A nil map value means its
 // primary benchmark has no matching source result; it is never an average.
 type LlamboScore struct {
-	Score           float64             `json:"score"`
-	Coverage        float64             `json:"coverage"`
-	TrustedCoverage float64             `json:"trusted_coverage"`
-	Contributions   []benchmarkEvidence `json:"contributions,omitempty"`
-	Primary         *benchmarkEvidence  `json:"primary,omitempty"`
-	Checks          []benchmarkEvidence `json:"checks"`
-	Agreement       *float64            `json:"agreement"`
-	Confidence      string              `json:"confidence"`
-	Families        []string            `json:"families,omitempty"`
-	WinnerStatus    string              `json:"winner_status,omitempty"`
-	Stale           bool                `json:"stale,omitempty"`
-	Conflicts       []string            `json:"conflicts,omitempty"`
-	Estimated       bool                `json:"estimated,omitempty"`
-	EstimateMethod  string              `json:"estimate_method,omitempty"`
-	EstimateSources []string            `json:"estimate_source_categories,omitempty"`
+	Score                          float64             `json:"score"`
+	Coverage                       float64             `json:"coverage"`
+	TrustedCoverage                float64             `json:"trusted_coverage"`
+	Contributions                  []benchmarkEvidence `json:"contributions,omitempty"`
+	Primary                        *benchmarkEvidence  `json:"primary,omitempty"`
+	Checks                         []benchmarkEvidence `json:"checks"`
+	Agreement                      *float64            `json:"agreement"`
+	Confidence                     string              `json:"confidence"`
+	Families                       []string            `json:"families,omitempty"`
+	WinnerStatus                   string              `json:"winner_status,omitempty"`
+	Stale                          bool                `json:"stale,omitempty"`
+	Conflicts                      []string            `json:"conflicts,omitempty"`
+	Estimated                      bool                `json:"estimated,omitempty"`
+	EstimateMethod                 string              `json:"estimate_method,omitempty"`
+	EstimateSources                []string            `json:"estimate_source_categories,omitempty"`
+	EstimateSupport                *int                `json:"estimate_support,omitempty"`
+	EstimateValidationMAE          *float64            `json:"estimate_validation_mae,omitempty"`
+	EstimateErrorP90               *float64            `json:"estimate_error_p90,omitempty"`
+	EstimateCalibrationFingerprint string              `json:"estimate_calibration_fingerprint,omitempty"`
 }
 
 // scoreCategory preserves the LLAMBO-2 scorer for rollback and frozen-reference
@@ -172,7 +176,7 @@ func scoreCategoryV3WithContext(model Model, spec categorySpec, models []Model, 
 	primary := contributions[0]
 	coverage := float64(len(represented)) / float64(len(spec.families))
 	trustedCoverage := trustedWeight / float64(len(spec.families))
-	// LLAMBO-7 keeps the raw common-cohort percentile as the capability score.
+	// LLAMBO-9 keeps the raw common-cohort percentile as the direct capability score.
 	// Evidence grade, partial family coverage, and projection identity describe
 	// uncertainty separately; they no longer erase the measured difference.
 	score := mean(percentiles)

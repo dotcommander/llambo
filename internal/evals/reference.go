@@ -29,7 +29,7 @@ var llmStatsFrozenCohortsJSON []byte
 
 // llmStatsStatsV1FrozenCohortsJSON freezes the eligible reviewed benchmark
 // populations collected from the authenticated Stats v1 API. These populations
-// own LLAMBO-7 percentile scales; mutable API membership cannot move an
+// own LLAMBO-8 percentile scales; mutable API membership cannot move an
 // installed score.
 //
 //go:embed testdata/llm-stats-stats-v1-frozen-cohorts-v1.json
@@ -138,27 +138,33 @@ var frozenBenchmarkReference = map[string]map[string]string{
 }
 
 // officialCardFrozenCohorts are the immutable, source-native comparison
-// populations from the five reviewed cards. They are intentionally values,
+// populations from the six reviewed cards. They are intentionally values,
 // not cache rows: the source adapters may add a projected artifact, but a
 // later cache refresh can never move an already-issued percentile. The
 // gpt-oss population is six explicitly named model+reasoning-effort arms,
 // not six distinct base models.
 var officialCardFrozenCohorts = map[string]map[string][]float64{
 	"aime": {
-		lfm25Revision:  {26.33, 34.27, 49.33, 51.87, 56.07},
-		gptOSSRevision: {50.4, 80.0, 92.5, 37.1, 72.1, 91.7},
-		gemma4Revision: {89.2, 88.3, 77.5, 42.5, 37.5, 20.8},
+		lfm25Revision:    {26.33, 34.27, 49.33, 51.87, 56.07},
+		gptOSSRevision:   {50.4, 80.0, 92.5, 37.1, 72.1, 91.7},
+		gemma4Revision:   {89.2, 88.3, 77.5, 42.5, 37.5, 20.8},
+		lfm25A1BRevision: {42.53, 4.93, 54.28, 71.67, 26, 34.33},
 	},
 	"livecodebench-v6": {
 		lfm25Revision:  {54.92, 59.41, 60.85, 63.77, 69.86},
 		gemma4Revision: {80.0, 77.1, 72.0, 52.0, 44.0, 29.1},
 	},
 	"ifbench": {
-		lfm25Revision:  {34.08, 39.24, 48.40, 56.47, 59.17},
-		qwen38Revision: {62.5, 69.1, 77.0, 79.1, 79.5},
+		lfm25Revision:    {34.08, 39.24, 48.40, 56.47, 59.17},
+		qwen38Revision:   {62.5, 69.1, 77.0, 79.1, 79.5},
+		lfm25A1BRevision: {56.47, 21.28, 50.38, 51.11, 33.53, 39.48, 47.25, 58.65},
 	},
 	"multi-if": {
-		lfm25Revision: {55.67, 62.55, 69.44, 77.35, 80.07},
+		lfm25Revision:    {55.67, 62.55, 69.44, 77.35, 80.07},
+		lfm25A1BRevision: {79.93, 59.00, 67.43, 79.04, 69.70, 77.58, 82.06, 76.64},
+	},
+	"ifeval-official": {
+		lfm25A1BRevision: {91.84, 82.23, 87.80, 90.82, 82.93, 87.74, 91.40, 86.73},
 	},
 	"ifstruct": {
 		lfm25Revision: {36.25, 64.85, 76.65, 78.50, 85.49},
@@ -237,7 +243,7 @@ func frozenBenchmarkCohortFromReference(benchmark, revision string, reference Fo
 }
 
 // resolvedFrozenBenchmarkCohort is the scorer boundary for immutable benchmark
-// populations. LLAMBO-7 prefers a broad common Stats v1 population; older
+// populations. LLAMBO-8 prefers a broad common Stats v1 population; older
 // source-specific cohorts remain fallbacks for benchmarks without one.
 func resolvedFrozenBenchmarkCohort(benchmark string, result BenchmarkResult) []float64 {
 	context, err := loadScoringContext()
@@ -248,7 +254,17 @@ func resolvedFrozenBenchmarkCohort(benchmark string, result BenchmarkResult) []f
 }
 
 func (context scoringContext) resolvedFrozenBenchmarkCohort(benchmark string, result BenchmarkResult) []float64 {
-	// LLAMBO-7 uses the broad Stats v1 population as the common percentile scale
+	// LLAMBO-8's reviewed LFM2.5-8B-A1B card cohorts are same-methodology
+	// populations and therefore own this exact revision's scale. This narrow
+	// exception does not change LLAMBO-7 arithmetic or other source precedence.
+	if result.SourceID == "liquidai-lfm25-8b-a1b-card" && result.SourceRevision == lfm25A1BRevision {
+		if cohort := officialCardFrozenCohorts[benchmark][lfm25A1BRevision]; len(cohort) != 0 {
+			clone := append([]float64(nil), cohort...)
+			sort.Float64s(clone)
+			return clone
+		}
+	}
+	// LLAMBO-8 uses the broad Stats v1 population as the common percentile scale
 	// whenever one exists. Source authority may choose a raw result, but it must
 	// not replace that scale with a tiny source-native comparison table.
 	if cohort, ok := context.statsV1Cohorts.Benchmarks[benchmark]; ok {
