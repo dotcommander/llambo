@@ -13,9 +13,7 @@ func (c executionCoordinator) execute(ctx context.Context, plan chatExecutionPla
 	result, err := request(ctx, plan.selected, systemPrompt, userContent)
 	outcome := chatExecutionOutcome{provider: plan.selected, result: result, decision: plan.decision}
 	if err == nil {
-		c.recordSuccess(plan.selected.name, result.clientKey, result.usage, result.duration)
-		c.recordQuality(plan.selected.name, systemPrompt, userContent, result.content, result.duration)
-		c.logRouteOutcome(plan.intent, plan.estimatedTokens, plan.plannedProvider, plan.selected.name, plan.selected.cfg.Model, result.usage, result.duration, true, "", plan.candidates, plan.isCanary)
+		c.recordSuccessfulAttempt(plan, plan.selected, systemPrompt, userContent, result)
 		c.checkCanaryAutoPromote(plan)
 		return outcome, nil
 	}
@@ -41,9 +39,7 @@ func (c executionCoordinator) execute(ctx context.Context, plan chatExecutionPla
 		result, err = request(ctx, info, systemPrompt, userContent)
 		outcome = chatExecutionOutcome{provider: info, result: result, decision: plan.decision}
 		if err == nil {
-			c.recordSuccess(info.name, result.clientKey, result.usage, result.duration)
-			c.recordQuality(info.name, systemPrompt, userContent, result.content, result.duration)
-			c.logRouteOutcome(plan.intent, plan.estimatedTokens, plan.plannedProvider, info.name, info.cfg.Model, result.usage, result.duration, true, "", plan.candidates, plan.isCanary)
+			c.recordSuccessfulAttempt(plan, info, systemPrompt, userContent, result)
 			return outcome, nil
 		}
 		c.recordAttemptFailure(info.name, result.usage, result.duration, err)
@@ -58,9 +54,7 @@ func (c executionCoordinator) executeStream(ctx context.Context, plan chatExecut
 	result, emitted, err := request(ctx, plan.selected, systemPrompt, userContent, onChunk)
 	outcome := chatExecutionOutcome{provider: plan.selected, result: result, decision: plan.decision}
 	if err == nil {
-		c.recordSuccess(plan.selected.name, result.clientKey, result.usage, result.duration)
-		c.recordQuality(plan.selected.name, systemPrompt, userContent, result.content, result.duration)
-		c.logRouteOutcome(plan.intent, plan.estimatedTokens, plan.plannedProvider, plan.selected.name, plan.selected.cfg.Model, result.usage, result.duration, true, "", plan.candidates, plan.isCanary)
+		c.recordSuccessfulAttempt(plan, plan.selected, systemPrompt, userContent, result)
 		return outcome, nil
 	}
 
@@ -82,9 +76,7 @@ func (c executionCoordinator) executeStream(ctx context.Context, plan chatExecut
 		result, emitted, err = request(ctx, info, systemPrompt, userContent, onChunk)
 		outcome = chatExecutionOutcome{provider: info, result: result, decision: plan.decision}
 		if err == nil {
-			c.recordSuccess(info.name, result.clientKey, result.usage, result.duration)
-			c.recordQuality(info.name, systemPrompt, userContent, result.content, result.duration)
-			c.logRouteOutcome(plan.intent, plan.estimatedTokens, plan.plannedProvider, info.name, info.cfg.Model, result.usage, result.duration, true, "", plan.candidates, plan.isCanary)
+			c.recordSuccessfulAttempt(plan, info, systemPrompt, userContent, result)
 			return outcome, nil
 		}
 
@@ -97,6 +89,12 @@ func (c executionCoordinator) executeStream(ctx context.Context, plan chatExecut
 
 	c.logRouteOutcome(plan.intent, plan.estimatedTokens, plan.plannedProvider, "", "", nil, 0, false, strings.Join(errStrings, "; "), plan.candidates, plan.isCanary)
 	return outcome, fmt.Errorf("all providers failed: %s", strings.Join(errStrings, "; "))
+}
+
+func (c executionCoordinator) recordSuccessfulAttempt(plan chatExecutionPlan, info providerInfo, systemPrompt, userContent string, result chatRequestResult) {
+	c.recordSuccess(info.name, result.clientKey, result.usage, result.duration)
+	c.recordQuality(info.name, systemPrompt, userContent, result.content, result.duration)
+	c.logRouteOutcome(plan.intent, plan.estimatedTokens, plan.plannedProvider, info.name, info.cfg.Model, result.usage, result.duration, true, "", plan.candidates, plan.isCanary)
 }
 
 func (c executionCoordinator) recordSuccess(provider, key string, usage *LLMUsage, duration time.Duration) {
