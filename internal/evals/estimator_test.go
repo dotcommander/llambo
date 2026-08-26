@@ -19,7 +19,7 @@ func TestLLAMBO9EstimatorArtifactFingerprintAndCandidates(t *testing.T) {
 	wantSelection := []struct {
 		method string
 		alpha  float64
-	}{{"ridge", 1}, {"ridge", .1}, {"ridge", .01}, {"organization-balanced-prior", 0}, {"ridge", .01}, {"organization-balanced-prior", 0}}
+	}{{estimatorMethodRidge, 1}, {estimatorMethodRidge, .1}, {estimatorMethodRidge, .01}, {estimatorMethodPrior, 0}, {estimatorMethodRidge, .01}, {estimatorMethodPrior, 0}}
 	for i, target := range artifact.Targets {
 		if target.Method != wantSelection[i].method || target.Alpha != wantSelection[i].alpha {
 			t.Fatalf("target %s selection drifted: %#v", target.Category, target)
@@ -42,7 +42,7 @@ func TestLLAMBO9EstimatesOnlyMissingOMLXCellsWithoutRecursion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	direct := &LlamboScore{Score: 81.25, Coverage: .25, TrustedCoverage: .125, Confidence: "low", Families: []string{"repository-editing"}}
+	direct := &LlamboScore{Score: 81.25, Coverage: .25, TrustedCoverage: .125, Confidence: scoreConfidenceLow, Families: []string{"repository-editing"}}
 	rows := []ReportModel{{Key: "local", Projection: &ProjectionInfo{SourceKey: "reviewed-upstream"}, LlamboScores: map[string]*LlamboScore{"coding": direct}, UnresolvedReasons: map[string]string{"writing": "missing"}}}
 	estimateOMLXRows(rows, artifact)
 	if rows[0].LlamboScores["coding"] != direct || rows[0].LlamboScores["coding"].Score != 81.25 {
@@ -56,12 +56,7 @@ func TestLLAMBO9EstimatesOnlyMissingOMLXCellsWithoutRecursion(t *testing.T) {
 		if category.name == "coding" {
 			continue
 		}
-		if !score.Estimated || score.Coverage != 0 || score.TrustedCoverage != 0 || score.Confidence != "low" || len(score.Contributions) != 0 || len(score.Families) != 0 || score.EstimateCalibrationFingerprint != artifact.Fingerprint {
-			t.Fatalf("estimate invented evidence for %s: %#v", category.name, score)
-		}
-		if slices.Contains(score.EstimateSources, category.name) || !slices.Equal(score.EstimateSources, []string{"coding"}) {
-			t.Fatalf("recursive estimate sources for %s: %#v", category.name, score.EstimateSources)
-		}
+		assertEstimatedOMLXScore(t, category.name, score, artifact.Fingerprint)
 	}
 }
 
@@ -93,27 +88,56 @@ func TestLLAMBO9SevenModelSnapshotIs22DirectPlus20Estimated(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	rows, directCount := sevenModelSnapshotRows()
+	before, _ := json.Marshal(rows)
+	estimateOMLXRows(rows, artifact)
+	benchmarkBacked, estimated, unresolved := countOMLXScoreKinds(rows)
+	if directCount != 22 || benchmarkBacked != 22 || estimated != 20 || unresolved != 0 {
+		t.Fatalf("matrix counts direct=%d backed=%d estimated=%d unresolved=%d", directCount, benchmarkBacked, estimated, unresolved)
+	}
+	var original []ReportModel
+	if err := json.Unmarshal(before, &original); err != nil {
+		t.Fatal(err)
+	}
+	assertDirectScoresUnchanged(t, rows, original)
+}
+
+func assertEstimatedOMLXScore(t *testing.T, category string, score *LlamboScore, fingerprint string) {
+	t.Helper()
+	if !score.Estimated || score.Coverage != 0 || score.TrustedCoverage != 0 || score.Confidence != scoreConfidenceLow || len(score.Contributions) != 0 || len(score.Families) != 0 || score.EstimateCalibrationFingerprint != fingerprint {
+		t.Fatalf("estimate invented evidence for %s: %#v", category, score)
+	}
+	if slices.Contains(score.EstimateSources, category) || !slices.Equal(score.EstimateSources, []string{"coding"}) {
+		t.Fatalf("recursive estimate sources for %s: %#v", category, score.EstimateSources)
+	}
+}
+
+func sevenModelSnapshotRows() ([]ReportModel, int) {
 	rows := make([]ReportModel, 7)
 	directCount := 0
 	for i := range rows {
 		rows[i] = ReportModel{Key: string(rune('a' + i)), Projection: &ProjectionInfo{SourceKey: "reviewed"}, LlamboScores: map[string]*LlamboScore{}, UnresolvedReasons: map[string]string{}}
 		limit := 3
 		if i == 0 {
-			limit = 4
+			limit++
 		}
-		for j := 0; j < limit; j++ {
-			category := categorySpecs[j].name
-			rows[i].LlamboScores[category] = &LlamboScore{Score: float64(10*i + j), Coverage: .25, TrustedCoverage: .125, Confidence: "low", Families: []string{"direct"}}
-			directCount++
-		}
+		directCount += addSnapshotDirectScores(&rows[i], i, limit)
 	}
-	before, _ := json.Marshal(rows)
-	estimateOMLXRows(rows, artifact)
-	benchmarkBacked, estimated, unresolved := 0, 0, 0
+	return rows, directCount
+}
+
+func addSnapshotDirectScores(row *ReportModel, rowIndex, limit int) int {
+	for categoryIndex := 0; categoryIndex < limit; categoryIndex++ {
+		category := categorySpecs[categoryIndex].name
+		row.LlamboScores[category] = &LlamboScore{Score: float64(10*rowIndex + categoryIndex), Coverage: .25, TrustedCoverage: .125, Confidence: scoreConfidenceLow, Families: []string{"direct"}}
+	}
+	return limit
+}
+
+func countOMLXScoreKinds(rows []ReportModel) (benchmarkBacked, estimated, unresolved int) {
 	for _, row := range rows {
 		for _, category := range categorySpecs {
-			score := row.LlamboScores[category.name]
-			switch {
+			switch score := row.LlamboScores[category.name]; {
 			case score == nil:
 				unresolved++
 			case score.Estimated:
@@ -123,13 +147,11 @@ func TestLLAMBO9SevenModelSnapshotIs22DirectPlus20Estimated(t *testing.T) {
 			}
 		}
 	}
-	if directCount != 22 || benchmarkBacked != 22 || estimated != 20 || unresolved != 0 {
-		t.Fatalf("matrix counts direct=%d backed=%d estimated=%d unresolved=%d", directCount, benchmarkBacked, estimated, unresolved)
-	}
-	var original []ReportModel
-	if err := json.Unmarshal(before, &original); err != nil {
-		t.Fatal(err)
-	}
+	return benchmarkBacked, estimated, unresolved
+}
+
+func assertDirectScoresUnchanged(t *testing.T, rows, original []ReportModel) {
+	t.Helper()
 	for i := range rows {
 		for category, score := range original[i].LlamboScores {
 			if score != nil && rows[i].LlamboScores[category].Score != score.Score {

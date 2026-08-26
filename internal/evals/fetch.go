@@ -10,6 +10,8 @@ import (
 
 const maxSourceBody = 32 << 20
 
+type officialCardFetcher func(context.Context, Options) (sourceSnapshot, error)
+
 type sourceSnapshot struct {
 	FetchedAt       time.Time `json:"fetched_at"`
 	Models          []Model   `json:"models"`
@@ -71,7 +73,7 @@ func Fetch(ctx context.Context, opts Options) (Result, error) {
 		gemma, gemmaStatus = loadOptionalOfficialSource(ctx, opts, "official-gemma4", func(ctx context.Context) (sourceSnapshot, error) {
 			return fetchOfficialGemma4(ctx, opts)
 		})
-		lfm8, lfm8Status = loadOptionalOfficialSource(ctx, opts, "official-lfm25-8b-a1b", func(ctx context.Context) (sourceSnapshot, error) {
+		lfm8, lfm8Status = loadOptionalOfficialSource(ctx, opts, officialLFM25A1BCacheName, func(ctx context.Context) (sourceSnapshot, error) {
 			return fetchOfficialLFM25A1B(ctx, opts)
 		})
 	} else {
@@ -80,7 +82,7 @@ func Fetch(ctx context.Context, opts Options) (Result, error) {
 		gptOSS, gptOSSStatus = readOptionalOfficialSnapshot(opts, "official-gpt-oss-20b")
 		lfmVL, lfmVLStatus = readOptionalOfficialSnapshot(opts, "official-lfm25-vl-3b")
 		gemma, gemmaStatus = readOptionalOfficialSnapshot(opts, "official-gemma4")
-		lfm8, lfm8Status = readOptionalOfficialSnapshot(opts, "official-lfm25-8b-a1b")
+		lfm8, lfm8Status = readOptionalOfficialSnapshot(opts, officialLFM25A1BCacheName)
 	}
 	llm, llmStatus, err := loadSource(ctx, opts, "llm-stats", func(ctx context.Context) (sourceSnapshot, error) {
 		return fetchLLMStats(ctx, opts)
@@ -115,7 +117,12 @@ func Fetch(ctx context.Context, opts Options) (Result, error) {
 	markSnapshotStale(&eqBench, eqBenchStatus.Cache == "stale")
 	markSnapshotStale(&fiction, fictionStatus.Cache == "stale")
 	markSnapshotStale(&arena, arenaStatus.Cache == "stale")
-	sourceModels := evalsSourceModels(llm.Models, aa.Models, writing.Models, eqBench.Models, fiction.Models, arena.Models, ifeval.Models, lfm.Models, qwen.Models, gptOSS.Models, lfmVL.Models, gemma.Models, lfm8.Models)
+	sourceModels := evalsSourceModels(evalsSourceSet{
+		llm: llm.Models, aa: aa.Models, writing: writing.Models, eqBench: eqBench.Models,
+		fiction: fiction.Models, arena: arena.Models, ifeval: ifeval.Models,
+		lfm: lfm.Models, qwen: qwen.Models, gptOSS: gptOSS.Models, lfmVL: lfmVL.Models,
+		gemma: gemma.Models, lfm8: lfm8.Models,
+	})
 	models := mergeWritingEvidenceModels(mergeModels(llm.Models, aa.Models), writing.Models, eqBench.Models, fiction.Models, arena.Models, ifeval.Models)
 	models = mergeOfficialCardModels(models, lfm.Models, qwen.Models, gptOSS.Models, lfmVL.Models, gemma.Models, lfm8.Models)
 	return Result{
@@ -134,7 +141,6 @@ var (
 	fetchOfficialGPTOSSSource                  = fetchOfficialGPTOSS
 	fetchOfficialLFMVLSource                   = fetchOfficialLFMVL
 	fetchOfficialGemmaSource                   = fetchOfficialGemma4
-	fetchOfficialLFM8Source                    = fetchOfficialLFM25A1B
 	loadFrozenLLMStatsCachedObservationsSource = loadFrozenLLMStatsCachedObservations
 )
 
@@ -153,7 +159,7 @@ func refreshOfficialModelCards(ctx context.Context, opts Options) ([]SourceStatu
 		{"official-gpt-oss-20b", fetchOfficialGPTOSSSource},
 		{"official-lfm25-vl-3b", fetchOfficialLFMVLSource},
 		{"official-gemma4", fetchOfficialGemmaSource},
-		{"official-lfm25-8b-a1b", fetchOfficialLFM8Source},
+		{officialLFM25A1BCacheName, opts.officialLFM8Fetcher},
 	}
 	statuses := make([]SourceStatus, 0, len(tasks))
 	for _, task := range tasks {
@@ -180,7 +186,7 @@ func fetchCachedOnly(opts Options, ifeval sourceSnapshot) (Result, error) {
 	gptOSS, gptOSSStatus := readOptionalOfficialSnapshot(opts, "official-gpt-oss-20b")
 	lfmVL, lfmVLStatus := readOptionalOfficialSnapshot(opts, "official-lfm25-vl-3b")
 	gemma, gemmaStatus := readOptionalOfficialSnapshot(opts, "official-gemma4")
-	lfm8, lfm8Status := readOptionalOfficialSnapshot(opts, "official-lfm25-8b-a1b")
+	lfm8, lfm8Status := readOptionalOfficialSnapshot(opts, officialLFM25A1BCacheName)
 	llm, err := readSnapshot(filepath.Join(opts.CacheDir, "llm-stats.json"))
 	if err != nil {
 		return Result{}, fmt.Errorf("read cached LLM Stats: %w", err)
@@ -199,7 +205,12 @@ func fetchCachedOnly(opts Options, ifeval sourceSnapshot) (Result, error) {
 	markSnapshotStale(&eqBench, !eqBench.FetchedAt.IsZero() && opts.Now().Sub(eqBench.FetchedAt) > opts.TTL)
 	markSnapshotStale(&fiction, !fiction.FetchedAt.IsZero() && opts.Now().Sub(fiction.FetchedAt) > opts.TTL)
 	markSnapshotStale(&arena, !arena.FetchedAt.IsZero() && opts.Now().Sub(arena.FetchedAt) > opts.TTL)
-	sourceModels := evalsSourceModels(llm.Models, aa.Models, writing.Models, eqBench.Models, fiction.Models, arena.Models, ifeval.Models, lfm.Models, qwen.Models, gptOSS.Models, lfmVL.Models, gemma.Models, lfm8.Models)
+	sourceModels := evalsSourceModels(evalsSourceSet{
+		llm: llm.Models, aa: aa.Models, writing: writing.Models, eqBench: eqBench.Models,
+		fiction: fiction.Models, arena: arena.Models, ifeval: ifeval.Models,
+		lfm: lfm.Models, qwen: qwen.Models, gptOSS: gptOSS.Models, lfmVL: lfmVL.Models,
+		gemma: gemma.Models, lfm8: lfm8.Models,
+	})
 	models := mergeWritingEvidenceModels(mergeModels(llm.Models, aa.Models), writing.Models, eqBench.Models, fiction.Models, arena.Models, ifeval.Models)
 	models = mergeOfficialCardModels(models, lfm.Models, qwen.Models, gptOSS.Models, lfmVL.Models, gemma.Models, lfm8.Models)
 	writingCache := "cached"
@@ -244,21 +255,26 @@ type sourceModelGroup struct {
 	models   []Model
 }
 
-func evalsSourceModels(llm, aa, writing, eqBench, fiction, arena, ifeval, lfm, qwen, gptOSS, lfmVL, gemma, lfm8 []Model) []SourceModel {
+type evalsSourceSet struct {
+	llm, aa, writing, eqBench, fiction, arena, ifeval []Model
+	lfm, qwen, gptOSS, lfmVL, gemma, lfm8             []Model
+}
+
+func evalsSourceModels(sources evalsSourceSet) []SourceModel {
 	return taggedSourceModels([]sourceModelGroup{
-		{"llm-stats", llm},
-		{"artificial-analysis", aa},
-		{"writingbench", writing},
-		{"eqbench-creative-v3", eqBench},
-		{WritingPrimaryID, fiction},
-		{ArenaCreativeSourceID, arena},
-		{"ifeval-official", ifeval},
-		{"liquidai-lfm25-2.6b-card", lfm},
-		{"qwen3.8-27b-card", qwen},
-		{"openai-gpt-oss-model-card", gptOSS},
-		{"liquidai-lfm25-vl-3b-card", lfmVL},
-		{"google-gemma4-model-card", gemma},
-		{"liquidai-lfm25-8b-a1b-card", lfm8},
+		{llmStatsSourceID, sources.llm},
+		{artificialAnalysisSourceID, sources.aa},
+		{writingBenchSourceID, sources.writing},
+		{eqBenchCreativeSourceID, sources.eqBench},
+		{WritingPrimaryID, sources.fiction},
+		{ArenaCreativeSourceID, sources.arena},
+		{ifevalOfficialSourceID, sources.ifeval},
+		{lfm25SourceID, sources.lfm},
+		{qwen38SourceID, sources.qwen},
+		{gptOSSSourceID, sources.gptOSS},
+		{lfm25VLSourceID, sources.lfmVL},
+		{gemma4SourceID, sources.gemma},
+		{lfm25A1BSourceID, sources.lfm8},
 	})
 }
 
@@ -342,7 +358,7 @@ func mergeOfficialCardModels(models []Model, cards ...[]Model) []Model {
 	byKey := make(map[string]int, len(models))
 	for i := range models {
 		byKey[models[i].Key] = i
-		if alias, ok := officialCardKeyAliases[models[i].Key]; ok {
+		if alias, ok := officialCardKeyAlias(models[i].Key); ok {
 			byKey[alias] = i
 		}
 	}
@@ -434,6 +450,9 @@ func (o *Options) applyDefaults() {
 		o.OfficialGemmaURL = "https://huggingface.co/google/gemma-4-31B/resolve/5bbc2fb1c1b2c611d06e3d9f23c170ba21659d89/README.md"
 	}
 	if o.OfficialLFM8URL == "" {
-		o.OfficialLFM8URL = "https://huggingface.co/LiquidAI/LFM2.5-8B-A1B/resolve/b9aebfcbe28b6cb374042f495d733037550ab146/README.md"
+		o.OfficialLFM8URL = lfm25A1BURL
+	}
+	if o.officialLFM8Fetcher == nil {
+		o.officialLFM8Fetcher = fetchOfficialLFM25A1B
 	}
 }

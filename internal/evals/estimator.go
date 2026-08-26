@@ -90,7 +90,7 @@ func estimatorFingerprint(artifact estimatorArtifact) string {
 
 func validEstimatorMethod(method string) bool {
 	switch method {
-	case "organization-balanced-prior", "ridge", "similarity-knn":
+	case estimatorMethodPrior, estimatorMethodRidge, estimatorMethodKNN:
 		return true
 	default:
 		return false
@@ -117,7 +117,7 @@ func estimateOMLXRows(rows []ReportModel, artifact estimatorArtifact) {
 			support, validationMAE, errorP90 := target.Support, target.ValidationMAE, target.ErrorP90
 			row.LlamboScores[category.name] = &LlamboScore{
 				Score: value, Coverage: 0, TrustedCoverage: 0, Checks: nil, Agreement: nil,
-				Confidence: "low", Estimated: true, EstimateMethod: method,
+				Confidence: scoreConfidenceLow, Estimated: true, EstimateMethod: method,
 				EstimateSources: sources, EstimateSupport: &support,
 				EstimateValidationMAE: &validationMAE, EstimateErrorP90: &errorP90,
 				EstimateCalibrationFingerprint: artifact.Fingerprint,
@@ -133,7 +133,7 @@ func predictCategoryEstimate(row ReportModel, direct map[string]*LlamboScore, ta
 		return clampScore(target.Prior), nil, "prior-only"
 	}
 	switch target.Method {
-	case "ridge":
+	case estimatorMethodRidge:
 		features := estimatorFeatures(direct, target.Category)
 		if len(target.Coefficients) == len(features)+1 {
 			prediction := target.Coefficients[0]
@@ -142,8 +142,11 @@ func predictCategoryEstimate(row ReportModel, direct map[string]*LlamboScore, ta
 			}
 			return clampScore(prediction), sources, target.Method
 		}
-	case "similarity-knn":
-		if prediction, ok := predictKNN(directScores(direct), target.Category, training, target.K, target.PriorShrink, target.Prior); ok {
+	case estimatorMethodKNN:
+		if prediction, ok := predictKNN(knnPredictionInput{
+			scores: directScores(direct), target: target.Category, training: training,
+			k: target.K, shrink: target.PriorShrink, prior: target.Prior,
+		}); ok {
 			return clampScore(prediction), sources, target.Method
 		}
 	}
@@ -195,17 +198,26 @@ func estimatorMapFeatures(scores map[string]float64, target string) []float64 {
 	return append(values, presence...)
 }
 
-func predictKNN(scores map[string]float64, target string, training []estimatorTrainingRow, k int, shrink, prior float64) (float64, bool) {
+type knnPredictionInput struct {
+	scores   map[string]float64
+	target   string
+	training []estimatorTrainingRow
+	k        int
+	shrink   float64
+	prior    float64
+}
+
+func predictKNN(input knnPredictionInput) (float64, bool) {
 	type neighbor struct{ distance, score float64 }
-	neighbors := make([]neighbor, 0, len(training))
-	for _, row := range training {
-		targetScore, ok := row.Scores[target]
+	neighbors := make([]neighbor, 0, len(input.training))
+	for _, row := range input.training {
+		targetScore, ok := row.Scores[input.target]
 		if !ok {
 			continue
 		}
 		sum, shared := 0.0, 0
-		for category, value := range scores {
-			if category == target {
+		for category, value := range input.scores {
+			if category == input.target {
 				continue
 			}
 			if other, exists := row.Scores[category]; exists {
@@ -222,11 +234,11 @@ func predictKNN(scores map[string]float64, target string, training []estimatorTr
 		return 0, false
 	}
 	sort.Slice(neighbors, func(i, j int) bool { return neighbors[i].distance < neighbors[j].distance })
-	if k <= 0 || k > len(neighbors) {
-		k = len(neighbors)
+	if input.k <= 0 || input.k > len(neighbors) {
+		input.k = len(neighbors)
 	}
-	weighted, weight := prior*shrink, shrink
-	for _, candidate := range neighbors[:k] {
+	weighted, weight := input.prior*input.shrink, input.shrink
+	for _, candidate := range neighbors[:input.k] {
 		w := 1 / (candidate.distance + .05)
 		weighted += w * candidate.score
 		weight += w

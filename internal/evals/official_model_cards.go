@@ -27,6 +27,32 @@ const (
 	modelCardDirection  = "higher"
 	modelCardEvidence   = "first_party"
 	modelCardSourceType = "published comparison table"
+
+	llmStatsSourceID           = "llm-stats"
+	artificialAnalysisSourceID = "artificial-analysis"
+	writingBenchSourceID       = "writingbench"
+	eqBenchCreativeSourceID    = "eqbench-creative-v3"
+	lfm25SourceID              = "liquidai-lfm25-2.6b-card"
+	qwen38SourceID             = "qwen3.8-27b-card"
+	gptOSSSourceID             = "openai-gpt-oss-model-card"
+	lfm25VLSourceID            = "liquidai-lfm25-vl-3b-card"
+	gemma4SourceID             = "google-gemma4-model-card"
+	organizationLiquidAI       = "Liquid AI"
+	organizationQwen           = "Qwen"
+	organizationOpenAI         = "OpenAI"
+	organizationGoogle         = "Google"
+	officialLFM25A1BCacheName  = "official-lfm25-8b-a1b"
+	lfm25A1BSourceID           = "liquidai-lfm25-8b-a1b-card"
+	lfm25A1BModelKey           = "lfm-2.5-8b-a1b"
+	lfm25A1BURL                = "https://huggingface.co/LiquidAI/LFM2.5-8B-A1B/resolve/b9aebfcbe28b6cb374042f495d733037550ab146/README.md"
+	ifevalOfficialSourceID     = "ifeval-official"
+	gemma431BHostedID          = "google/gemma-4-31B-it"
+	gemma431BModelKey          = "gemma-4-31b-it"
+	gemma431BModelName         = "Gemma 4 31B"
+	scoreConfidenceLow         = "low"
+	estimatorMethodPrior       = "organization-balanced-prior"
+	estimatorMethodRidge       = "ridge"
+	estimatorMethodKNN         = "similarity-knn"
 )
 
 // officialCardTargetScores seals the complete target row from each pinned
@@ -49,8 +75,8 @@ var officialCardTargetScores = map[string]map[string]map[string]float64{
 		"gemma-4-31b-it":     {"mmlu-pro": 85.2, "aime": 89.2, "livecodebench-v6": 80.0, "gpqa": 84.3, "tau2-bench": 76.9},
 		"gemma-4-26b-a4b-it": {"mmlu-pro": 82.6, "aime": 88.3, "livecodebench-v6": 77.1, "gpqa": 82.3, "tau2-bench": 68.2},
 	},
-	"official-lfm25-8b-a1b": {"lfm-2.5-8b-a1b": {
-		"aime": 42.53, "ifeval-official": 91.84, "ifbench": 56.47, "multi-if": 79.93,
+	officialLFM25A1BCacheName: {lfm25A1BModelKey: {
+		"aime": 42.53, ifevalOfficialSourceID: 91.84, "ifbench": 56.47, "multi-if": 79.93,
 	}},
 }
 
@@ -76,46 +102,46 @@ type officialCardSpec struct {
 
 func lfm25CardSpec() officialCardSpec {
 	return officialCardSpec{
-		sourceID: "liquidai-lfm25-2.6b-card", modelKey: "lfm-2.5-2.6b", modelName: "LFM2.5-2.6B", organization: "Liquid AI", revision: lfm25Revision, contentSHA: lfm25ContentSHA,
+		sourceID: lfm25SourceID, modelKey: "lfm-2.5-2.6b", modelName: "LFM2.5-2.6B", organization: organizationLiquidAI, revision: lfm25Revision, contentSHA: lfm25ContentSHA,
 		url: func(opts Options) string { return opts.OfficialLFMURL }, parse: parseLFM25Card,
 	}
 }
 
 func qwen38CardSpec() officialCardSpec {
 	return officialCardSpec{
-		sourceID: "qwen3.8-27b-card", modelKey: "qwen3.8-27b", modelName: "Qwen3.8-27B", organization: "Qwen", revision: qwen38Revision, contentSHA: qwen38ContentSHA,
+		sourceID: qwen38SourceID, modelKey: "qwen3.8-27b", modelName: "Qwen3.8-27B", organization: organizationQwen, revision: qwen38Revision, contentSHA: qwen38ContentSHA,
 		url: func(opts Options) string { return opts.OfficialQwenURL }, parse: parseQwen38Card,
 	}
 }
 
 func gptOSSCardSpec() officialCardSpec {
 	return officialCardSpec{
-		sourceID: "openai-gpt-oss-model-card", modelKey: "gpt-oss-20b-high", modelName: "gpt-oss-20b (high)", organization: "OpenAI", revision: gptOSSRevision, contentSHA: gptOSSContentSHA,
+		sourceID: gptOSSSourceID, modelKey: "gpt-oss-20b-high", modelName: "gpt-oss-20b (high)", organization: organizationOpenAI, revision: gptOSSRevision, contentSHA: gptOSSContentSHA,
 		url: func(opts Options) string { return opts.OfficialGPTOSSURL }, parse: parseGPTOSSCard, columns: 6,
 	}
 }
 
 func lfm25VLCardSpec() officialCardSpec {
 	return officialCardSpec{
-		sourceID: "liquidai-lfm25-vl-3b-card", modelKey: "lfm-2.5-vl-3b", modelName: "LFM2.5-VL-3B", organization: "Liquid AI", revision: lfm25VLRevision, contentSHA: lfm25VLContentSHA,
+		sourceID: lfm25VLSourceID, modelKey: "lfm-2.5-vl-3b", modelName: "LFM2.5-VL-3B", organization: organizationLiquidAI, revision: lfm25VLRevision, contentSHA: lfm25VLContentSHA,
 		url: func(opts Options) string { return opts.OfficialLFMVLURL }, parse: parseLFM25VLCard, columns: 6,
 	}
 }
 
 func gemma4CardSpec() officialCardSpec {
 	return officialCardSpec{
-		sourceID: "google-gemma4-model-card", revision: gemma4Revision, contentSHA: gemma4ContentSHA,
+		sourceID: gemma4SourceID, revision: gemma4Revision, contentSHA: gemma4ContentSHA,
 		url: func(opts Options) string { return opts.OfficialGemmaURL }, parse: parseGemma4Card, columns: 6,
 		targets: []officialCardTarget{
-			{modelKey: "gemma-4-31b-it", modelName: "Gemma 4 31B", organization: "Google", column: 0},
-			{modelKey: "gemma-4-26b-a4b-it", modelName: "Gemma 4 26B A4B", organization: "Google", column: 1},
+			{modelKey: gemma431BModelKey, modelName: gemma431BModelName, organization: organizationGoogle, column: 0},
+			{modelKey: "gemma-4-26b-a4b-it", modelName: "Gemma 4 26B A4B", organization: organizationGoogle, column: 1},
 		},
 	}
 }
 
 func lfm25A1BCardSpec() officialCardSpec {
 	return officialCardSpec{
-		sourceID: "liquidai-lfm25-8b-a1b-card", modelKey: "lfm-2.5-8b-a1b", modelName: "LFM2.5-8B-A1B", organization: "Liquid AI", revision: lfm25A1BRevision, contentSHA: lfm25A1BContentSHA,
+		sourceID: lfm25A1BSourceID, modelKey: lfm25A1BModelKey, modelName: "LFM2.5-8B-A1B", organization: organizationLiquidAI, revision: lfm25A1BRevision, contentSHA: lfm25A1BContentSHA,
 		url: func(opts Options) string { return opts.OfficialLFM8URL }, parse: parseLFM25A1BCard,
 	}
 }
@@ -132,7 +158,7 @@ func officialCardSpecForCache(cacheName string) (officialCardSpec, bool) {
 		return lfm25VLCardSpec(), true
 	case "official-gemma4":
 		return gemma4CardSpec(), true
-	case "official-lfm25-8b-a1b":
+	case officialLFM25A1BCacheName:
 		return lfm25A1BCardSpec(), true
 	default:
 		return officialCardSpec{}, false
@@ -336,10 +362,18 @@ func parseGemma4Card(data []byte) (map[string][]float64, error) {
 // value is consistent everywhere in the pinned card. BFCLv4 is deliberately
 // absent: this revision reports both 48.50 and 49.73 for the same target.
 func parseLFM25A1BCard(data []byte) (map[string][]float64, error) {
-	labels := map[string]string{"IFEval": "ifeval-official", "IFBench": "ifbench", "Multi-IF": "multi-if", "AIME25": "aime"}
+	labels := map[string]string{"IFEval": ifevalOfficialSourceID, "IFBench": "ifbench", "Multi-IF": "multi-if", "AIME25": "aime"}
+	rows := parseLFM25A1BRows(string(data), labels)
+	if _, err := checkedCardRows(rows, labels); err != nil {
+		return nil, err
+	}
+	return rows, validateLFM25A1BRowCounts(rows)
+}
+
+func parseLFM25A1BRows(data string, labels map[string]string) map[string][]float64 {
 	rows := make(map[string][]float64, len(labels))
 	columns := map[int]string{}
-	for _, line := range strings.Split(string(data), "\n") {
+	for _, line := range strings.Split(data, "\n") {
 		line = strings.TrimSpace(line)
 		if !strings.HasPrefix(line, "|") {
 			columns = map[int]string{}
@@ -349,41 +383,54 @@ func parseLFM25A1BCard(data []byte) (map[string][]float64, error) {
 		for i := range cells {
 			cells[i] = strings.TrimSpace(cells[i])
 		}
-		if len(cells) > 1 && cells[0] == "Model" {
-			columns = map[int]string{}
-			for i, cell := range cells {
-				if benchmark, ok := labels[cell]; ok {
-					columns[i] = benchmark
-				}
-			}
+		if isLFM25A1BHeader(cells) {
+			columns = lfm25A1BColumns(cells, labels)
 			continue
 		}
 		if len(columns) == 0 || strings.HasPrefix(cells[0], ":---") || strings.HasPrefix(cells[0], "---") {
 			continue
 		}
-		for column, benchmark := range columns {
-			if column >= len(cells) {
-				continue
-			}
-			values := parseScoreCells([]string{cells[column]})
-			if len(values) == 1 {
-				rows[benchmark] = append(rows[benchmark], values[0])
-			}
+		appendLFM25A1BRowScores(rows, columns, cells)
+	}
+	return rows
+}
+
+func isLFM25A1BHeader(cells []string) bool {
+	return len(cells) > 1 && cells[0] == "Model"
+}
+
+func lfm25A1BColumns(cells []string, labels map[string]string) map[int]string {
+	columns := make(map[int]string, len(labels))
+	for i, cell := range cells {
+		if benchmark, ok := labels[cell]; ok {
+			columns[i] = benchmark
 		}
 	}
-	if _, err := checkedCardRows(rows, labels); err != nil {
-		return nil, err
+	return columns
+}
+
+func appendLFM25A1BRowScores(rows map[string][]float64, columns map[int]string, cells []string) {
+	for column, benchmark := range columns {
+		if column >= len(cells) {
+			continue
+		}
+		if values := parseScoreCells([]string{cells[column]}); len(values) == 1 {
+			rows[benchmark] = append(rows[benchmark], values[0])
+		}
 	}
+}
+
+func validateLFM25A1BRowCounts(rows map[string][]float64) error {
 	for benchmark, values := range rows {
 		minimum := 8
 		if benchmark == "aime" {
 			minimum = 6
 		}
 		if len(values) < minimum {
-			return nil, fmt.Errorf("%s comparison cohort has %d values, want at least %d", benchmark, len(values), minimum)
+			return fmt.Errorf("%s comparison cohort has %d values, want at least %d", benchmark, len(values), minimum)
 		}
 	}
-	return rows, nil
+	return nil
 }
 
 func parseMarkdownTable(data []byte, labels map[string]string) (map[string][]float64, error) {

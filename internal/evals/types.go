@@ -44,6 +44,7 @@ type Options struct {
 	OfficialGemmaURL             string
 	OfficialLFM8URL              string
 	Now                          func() time.Time
+	officialLFM8Fetcher          officialCardFetcher
 }
 
 type Result struct {

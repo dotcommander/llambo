@@ -213,9 +213,9 @@ func TestFetchRefreshOfficialCardsRequestsOnlyPinnedCards(t *testing.T) {
 	if err := writeSnapshot(filepath.Join(dir, "artificial-analysis.json"), sourceSnapshot{FetchedAt: now, Models: []Model{{Key: "aa", Name: "AA", AA: &ArtificialMetrics{}}}}); err != nil {
 		t.Fatal(err)
 	}
-	previousLFM, previousQwen, previousGPT, previousLFMVL, previousGemma, previousLFM8 := fetchOfficialLFM25Source, fetchOfficialQwen38Source, fetchOfficialGPTOSSSource, fetchOfficialLFMVLSource, fetchOfficialGemmaSource, fetchOfficialLFM8Source
+	previousLFM, previousQwen, previousGPT, previousLFMVL, previousGemma := fetchOfficialLFM25Source, fetchOfficialQwen38Source, fetchOfficialGPTOSSSource, fetchOfficialLFMVLSource, fetchOfficialGemmaSource
 	t.Cleanup(func() {
-		fetchOfficialLFM25Source, fetchOfficialQwen38Source, fetchOfficialGPTOSSSource, fetchOfficialLFMVLSource, fetchOfficialGemmaSource, fetchOfficialLFM8Source = previousLFM, previousQwen, previousGPT, previousLFMVL, previousGemma, previousLFM8
+		fetchOfficialLFM25Source, fetchOfficialQwen38Source, fetchOfficialGPTOSSSource, fetchOfficialLFMVLSource, fetchOfficialGemmaSource = previousLFM, previousQwen, previousGPT, previousLFMVL, previousGemma
 	})
 	var requested []string
 	fetchOfficialLFM25Source = func(_ context.Context, opts Options) (sourceSnapshot, error) {
@@ -238,19 +238,19 @@ func TestFetchRefreshOfficialCardsRequestsOnlyPinnedCards(t *testing.T) {
 		requested = append(requested, opts.OfficialGemmaURL)
 		return validOfficialSnapshot(t, "official-gemma4"), nil
 	}
-	fetchOfficialLFM8Source = func(_ context.Context, opts Options) (sourceSnapshot, error) {
+	lfm8Fetcher := func(_ context.Context, opts Options) (sourceSnapshot, error) {
 		requested = append(requested, opts.OfficialLFM8URL)
-		return validOfficialSnapshot(t, "official-lfm25-8b-a1b"), nil
+		return validOfficialSnapshot(t, officialLFM25A1BCacheName), nil
 	}
 	var unexpected atomic.Int64
-	result, err := Fetch(context.Background(), Options{CacheDir: dir, RefreshOfficialCards: true, Now: func() time.Time { return now }, Client: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+	result, err := Fetch(context.Background(), Options{CacheDir: dir, RefreshOfficialCards: true, Now: func() time.Time { return now }, officialLFM8Fetcher: lfm8Fetcher, Client: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		unexpected.Add(1)
 		return nil, fmt.Errorf("non-card source must remain cache-only")
 	})}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if unexpected.Load() != 0 || len(requested) != 6 || requested[0] != "https://huggingface.co/LiquidAI/LFM2.5-2.6B/resolve/a334ee78cd38458bb71eda24109ac42dcec1309d/README.md" || requested[1] != "https://huggingface.co/Qwen/Qwen3.8-27B/resolve/1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0/README.md" || requested[2] != "https://arxiv.org/html/2508.10925v1" || requested[3] != "https://huggingface.co/LiquidAI/LFM2.5-VL-3B/resolve/5a414ead75d45db003906d06fb62bd5b6846cec0/README.md" || requested[4] != "https://huggingface.co/google/gemma-4-31B/resolve/5bbc2fb1c1b2c611d06e3d9f23c170ba21659d89/README.md" || requested[5] != "https://huggingface.co/LiquidAI/LFM2.5-8B-A1B/resolve/b9aebfcbe28b6cb374042f495d733037550ab146/README.md" {
+	if unexpected.Load() != 0 || len(requested) != 6 || requested[0] != "https://huggingface.co/LiquidAI/LFM2.5-2.6B/resolve/a334ee78cd38458bb71eda24109ac42dcec1309d/README.md" || requested[1] != "https://huggingface.co/Qwen/Qwen3.8-27B/resolve/1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0/README.md" || requested[2] != "https://arxiv.org/html/2508.10925v1" || requested[3] != "https://huggingface.co/LiquidAI/LFM2.5-VL-3B/resolve/5a414ead75d45db003906d06fb62bd5b6846cec0/README.md" || requested[4] != "https://huggingface.co/google/gemma-4-31B/resolve/5bbc2fb1c1b2c611d06e3d9f23c170ba21659d89/README.md" || requested[5] != lfm25A1BURL {
 		t.Fatalf("source-scoped refresh requested unexpected URLs: requests=%#v non-card=%d", requested, unexpected.Load())
 	}
 	if len(result.Sources) != 14 || sourceStatusNamed(t, result.Sources, "LiquidAI LFM2.5-8B-A1B card").Cache != "fetched" || sourceStatusNamed(t, result.Sources, "LiquidAI LFM2.5-2.6B card").Cache != "fetched" || sourceStatusNamed(t, result.Sources, "Qwen3.8-27B card").Cache != "fetched" || sourceStatusNamed(t, result.Sources, "OpenAI gpt-oss model card").Cache != "fetched" || sourceStatusNamed(t, result.Sources, "LiquidAI LFM2.5-VL-3B card").Cache != "fetched" || sourceStatusNamed(t, result.Sources, "Google Gemma 4 model card").Cache != "fetched" {
@@ -259,9 +259,9 @@ func TestFetchRefreshOfficialCardsRequestsOnlyPinnedCards(t *testing.T) {
 }
 
 func TestFetchRefreshOfficialCardsFailsClosed(t *testing.T) {
-	previousLFM, previousQwen, previousGPT, previousLFMVL, previousGemma, previousLFM8 := fetchOfficialLFM25Source, fetchOfficialQwen38Source, fetchOfficialGPTOSSSource, fetchOfficialLFMVLSource, fetchOfficialGemmaSource, fetchOfficialLFM8Source
+	previousLFM, previousQwen, previousGPT, previousLFMVL, previousGemma := fetchOfficialLFM25Source, fetchOfficialQwen38Source, fetchOfficialGPTOSSSource, fetchOfficialLFMVLSource, fetchOfficialGemmaSource
 	t.Cleanup(func() {
-		fetchOfficialLFM25Source, fetchOfficialQwen38Source, fetchOfficialGPTOSSSource, fetchOfficialLFMVLSource, fetchOfficialGemmaSource, fetchOfficialLFM8Source = previousLFM, previousQwen, previousGPT, previousLFMVL, previousGemma, previousLFM8
+		fetchOfficialLFM25Source, fetchOfficialQwen38Source, fetchOfficialGPTOSSSource, fetchOfficialLFMVLSource, fetchOfficialGemmaSource = previousLFM, previousQwen, previousGPT, previousLFMVL, previousGemma
 	})
 	fetchOfficialLFM25Source = func(context.Context, Options) (sourceSnapshot, error) {
 		return sourceSnapshot{}, fmt.Errorf("card unavailable")

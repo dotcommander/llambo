@@ -61,7 +61,7 @@ func loadSource(ctx context.Context, opts Options, cacheName string, fetch func(
 	if cacheName == "official-gemma4" {
 		name, url = "Google Gemma 4 model card", opts.OfficialGemmaURL
 	}
-	if cacheName == "official-lfm25-8b-a1b" {
+	if cacheName == officialLFM25A1BCacheName {
 		name, url = "LiquidAI LFM2.5-8B-A1B card", opts.OfficialLFM8URL
 	}
 	if !opts.Refresh && cacheErr == nil && opts.Now().Sub(cached.FetchedAt) < opts.TTL {
@@ -114,7 +114,7 @@ func readOptionalOfficialSnapshot(opts Options, cacheName string) (sourceSnapsho
 		name, url = "LiquidAI LFM2.5-VL-3B card", opts.OfficialLFMVLURL
 	case "official-gemma4":
 		name, url = "Google Gemma 4 model card", opts.OfficialGemmaURL
-	case "official-lfm25-8b-a1b":
+	case officialLFM25A1BCacheName:
 		name, url = "LiquidAI LFM2.5-8B-A1B card", opts.OfficialLFM8URL
 	}
 	if err != nil {

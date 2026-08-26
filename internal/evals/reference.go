@@ -257,7 +257,7 @@ func (context scoringContext) resolvedFrozenBenchmarkCohort(benchmark string, re
 	// LLAMBO-8's reviewed LFM2.5-8B-A1B card cohorts are same-methodology
 	// populations and therefore own this exact revision's scale. This narrow
 	// exception does not change LLAMBO-7 arithmetic or other source precedence.
-	if result.SourceID == "liquidai-lfm25-8b-a1b-card" && result.SourceRevision == lfm25A1BRevision {
+	if result.SourceID == lfm25A1BSourceID && result.SourceRevision == lfm25A1BRevision {
 		if cohort := officialCardFrozenCohorts[benchmark][lfm25A1BRevision]; len(cohort) != 0 {
 			clone := append([]float64(nil), cohort...)
 			sort.Float64s(clone)

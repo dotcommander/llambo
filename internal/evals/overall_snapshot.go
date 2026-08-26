@@ -11,6 +11,7 @@ import (
 	"time"
 )
 
+// OMLXScoreSnapshotVersion identifies the current persisted OMLX score schema.
 const OMLXScoreSnapshotVersion = 3
 
 // OMLXScoreSnapshot is the sole durable LLAMBO-6 category-score state. It is a complete

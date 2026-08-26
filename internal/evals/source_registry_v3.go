@@ -14,7 +14,10 @@ import (
 	"time"
 )
 
+// SourceRegistryVersion identifies the reviewed source-admission registry.
 const SourceRegistryVersion = "LLAMBO-6-sources-v6"
+
+// CategoryFormulaVersion identifies the installed LLAMBO category formula.
 const CategoryFormulaVersion = "LLAMBO-9-category"
 
 type SourceClass string
@@ -38,7 +41,7 @@ type SourceRegistration struct {
 var sourceRegistryV3 = []SourceRegistration{
 	{"writingbench", SourceOwnerResult, true, true},
 	{"eqbench-creative-v3", SourceOwnerResult, true, true},
-	{"ifeval-official", SourceFirstPartyResult, true, true},
+	{ifevalOfficialSourceID, SourceFirstPartyResult, true, true},
 	{"llm-stats-models", SourceAggregatorLead, true, false},
 	{"llm-stats-full-results", SourceAggregatorLead, true, false},
 	{"llm-stats-indexes", SourceAggregatorLead, true, false},
@@ -58,7 +61,7 @@ var sourceRegistryV3 = []SourceRegistration{
 	{"openai-gpt-oss-model-card", SourceFirstPartyResult, true, true},
 	{"liquidai-lfm25-vl-3b-card", SourceFirstPartyResult, true, true},
 	{"google-gemma4-model-card", SourceFirstPartyResult, true, true},
-	{"liquidai-lfm25-8b-a1b-card", SourceFirstPartyResult, true, true},
+	{lfm25A1BSourceID, SourceFirstPartyResult, true, true},
 }
 
 func SourceRegistry() []SourceRegistration {
