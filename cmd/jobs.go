@@ -15,6 +15,8 @@ import (
 	"github.com/dotcommander/llambo/internal/styles"
 )
 
+const maxJobStatusErrorBodyBytes = 1 << 20
+
 // Run command flags
 var (
 	runCount   int
@@ -215,6 +217,14 @@ func waitForJobWithWriterContext(ctx context.Context, out io.Writer, serverURL, 
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			return nil, fmt.Errorf("get job status: %w", err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxJobStatusErrorBodyBytes))
+			_ = resp.Body.Close()
+			if readErr != nil {
+				return nil, fmt.Errorf("read job status response (HTTP %d): %w", resp.StatusCode, readErr)
+			}
+			return nil, fmt.Errorf("unexpected job status HTTP %d: %s", resp.StatusCode, string(body))
 		}
 
 		var jobResp gateway.JobResponse
