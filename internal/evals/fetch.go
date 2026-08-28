@@ -55,35 +55,20 @@ func Fetch(ctx context.Context, opts Options) (Result, error) {
 		}
 		return result, nil
 	}
-	var lfm, qwen, gptOSS, lfmVL, gemma, lfm8 sourceSnapshot
-	var lfmStatus, qwenStatus, gptOSSStatus, lfmVLStatus, gemmaStatus, lfm8Status SourceStatus
-	if opts.Refresh {
-		lfm, lfmStatus = loadOptionalOfficialSource(ctx, opts, "official-lfm25-2.6b", func(ctx context.Context) (sourceSnapshot, error) {
-			return fetchOfficialLFM25(ctx, opts)
-		})
-		qwen, qwenStatus = loadOptionalOfficialSource(ctx, opts, "official-qwen3.8-27b", func(ctx context.Context) (sourceSnapshot, error) {
-			return fetchOfficialQwen38(ctx, opts)
-		})
-		gptOSS, gptOSSStatus = loadOptionalOfficialSource(ctx, opts, "official-gpt-oss-20b", func(ctx context.Context) (sourceSnapshot, error) {
-			return fetchOfficialGPTOSS(ctx, opts)
-		})
-		lfmVL, lfmVLStatus = loadOptionalOfficialSource(ctx, opts, "official-lfm25-vl-3b", func(ctx context.Context) (sourceSnapshot, error) {
-			return fetchOfficialLFMVL(ctx, opts)
-		})
-		gemma, gemmaStatus = loadOptionalOfficialSource(ctx, opts, "official-gemma4", func(ctx context.Context) (sourceSnapshot, error) {
-			return fetchOfficialGemma4(ctx, opts)
-		})
-		lfm8, lfm8Status = loadOptionalOfficialSource(ctx, opts, officialLFM25A1BCacheName, func(ctx context.Context) (sourceSnapshot, error) {
-			return fetchOfficialLFM25A1B(ctx, opts)
-		})
-	} else {
-		lfm, lfmStatus = readOptionalOfficialSnapshot(opts, "official-lfm25-2.6b")
-		qwen, qwenStatus = readOptionalOfficialSnapshot(opts, "official-qwen3.8-27b")
-		gptOSS, gptOSSStatus = readOptionalOfficialSnapshot(opts, "official-gpt-oss-20b")
-		lfmVL, lfmVLStatus = readOptionalOfficialSnapshot(opts, "official-lfm25-vl-3b")
-		gemma, gemmaStatus = readOptionalOfficialSnapshot(opts, "official-gemma4")
-		lfm8, lfm8Status = readOptionalOfficialSnapshot(opts, officialLFM25A1BCacheName)
+	var cards [officialCardCount]sourceSnapshot
+	var cardStatuses [officialCardCount]SourceStatus
+	for i, descriptor := range officialCardDescriptors {
+		if opts.Refresh {
+			fetcher := descriptor.resolveFetcher(opts)
+			cards[i], cardStatuses[i] = loadOptionalOfficialSource(ctx, opts, descriptor.cacheName, func(ctx context.Context) (sourceSnapshot, error) {
+				return fetcher(ctx, opts)
+			})
+		} else {
+			cards[i], cardStatuses[i] = readOptionalOfficialSnapshot(opts, descriptor.cacheName)
+		}
 	}
+	lfm, qwen, gptOSS, lfmVL, gemma, lfm8 := cards[officialLFM25Card], cards[officialQwen38Card], cards[officialGPTOSSCard], cards[officialLFMVLCard], cards[officialGemma4Card], cards[officialLFM25A1BCard]
+	lfmStatus, qwenStatus, gptOSSStatus, lfmVLStatus, gemmaStatus, lfm8Status := cardStatuses[officialLFM25Card], cardStatuses[officialQwen38Card], cardStatuses[officialGPTOSSCard], cardStatuses[officialLFMVLCard], cardStatuses[officialGemma4Card], cardStatuses[officialLFM25A1BCard]
 	llm, llmStatus, err := loadSource(ctx, opts, "llm-stats", func(ctx context.Context) (sourceSnapshot, error) {
 		return fetchLLMStats(ctx, opts)
 	})
@@ -136,13 +121,19 @@ func Fetch(ctx context.Context, opts Options) (Result, error) {
 }
 
 var (
-	fetchOfficialLFM25Source                   = fetchOfficialLFM25
-	fetchOfficialQwen38Source                  = fetchOfficialQwen38
-	fetchOfficialGPTOSSSource                  = fetchOfficialGPTOSS
-	fetchOfficialLFMVLSource                   = fetchOfficialLFMVL
-	fetchOfficialGemmaSource                   = fetchOfficialGemma4
+	fetchOfficialLFM25Source                   officialCardFetcher
+	fetchOfficialQwen38Source                  officialCardFetcher
+	fetchOfficialGPTOSSSource                  officialCardFetcher
+	fetchOfficialLFMVLSource                   officialCardFetcher
+	fetchOfficialGemmaSource                   officialCardFetcher
 	loadFrozenLLMStatsCachedObservationsSource = loadFrozenLLMStatsCachedObservations
 )
+
+func officialCardFetcherForSpec(spec officialCardSpec) officialCardFetcher {
+	return func(ctx context.Context, opts Options) (sourceSnapshot, error) {
+		return fetchOfficialCard(ctx, opts, spec)
+	}
+}
 
 // refreshOfficialModelCards is intentionally a source-scoped network path.
 // It forces only the six reviewed card adapters to refresh, then leaves the
@@ -150,30 +141,20 @@ var (
 func refreshOfficialModelCards(ctx context.Context, opts Options) ([]SourceStatus, error) {
 	refresh := opts
 	refresh.Refresh = true
-	tasks := []struct {
-		cache string
-		fetch func(context.Context, Options) (sourceSnapshot, error)
-	}{
-		{"official-lfm25-2.6b", fetchOfficialLFM25Source},
-		{"official-qwen3.8-27b", fetchOfficialQwen38Source},
-		{"official-gpt-oss-20b", fetchOfficialGPTOSSSource},
-		{"official-lfm25-vl-3b", fetchOfficialLFMVLSource},
-		{"official-gemma4", fetchOfficialGemmaSource},
-		{officialLFM25A1BCacheName, opts.officialLFM8Fetcher},
-	}
-	statuses := make([]SourceStatus, 0, len(tasks))
-	for _, task := range tasks {
-		snapshot, status, err := loadSource(ctx, refresh, task.cache, func(ctx context.Context) (sourceSnapshot, error) {
-			return task.fetch(ctx, refresh)
+	statuses := make([]SourceStatus, 0, len(officialCardDescriptors))
+	for _, descriptor := range officialCardDescriptors {
+		fetcher := descriptor.resolveFetcher(opts)
+		snapshot, status, err := loadSource(ctx, refresh, descriptor.cacheName, func(ctx context.Context) (sourceSnapshot, error) {
+			return fetcher(ctx, refresh)
 		})
 		if err != nil {
-			return nil, fmt.Errorf("refresh official model card %q: %w", task.cache, err)
+			return nil, fmt.Errorf("refresh official model card %q: %w", descriptor.cacheName, err)
 		}
 		if status.Cache != "fetched" {
-			return nil, fmt.Errorf("refresh official model card %q did not fetch", task.cache)
+			return nil, fmt.Errorf("refresh official model card %q did not fetch", descriptor.cacheName)
 		}
-		if err := validateOfficialCardSnapshot(task.cache, snapshot); err != nil {
-			return nil, fmt.Errorf("refresh official model card %q: %w", task.cache, err)
+		if err := validateOfficialCardSnapshot(descriptor.cacheName, snapshot); err != nil {
+			return nil, fmt.Errorf("refresh official model card %q: %w", descriptor.cacheName, err)
 		}
 		statuses = append(statuses, status)
 	}
@@ -181,12 +162,13 @@ func refreshOfficialModelCards(ctx context.Context, opts Options) ([]SourceStatu
 }
 
 func fetchCachedOnly(opts Options, ifeval sourceSnapshot) (Result, error) {
-	lfm, lfmStatus := readOptionalOfficialSnapshot(opts, "official-lfm25-2.6b")
-	qwen, qwenStatus := readOptionalOfficialSnapshot(opts, "official-qwen3.8-27b")
-	gptOSS, gptOSSStatus := readOptionalOfficialSnapshot(opts, "official-gpt-oss-20b")
-	lfmVL, lfmVLStatus := readOptionalOfficialSnapshot(opts, "official-lfm25-vl-3b")
-	gemma, gemmaStatus := readOptionalOfficialSnapshot(opts, "official-gemma4")
-	lfm8, lfm8Status := readOptionalOfficialSnapshot(opts, officialLFM25A1BCacheName)
+	var cards [officialCardCount]sourceSnapshot
+	var cardStatuses [officialCardCount]SourceStatus
+	for i, descriptor := range officialCardDescriptors {
+		cards[i], cardStatuses[i] = readOptionalOfficialSnapshot(opts, descriptor.cacheName)
+	}
+	lfm, qwen, gptOSS, lfmVL, gemma, lfm8 := cards[officialLFM25Card], cards[officialQwen38Card], cards[officialGPTOSSCard], cards[officialLFMVLCard], cards[officialGemma4Card], cards[officialLFM25A1BCard]
+	lfmStatus, qwenStatus, gptOSSStatus, lfmVLStatus, gemmaStatus, lfm8Status := cardStatuses[officialLFM25Card], cardStatuses[officialQwen38Card], cardStatuses[officialGPTOSSCard], cardStatuses[officialLFMVLCard], cardStatuses[officialGemma4Card], cardStatuses[officialLFM25A1BCard]
 	llm, err := readSnapshot(filepath.Join(opts.CacheDir, "llm-stats.json"))
 	if err != nil {
 		return Result{}, fmt.Errorf("read cached LLM Stats: %w", err)
@@ -453,6 +435,6 @@ func (o *Options) applyDefaults() {
 		o.OfficialLFM8URL = lfm25A1BURL
 	}
 	if o.officialLFM8Fetcher == nil {
-		o.officialLFM8Fetcher = fetchOfficialLFM25A1B
+		o.officialLFM8Fetcher = officialCardFetcherForSpec(officialCardDescriptors[officialLFM25A1BCard].spec)
 	}
 }

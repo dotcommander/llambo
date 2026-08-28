@@ -100,6 +100,32 @@ type officialCardSpec struct {
 	columns      int
 }
 
+type officialCardDescriptor struct {
+	cacheName string
+	spec      officialCardSpec
+	fetcher   *officialCardFetcher
+}
+
+func (d officialCardDescriptor) resolveFetcher(opts Options) officialCardFetcher {
+	if d.fetcher == nil {
+		return opts.officialLFM8Fetcher
+	}
+	if *d.fetcher != nil {
+		return *d.fetcher
+	}
+	return officialCardFetcherForSpec(d.spec)
+}
+
+const (
+	officialLFM25Card = iota
+	officialQwen38Card
+	officialGPTOSSCard
+	officialLFMVLCard
+	officialGemma4Card
+	officialLFM25A1BCard
+	officialCardCount
+)
+
 func lfm25CardSpec() officialCardSpec {
 	return officialCardSpec{
 		sourceID: lfm25SourceID, modelKey: "lfm-2.5-2.6b", modelName: "LFM2.5-2.6B", organization: organizationLiquidAI, revision: lfm25Revision, contentSHA: lfm25ContentSHA,
@@ -146,47 +172,22 @@ func lfm25A1BCardSpec() officialCardSpec {
 	}
 }
 
+var officialCardDescriptors = [officialCardCount]officialCardDescriptor{
+	{cacheName: "official-lfm25-2.6b", spec: lfm25CardSpec(), fetcher: &fetchOfficialLFM25Source},
+	{cacheName: "official-qwen3.8-27b", spec: qwen38CardSpec(), fetcher: &fetchOfficialQwen38Source},
+	{cacheName: "official-gpt-oss-20b", spec: gptOSSCardSpec(), fetcher: &fetchOfficialGPTOSSSource},
+	{cacheName: "official-lfm25-vl-3b", spec: lfm25VLCardSpec(), fetcher: &fetchOfficialLFMVLSource},
+	{cacheName: "official-gemma4", spec: gemma4CardSpec(), fetcher: &fetchOfficialGemmaSource},
+	{cacheName: officialLFM25A1BCacheName, spec: lfm25A1BCardSpec()},
+}
+
 func officialCardSpecForCache(cacheName string) (officialCardSpec, bool) {
-	switch cacheName {
-	case "official-lfm25-2.6b":
-		return lfm25CardSpec(), true
-	case "official-qwen3.8-27b":
-		return qwen38CardSpec(), true
-	case "official-gpt-oss-20b":
-		return gptOSSCardSpec(), true
-	case "official-lfm25-vl-3b":
-		return lfm25VLCardSpec(), true
-	case "official-gemma4":
-		return gemma4CardSpec(), true
-	case officialLFM25A1BCacheName:
-		return lfm25A1BCardSpec(), true
-	default:
-		return officialCardSpec{}, false
+	for _, descriptor := range officialCardDescriptors {
+		if descriptor.cacheName == cacheName {
+			return descriptor.spec, true
+		}
 	}
-}
-
-func fetchOfficialLFM25(ctx context.Context, opts Options) (sourceSnapshot, error) {
-	return fetchOfficialCard(ctx, opts, lfm25CardSpec())
-}
-
-func fetchOfficialQwen38(ctx context.Context, opts Options) (sourceSnapshot, error) {
-	return fetchOfficialCard(ctx, opts, qwen38CardSpec())
-}
-
-func fetchOfficialGPTOSS(ctx context.Context, opts Options) (sourceSnapshot, error) {
-	return fetchOfficialCard(ctx, opts, gptOSSCardSpec())
-}
-
-func fetchOfficialLFMVL(ctx context.Context, opts Options) (sourceSnapshot, error) {
-	return fetchOfficialCard(ctx, opts, lfm25VLCardSpec())
-}
-
-func fetchOfficialGemma4(ctx context.Context, opts Options) (sourceSnapshot, error) {
-	return fetchOfficialCard(ctx, opts, gemma4CardSpec())
-}
-
-func fetchOfficialLFM25A1B(ctx context.Context, opts Options) (sourceSnapshot, error) {
-	return fetchOfficialCard(ctx, opts, lfm25A1BCardSpec())
+	return officialCardSpec{}, false
 }
 
 func fetchOfficialCard(ctx context.Context, opts Options, spec officialCardSpec) (sourceSnapshot, error) {
