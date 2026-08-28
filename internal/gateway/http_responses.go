@@ -37,15 +37,13 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 }
 
 func writeJSONWithProviderHeaders(w http.ResponseWriter, status int, v interface{}, provider, model string) {
-	w.Header().Set("Content-Type", "application/json")
 	if provider != "" {
 		w.Header().Set("X-Llambo-Provider", provider)
 	}
 	if model != "" {
 		w.Header().Set("X-Llambo-Model", model)
 	}
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
+	writeJSON(w, status, v)
 }
 
 // sanitizeUpstreamError keeps raw provider response bodies and request context
