@@ -56,36 +56,13 @@ func ResolveModelsDevKey(name string, cfg Config) string {
 // LoadGlobalConfig loads config from ~/.config/llambo/config.json
 // Fails fast if config file is missing - run 'llambo config init' first
 func LoadGlobalConfig() (*GlobalConfig, error) {
-	data, err := os.ReadFile(configFile)
+	cfg, err := loadGlobalConfig()
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("config not found: %s\nRun 'llambo config init' to create it", configFile)
-		}
-		return nil, fmt.Errorf("read config: %w", err)
+		return nil, err
 	}
-
-	cfg := &GlobalConfig{
-		Providers: make(map[string]Config),
-	}
-
-	if err := json.Unmarshal(data, cfg); err != nil {
-		return nil, fmt.Errorf("parse config: %w", err)
-	}
-
-	if cfg.DefaultProvider == "" {
-		return nil, fmt.Errorf("config missing required field: default_provider")
-	}
-
-	if len(cfg.Providers) == 0 {
-		return nil, fmt.Errorf("config has no providers defined")
-	}
-
-	cfg.Routing.ApplyDefaults()
-	cfg.Gateway.ApplyDefaults()
 
 	// Apply defaults and merge env vars for API keys
 	for name, pcfg := range cfg.Providers {
-		pcfg.ApplyDefaults()
 		if pcfg.APIKey == "" {
 			pcfg.APIKey = GetAPIKey(name, pcfg)
 		}
@@ -120,10 +97,7 @@ func LoadGlobalConfig() (*GlobalConfig, error) {
 	return cfg, nil
 }
 
-// LoadRawGlobalConfig loads config without merging environment API keys. Use it
-// when writing derived config files so secrets from the process environment are
-// not persisted accidentally.
-func LoadRawGlobalConfig() (*GlobalConfig, error) {
+func loadGlobalConfig() (*GlobalConfig, error) {
 	data, err := os.ReadFile(configFile)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -135,22 +109,35 @@ func LoadRawGlobalConfig() (*GlobalConfig, error) {
 	cfg := &GlobalConfig{
 		Providers: make(map[string]Config),
 	}
+
 	if err := json.Unmarshal(data, cfg); err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
+
 	if cfg.DefaultProvider == "" {
 		return nil, fmt.Errorf("config missing required field: default_provider")
 	}
+
 	if len(cfg.Providers) == 0 {
 		return nil, fmt.Errorf("config has no providers defined")
 	}
+
 	cfg.Routing.ApplyDefaults()
 	cfg.Gateway.ApplyDefaults()
+
 	for name, pcfg := range cfg.Providers {
 		pcfg.ApplyDefaults()
 		cfg.Providers[name] = pcfg
 	}
+
 	return cfg, nil
+}
+
+// LoadRawGlobalConfig loads config without merging environment API keys. Use it
+// when writing derived config files so secrets from the process environment are
+// not persisted accidentally.
+func LoadRawGlobalConfig() (*GlobalConfig, error) {
+	return loadGlobalConfig()
 }
 
 // SaveGlobalConfig saves config to ~/.config/llambo/config.json
