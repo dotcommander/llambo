@@ -12,14 +12,23 @@ func writeSyncedJSON(path string, value any) error {
 		return err
 	}
 	data = append(data, '\n')
+	return writeDurableFile(path, data, 0, 0o600, ".llambo-writing-*")
+}
+
+func writeDurableFile(path string, data []byte, dirMode, fileMode os.FileMode, pattern string) error {
 	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, ".llambo-writing-*")
+	if dirMode != 0 {
+		if err := os.MkdirAll(dir, dirMode); err != nil {
+			return err
+		}
+	}
+	tmp, err := os.CreateTemp(dir, pattern)
 	if err != nil {
 		return err
 	}
 	tmpPath := tmp.Name()
 	defer os.Remove(tmpPath)
-	if err := tmp.Chmod(0o600); err != nil {
+	if err := tmp.Chmod(fileMode); err != nil {
 		_ = tmp.Close()
 		return err
 	}
