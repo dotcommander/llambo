@@ -323,6 +323,41 @@ func TestMergeRefreshedStatusesFailsClosedOnUnknownSource(t *testing.T) {
 	}
 }
 
+func TestDecodeBoundedJSON(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		body    string
+		limit   int64
+		wantErr string
+	}{
+		{name: "valid", body: `{"ok":1}`, limit: 64},
+		{name: "exact limit", body: `{"ok":1}`, limit: 8},
+		{name: "overflow", body: `{"ok":1} `, limit: 8, wantErr: "exceeds 8 bytes"},
+		{name: "second value", body: `{"ok":1}{"extra":2}`, limit: 64, wantErr: "multiple JSON values"},
+		{name: "trailing invalid data", body: `{"ok":1}x`, limit: 64, wantErr: "trailing data"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var got map[string]int
+			err := decodeBoundedJSON(strings.NewReader(tt.body), tt.limit, &got)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("decodeBoundedJSON error = %v, want %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("decodeBoundedJSON: %v", err)
+			}
+			if got["ok"] != 1 {
+				t.Fatalf("decoded value = %#v", got)
+			}
+		})
+	}
+}
+
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }

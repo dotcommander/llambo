@@ -80,6 +80,56 @@ func TestLLAMBO9PriorOnlyFallbackAndByteIdenticalRegeneration(t *testing.T) {
 		if score.EstimateMethod != "prior-only" || len(score.EstimateSources) != 0 || math.IsNaN(score.Score) {
 			t.Fatalf("invalid prior-only estimate: %#v", score)
 		}
+		if score.EstimateValidationMAE != nil || score.EstimateErrorP90 != nil {
+			t.Fatalf("prior-only estimate reported validation quality: %#v", score)
+		}
+	}
+	var encoded []map[string]any
+	if err := json.Unmarshal(a, &encoded); err != nil {
+		t.Fatal(err)
+	}
+	for category, score := range encoded[0]["llambo_scores"].(map[string]any) {
+		fields := score.(map[string]any)
+		if _, ok := fields["estimate_validation_mae"]; ok {
+			t.Fatalf("prior-only %s JSON included validation MAE: %#v", category, fields)
+		}
+		if _, ok := fields["estimate_error_p90"]; ok {
+			t.Fatalf("prior-only %s JSON included error P90: %#v", category, fields)
+		}
+	}
+}
+
+func TestLLAMBO9SupportedEstimateRetainsValidationMetrics(t *testing.T) {
+	artifact, err := loadCategoryEstimator()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := []ReportModel{{Key: "local", Projection: &ProjectionInfo{SourceKey: "reviewed-upstream"}, LlamboScores: map[string]*LlamboScore{"coding": {Score: 81.25}}, UnresolvedReasons: map[string]string{}}}
+	estimateOMLXRows(rows, artifact)
+
+	agents := rows[0].LlamboScores["agents"]
+	if agents.EstimateValidationMAE == nil || agents.EstimateErrorP90 == nil {
+		t.Fatalf("supported estimate omitted validation metrics: %#v", agents)
+	}
+	encoded, err := json.Marshal(agents)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(encoded, &fields); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := fields["estimate_validation_mae"]; !ok {
+		t.Fatalf("supported estimate JSON omitted validation MAE: %s", encoded)
+	}
+	if _, ok := fields["estimate_error_p90"]; !ok {
+		t.Fatalf("supported estimate JSON omitted error P90: %s", encoded)
+	}
+	for _, category := range []string{"long-context", "writing"} {
+		score := rows[0].LlamboScores[category]
+		if score.EstimateValidationMAE != nil || score.EstimateErrorP90 != nil {
+			t.Fatalf("prior estimate %s reported validation quality: %#v", category, score)
+		}
 	}
 }
 

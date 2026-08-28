@@ -26,7 +26,7 @@ func ApplyCategoryEligibility(report *Report, category string, minScore, maxOutp
 	for _, model := range report.Models {
 		if minScore >= 0 {
 			score := model.LlamboScores[category]
-			if score == nil {
+			if score == nil || score.Estimated {
 				diagnostics.MissingPrimary++
 				diagnostics.ExcludedModels++
 				continue

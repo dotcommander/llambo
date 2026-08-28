@@ -1,6 +1,10 @@
 package evals
 
-import "testing"
+import (
+	"slices"
+	"sort"
+	"testing"
+)
 
 func TestApplyOMLXCategoryScoresNeverCreatesOverallComposite(t *testing.T) {
 	report := Report{RankingProfile: "coding", Models: []ReportModel{{Key: "model", LlamboScores: map[string]*LlamboScore{"coding": {Score: 80, TrustedCoverage: .5, Families: []string{"repository-editing", "live-synthesis"}}}, UnresolvedReasons: map[string]string{}}}}
@@ -56,13 +60,47 @@ func TestCategoryRankingSelectsOfficialTiedCandidateRegardlessOfKeyOrder(t *test
 	}
 }
 
-func TestEstimatedProjectionCannotQualifyAsOfficialWinner(t *testing.T) {
+func TestEstimatedProjectionIsExcludedFromCategoryRankings(t *testing.T) {
 	rows := []ReportModel{
 		{Key: "official", LlamboScores: map[string]*LlamboScore{"coding": {Score: 80, TrustedCoverage: .5, Families: []string{"repository-editing", "live-synthesis"}}}},
 		{Key: "estimated", Projection: &ProjectionInfo{Confidence: "low"}, LlamboScores: map[string]*LlamboScore{"coding": {Score: 90, Confidence: "low", Estimated: true, EstimateMethod: "cross-category-remote-shrink-v1"}}},
 	}
 	ranking := buildCategoryRankings(rows)["coding"]
-	if ranking.Status != "provisional" || ranking.Winner != "estimated" || len(ranking.Entries) != 2 || !ranking.Entries[0].Estimated || ranking.Entries[0].WinnerStatus != "provisional" {
-		t.Fatalf("estimated projection did not participate provisionally: %#v", ranking)
+	if ranking.Status != "official" || ranking.Winner != "official" || len(ranking.Entries) != 1 || ranking.Entries[0].Key != "official" || ranking.Entries[0].WinnerStatus != "official" {
+		t.Fatalf("estimated projection affected category ranking: %#v", ranking)
+	}
+	if !rows[1].LlamboScores["coding"].Estimated || rows[1].LlamboScores["coding"].Score != 90 {
+		t.Fatalf("estimate was removed instead of remaining advisory: %#v", rows[1].LlamboScores["coding"])
+	}
+}
+
+func TestCategoryRankByTreatsEstimatedScoresAsUnranked(t *testing.T) {
+	rows := []ReportModel{
+		{Key: "estimated", Name: "Estimated", LlamboScores: map[string]*LlamboScore{"coding": {Score: 99, Estimated: true}}},
+		{Key: "missing", Name: "Missing", LlamboScores: map[string]*LlamboScore{}},
+		{Key: "direct", Name: "Direct", LlamboScores: map[string]*LlamboScore{"coding": {Score: 80}}},
+	}
+	sort.SliceStable(rows, func(i, j int) bool { return compareReportRows(rows[i], rows[j], "coding") })
+	keys := make([]string, len(rows))
+	for i, row := range rows {
+		keys[i] = row.Key
+	}
+	if !slices.Equal(keys, []string{"direct", "estimated", "missing"}) {
+		t.Fatalf("estimated score affected rank-by ordering: %v", keys)
+	}
+}
+
+func TestMatrixRankByTreatsEstimatedOnlyRowsAsUnscored(t *testing.T) {
+	rows := []ReportModel{
+		{Key: "estimated", Name: "Z Estimated", LlamboScores: map[string]*LlamboScore{"coding": {Score: 99, Estimated: true}}},
+		{Key: "unresolved", Name: "A Unresolved", LlamboScores: map[string]*LlamboScore{}},
+	}
+	sort.SliceStable(rows, func(i, j int) bool { return compareReportRows(rows[i], rows[j], "matrix") })
+	keys := make([]string, len(rows))
+	for i, row := range rows {
+		keys[i] = row.Key
+	}
+	if !slices.Equal(keys, []string{"unresolved", "estimated"}) {
+		t.Fatalf("estimated-only row affected matrix ordering: %v", keys)
 	}
 }

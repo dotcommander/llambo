@@ -114,17 +114,25 @@ func estimateOMLXRows(rows []ReportModel, artifact estimatorArtifact) {
 			}
 			target := targets[category.name]
 			value, sources, method := predictCategoryEstimate(*row, direct, target, artifact.Rows)
-			support, validationMAE, errorP90 := target.Support, target.ValidationMAE, target.ErrorP90
+			support := target.Support
+			validationMAE, errorP90 := estimatorValidation(target, method)
 			row.LlamboScores[category.name] = &LlamboScore{
 				Score: value, Coverage: 0, TrustedCoverage: 0, Checks: nil, Agreement: nil,
 				Confidence: scoreConfidenceLow, Estimated: true, EstimateMethod: method,
 				EstimateSources: sources, EstimateSupport: &support,
-				EstimateValidationMAE: &validationMAE, EstimateErrorP90: &errorP90,
+				EstimateValidationMAE: validationMAE, EstimateErrorP90: errorP90,
 				EstimateCalibrationFingerprint: artifact.Fingerprint,
 			}
 			delete(row.UnresolvedReasons, category.name)
 		}
 	}
+}
+
+func estimatorValidation(target estimatorTarget, method string) (*float64, *float64) {
+	if target.Support == 0 || target.Method == estimatorMethodPrior || method == "prior-only" {
+		return nil, nil
+	}
+	return &target.ValidationMAE, &target.ErrorP90
 }
 
 func predictCategoryEstimate(row ReportModel, direct map[string]*LlamboScore, target estimatorTarget, training []estimatorTrainingRow) (float64, []string, string) {

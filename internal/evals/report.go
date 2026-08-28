@@ -205,10 +205,10 @@ func compareReportRows(left, right ReportModel, rankBy string) bool {
 	}
 	var leftScore, rightScore *float64
 	if isCapabilityCategory(rankBy) {
-		if s := left.LlamboScores[rankBy]; s != nil {
+		if s := left.LlamboScores[rankBy]; s != nil && !s.Estimated {
 			leftScore = &s.Score
 		}
-		if s := right.LlamboScores[rankBy]; s != nil {
+		if s := right.LlamboScores[rankBy]; s != nil && !s.Estimated {
 			rightScore = &s.Score
 		}
 	} else {
@@ -240,14 +240,14 @@ func buildCategoryRankings(rows []ReportModel) map[string]CategoryRanking {
 		ranking := CategoryRanking{Category: spec.name, Status: "unresolved"}
 		for _, row := range rows {
 			score := row.LlamboScores[spec.name]
-			if score == nil {
+			if score == nil || score.Estimated {
 				continue
 			}
 			identity := 1.0
 			if row.Projection != nil {
 				identity = projectionMultiplier(row.Projection)
 			}
-			ranking.Entries = append(ranking.Entries, CategoryRankedModel{Key: row.Key, Score: score.Score, TrustedCoverage: score.TrustedCoverage, IdentityConfidence: identity, Estimated: score.Estimated})
+			ranking.Entries = append(ranking.Entries, CategoryRankedModel{Key: row.Key, Score: score.Score, TrustedCoverage: score.TrustedCoverage, IdentityConfidence: identity})
 		}
 		sort.Slice(ranking.Entries, func(i, j int) bool {
 			left, right := ranking.Entries[i], ranking.Entries[j]
@@ -330,7 +330,7 @@ func applyCategoryWinnerStatuses(rows []ReportModel, rankings map[string]Categor
 
 func hasCapabilityScore(model ReportModel) bool {
 	for _, score := range model.LlamboScores {
-		if score != nil {
+		if score != nil && !score.Estimated {
 			return true
 		}
 	}

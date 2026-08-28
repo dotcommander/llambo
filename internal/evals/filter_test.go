@@ -12,6 +12,7 @@ func TestApplyMinimumCategoryScore(t *testing.T) {
 		{Key: "low", LlamboScores: map[string]*LlamboScore{"coding": {Score: 39.9}}},
 		{Key: "missing", LlamboScores: map[string]*LlamboScore{"coding": nil}},
 		{Key: "local", Projection: &ProjectionInfo{SourceKey: "high"}, LlamboScores: map[string]*LlamboScore{"coding": {Score: 43.5}}},
+		{Key: "estimated", Projection: &ProjectionInfo{SourceKey: "high"}, LlamboScores: map[string]*LlamboScore{"coding": {Score: 99, Estimated: true}}},
 	}}
 
 	ApplyCategoryEligibility(&report, "coding", 40, -1)
@@ -19,12 +20,12 @@ func TestApplyMinimumCategoryScore(t *testing.T) {
 	if got := modelKeys(report.Models); strings.Join(got, ",") != "high,boundary,local" {
 		t.Fatalf("unexpected eligible models: %v", got)
 	}
-	want := EligibilityDiagnostics{MinScore: 40, ScoreCategory: "coding", MaxOutputPrice: -1, InputModels: 5, IncludedModels: 3, ExcludedModels: 2, MissingPrimary: 1, BelowScore: 1}
+	want := EligibilityDiagnostics{MinScore: 40, ScoreCategory: "coding", MaxOutputPrice: -1, InputModels: 6, IncludedModels: 3, ExcludedModels: 3, MissingPrimary: 2, BelowScore: 1}
 	if report.Eligibility == nil || *report.Eligibility != want {
 		t.Fatalf("unexpected eligibility diagnostics: %#v", report.Eligibility)
 	}
 	markdown := RenderMarkdown(report, 0)
-	if !strings.Contains(markdown, "Eligibility filters: coding >= 40.0; 3 of 5 models included") {
+	if !strings.Contains(markdown, "Eligibility filters: coding >= 40.0; 3 of 6 models included") {
 		t.Fatalf("eligibility filter missing from Markdown:\n%s", markdown)
 	}
 }

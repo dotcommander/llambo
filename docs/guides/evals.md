@@ -341,10 +341,10 @@ they never refresh implicitly. OMLX inventory discovery is opt-in through
 
 | Option | Type | Default | Behavior |
 | --- | --- | --- | --- |
-| `--rank-by` | string | `matrix` | Selects `coding`, `agents`, `reasoning`, `writing`, `instruction-following`, `long-context`, `speed`, or `price`; omit it for the alphabetical matrix |
+| `--rank-by` | string | `matrix` | Selects `coding`, `agents`, `reasoning`, `writing`, `instruction-following`, `long-context`, `speed`, or `price`; omit it for the alphabetical matrix. Estimated capability values remain display-only. |
 | `--format` | string | `markdown` | Emits `markdown`/`md`, `json`, or standalone `html` |
 | `--limit` | integer | `50` | Limits eligible canonical ranked rows; eligible tracked projections are always included; `0` includes every eligible model |
-| `--min-score` | number | `-1` | With a capability `--rank-by`, includes only models at or above this category score; models without the primary are excluded; a negative value disables the filter |
+| `--min-score` | number | `-1` | With a capability `--rank-by`, includes only models with a direct score at or above this category score; estimated and unresolved values are excluded; a negative value disables the filter |
 | `--max-output-price` | number | `10` | Excludes canonical models whose highest known source output price exceeds this amount per 1M tokens; unknown prices and local projections remain eligible; a negative value disables the filter |
 | `--output`, `-o` | path | stdout | Writes the report atomically to a file |
 | `--projections` | path | built-in registry | Replaces the built-in tracked local/OSS projection registry with a JSON file |
@@ -521,9 +521,10 @@ marked `prior-only`. New direct evidence automatically replaces the estimate.
 An official category winner requires evidence from at least two independent
 families. A lower-coverage leader is `provisional`. Ranking uses full-precision
 score, trusted coverage, then identity confidence; a remaining exact tie produces
-co-winners. Estimates participate in provisional ordering and `--min-score`, but
-can never receive official-winner status. Operational metrics and task-specific
-local evaluations never enter these rankings.
+co-winners. Estimates are display-only advisory values: they never participate in
+category ordering, category rankings, or `--min-score`, and cannot receive
+official-winner status. Operational metrics and task-specific local evaluations
+never enter these rankings.
 
 Successful explicit generation atomically replaces the single local category
 snapshot at `~/.config/llambo/llambo-scores.json`. A failed run leaves the

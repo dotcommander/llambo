@@ -1,6 +1,7 @@
 package evals
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -232,9 +233,30 @@ func getJSON(ctx context.Context, client *http.Client, url, apiKey string, dst a
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("GET %s: HTTP %d", url, resp.StatusCode)
 	}
-	dec := json.NewDecoder(io.LimitReader(resp.Body, maxSourceBody))
-	if err := dec.Decode(dst); err != nil {
+	if err := decodeBoundedJSON(resp.Body, maxSourceBody, dst); err != nil {
 		return fmt.Errorf("decode %s: %w", url, err)
+	}
+	return nil
+}
+
+func decodeBoundedJSON(reader io.Reader, maxBytes int64, dst any) error {
+	data, err := io.ReadAll(io.LimitReader(reader, maxBytes+1))
+	if err != nil {
+		return err
+	}
+	if int64(len(data)) > maxBytes {
+		return fmt.Errorf("response exceeds %d bytes", maxBytes)
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	if err := decoder.Decode(dst); err != nil {
+		return err
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return errors.New("response contains multiple JSON values")
+		}
+		return fmt.Errorf("response contains trailing data: %w", err)
 	}
 	return nil
 }
