@@ -97,6 +97,30 @@ func TestRunDoesNotRetryStop(t *testing.T) {
 	}
 }
 
+func TestRunAppliesTimeoutAcrossLengthRetry(t *testing.T) {
+	t.Parallel()
+	var calls atomic.Int32
+	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if calls.Add(1) == 1 {
+			body := `{"model":"acme/writer","choices":[{"message":{"content":"partial"},"finish_reason":"length"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`
+			return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
+		}
+		<-r.Context().Done()
+		return nil, r.Context().Err()
+	})}
+	options := RunOptions{OutputDir: t.TempDir(), InitialTokens: 128, RetryTokens: 512, Concurrency: 1, ModelTimeout: 20 * time.Millisecond, Execute: true}
+	receipts, _, err := Run(context.Background(), &Client{HTTPClient: client, BaseURL: "https://example.test/api", APIKey: "key"}, testRoster(), "source", "system", options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(receipts[0].Attempts) != 2 || !strings.Contains(receipts[0].Attempts[1].Error, "context deadline exceeded") {
+		t.Fatalf("attempts = %#v", receipts[0].Attempts)
+	}
+	if receipts[0].TotalTimeToFinishMS > 100 {
+		t.Fatalf("model timeout was not shared across attempts: %dms", receipts[0].TotalTimeToFinishMS)
+	}
+}
+
 func TestAutoRouterCapturesRoutedModelAndEnforcesPriceCeiling(t *testing.T) {
 	t.Parallel()
 	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {

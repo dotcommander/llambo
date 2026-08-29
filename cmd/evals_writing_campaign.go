@@ -74,6 +74,7 @@ func (c *evalsWritingCampaignCommand) Run(_ *evalsCommand, io *commandIO) error 
 		InitialTokens: c.InitialTokens,
 		RetryTokens:   c.RetryTokens,
 		Concurrency:   c.Concurrency,
+		ModelTimeout:  c.Timeout,
 		Execute:       c.Execute,
 	}
 	source, err := os.ReadFile(options.SourcePath)

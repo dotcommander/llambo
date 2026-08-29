@@ -23,6 +23,7 @@ type RunOptions struct {
 	InitialTokens int
 	RetryTokens   int
 	Concurrency   int
+	ModelTimeout  time.Duration
 	Execute       bool
 }
 
@@ -121,6 +122,11 @@ func Run(ctx context.Context, client *Client, roster Roster, source, systemPromp
 }
 
 func runModel(ctx context.Context, client *Client, model Model, source, systemPrompt, sourceHash, systemHash string, options RunOptions) Receipt {
+	if options.ModelTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, options.ModelTimeout)
+		defer cancel()
+	}
 	receipt := Receipt{SchemaVersion: ReceiptSchemaVersion, ModelID: model.OpenRouterModelID, LlamboSelector: model.LlamboSelector, Status: "failed", SourceSHA256: sourceHash, SystemSHA256: systemHash, CreatedAt: time.Now().UTC()}
 	initial := min(options.InitialTokens, model.MaxCompletionTokens)
 	first := client.Execute(ctx, model, systemPrompt, source, initial, 1)
