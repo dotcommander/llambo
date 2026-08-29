@@ -36,3 +36,8 @@ fixtures/giza.md
 artifacts/model-sweep/
 artifacts/reviews/
 !artifacts/README.md
+
+# === Writing Campaign Outputs ===
+writing-results*/
+writing*.html
+

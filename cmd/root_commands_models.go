@@ -83,8 +83,9 @@ type evalsReportCommand struct {
 }
 
 type evalsWritingCommand struct {
-	Catalog evalsWritingCatalogCommand `cmd:"" default:"1" hidden:""`
-	Run     evalsWritingRunCommand     `cmd:"" help:"Run a bounded local writing evaluation"`
+	Catalog  evalsWritingCatalogCommand  `cmd:"" default:"1" hidden:""`
+	Run      evalsWritingRunCommand      `cmd:"" help:"Run a bounded local writing evaluation"`
+	Campaign evalsWritingCampaignCommand `cmd:"" help:"Collect an OpenRouter writing comparison and render HTML"`
 }
 
 type evalsExportCommand struct {

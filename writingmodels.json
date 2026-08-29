@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "locked": true,
+  "locked_at": "2026-08-29",
+  "purpose": "OpenRouter-only candidate roster for bounded writing evaluations",
+  "assets": {
+    "source_input": "sample-writing.md",
+    "system_prompt": "writing-system-prompt.md",
+    "comparison_page": "writing.html",
+    "raw_output_directory": "writing-results",
+    "future_multistage": {
+      "enabled": false,
+      "outline_prompt": "tldr_outline_prompt.md",
+      "writer_prompt": "tldr_write_prompt.md",
+      "writer_outline_placeholder": "{{OUTLINE}}"
+    }
+  },
+  "pricing": {
+    "currency": "USD",
+    "unit": "per_1m_tokens",
+    "source": "https://openrouter.ai/api/v1/models",
+    "verified_at": "2026-08-29",
+    "maximum_output_per_1m": 10.0
+  },
+  "policy": {
+    "provider": "openrouter",
+    "exact_model_ids_required": true,
+    "local_models_allowed": false,
+    "aliases_allowed": false,
+    "unknown_prices_allowed": false,
+    "models_over_output_price_limit_allowed": false,
+    "prior_non_openrouter_results_are_provenance_only": true
+  },
+  "test_defaults": {
+    "pipeline": "source + system prompt -> raw result -> HTML comparison",
+    "limit": 5,
+    "iterations": 1,
+    "concurrency": 2,
+    "timeout": "5m",
+    "initial_max_completion_tokens": 8192,
+    "length_retry_max_completion_tokens": 32768,
+    "execute": false,
+    "required_before_dry_run": [
+      "source_input",
+      "system_prompt",
+      "explicit_output_directory"
+    ],
+    "required_before_execution": [
+      "successful_dry_run",
+      "explicit_execution_authorization"
+    ]
+  },
+  "models": [
+    {"openrouter_model_id":"openrouter/auto","llambo_selector":"openrouter/openrouter/auto","input_per_1m":0,"output_per_1m":0,"dynamic_routing":true,"routing_max_input_per_1m":10,"routing_max_output_per_1m":10,"context_length":2000000,"max_completion_tokens":32768,"prior_evidence":"none"},
+    {"openrouter_model_id":"qwen/qwen3.8-27b","llambo_selector":"openrouter/qwen/qwen3.8-27b","input_per_1m":0.425,"output_per_1m":2.55,"context_length":1000000,"max_completion_tokens":131072,"prior_evidence":"local_only"},
+    {"openrouter_model_id":"liquid/lfm-2.5-2.6b:free","llambo_selector":"openrouter/liquid/lfm-2.5-2.6b:free","input_per_1m":0,"output_per_1m":0,"context_length":65536,"max_completion_tokens":8192,"prior_evidence":"local_only","disabled":true,"disabled_reason":"OpenRouter upstream shared pool returned HTTP 429 from Liquid on 2026-08-29"},
+    {"openrouter_model_id":"google/gemma-4-26b-a4b-it:free","llambo_selector":"openrouter/google/gemma-4-26b-a4b-it:free","input_per_1m":0,"output_per_1m":0,"context_length":262144,"max_completion_tokens":32768,"prior_evidence":"local_only"},
+    {"openrouter_model_id":"google/gemma-4-31b-it:free","llambo_selector":"openrouter/google/gemma-4-31b-it:free","input_per_1m":0,"output_per_1m":0,"context_length":262144,"max_completion_tokens":32768,"prior_evidence":"local_attempt_only","disabled":true,"disabled_reason":"OpenRouter upstream shared pool returned HTTP 429 from Google AI Studio on 2026-08-29"},
+    {"openrouter_model_id":"nvidia/nemotron-3-super-120b-a12b:free","llambo_selector":"openrouter/nvidia/nemotron-3-super-120b-a12b:free","input_per_1m":0,"output_per_1m":0,"context_length":262144,"max_completion_tokens":235929,"prior_evidence":"openrouter_writingbench_canary"},
+    {"openrouter_model_id":"openai/gpt-oss-120b","llambo_selector":"openrouter/openai/gpt-oss-120b","input_per_1m":0.037,"output_per_1m":0.17,"context_length":131072,"max_completion_tokens":117964,"prior_evidence":"other_provider_attempt_only"},
+    {"openrouter_model_id":"google/gemini-3.5-flash","llambo_selector":"openrouter/google/gemini-3.5-flash","input_per_1m":1.5,"output_per_1m":9,"context_length":1048576,"max_completion_tokens":65536,"prior_evidence":"google_prose_suite"},
+    {"openrouter_model_id":"google/gemini-3-flash-preview","llambo_selector":"openrouter/google/gemini-3-flash-preview","input_per_1m":0.5,"output_per_1m":3,"context_length":1048576,"max_completion_tokens":65536,"prior_evidence":"google_prose_suite"},
+    {"openrouter_model_id":"deepseek/deepseek-v4-pro-0813","llambo_selector":"openrouter/deepseek/deepseek-v4-pro-0813","input_per_1m":0.66,"output_per_1m":1.98,"context_length":1048576,"max_completion_tokens":384000,"prior_evidence":"direct_provider_prose_suite"},
+    {"openrouter_model_id":"google/gemini-3.1-flash-lite","llambo_selector":"openrouter/google/gemini-3.1-flash-lite","input_per_1m":0.25,"output_per_1m":1.5,"context_length":1048576,"max_completion_tokens":65536,"prior_evidence":"google_prose_suite"},
+    {"openrouter_model_id":"google/gemini-3.7-flash","llambo_selector":"openrouter/google/gemini-3.7-flash","input_per_1m":0.75,"output_per_1m":3.75,"context_length":1048576,"max_completion_tokens":65536,"prior_evidence":"none"},
+    {"openrouter_model_id":"google/gemini-3.5-flash-lite","llambo_selector":"openrouter/google/gemini-3.5-flash-lite","input_per_1m":0.3,"output_per_1m":2.5,"context_length":1048576,"max_completion_tokens":65536,"prior_evidence":"none"},
+    {"openrouter_model_id":"z-ai/glm-5.3","llambo_selector":"openrouter/z-ai/glm-5.3","input_per_1m":1.4,"output_per_1m":4.4,"context_length":1310720,"max_completion_tokens":131072,"prior_evidence":"none"},
+    {"openrouter_model_id":"z-ai/glm-5.3-flash","llambo_selector":"openrouter/z-ai/glm-5.3-flash","input_per_1m":0.075,"output_per_1m":0.25,"context_length":1310720,"max_completion_tokens":131072,"prior_evidence":"none"},
+    {"openrouter_model_id":"deepseek/deepseek-v4-flash-0731","llambo_selector":"openrouter/deepseek/deepseek-v4-flash-0731","input_per_1m":0.045,"output_per_1m":0.09,"context_length":1310720,"max_completion_tokens":943718,"prior_evidence":"none"},
+    {"openrouter_model_id":"deepseek/deepseek-v4-flash","llambo_selector":"openrouter/deepseek/deepseek-v4-flash","input_per_1m":0.08568,"output_per_1m":0.17136,"context_length":1048576,"max_completion_tokens":384000,"prior_evidence":"none"},
+    {"openrouter_model_id":"google/gemini-2.5-flash-lite","llambo_selector":"openrouter/google/gemini-2.5-flash-lite","input_per_1m":0.1,"output_per_1m":0.4,"context_length":1048576,"max_completion_tokens":65535,"prior_evidence":"none"},
+    {"openrouter_model_id":"openai/gpt-5.6-luna","llambo_selector":"openrouter/openai/gpt-5.6-luna","input_per_1m":0.2,"output_per_1m":1.2,"context_length":1050000,"max_completion_tokens":128000,"prior_evidence":"none"},
+    {"openrouter_model_id":"openai/gpt-4o-mini","llambo_selector":"openrouter/openai/gpt-4o-mini","input_per_1m":0.15,"output_per_1m":0.6,"context_length":128000,"max_completion_tokens":16384,"prior_evidence":"none"},
+    {"openrouter_model_id":"google/gemini-2.5-flash","llambo_selector":"openrouter/google/gemini-2.5-flash","input_per_1m":0.3,"output_per_1m":2.5,"context_length":1048576,"max_completion_tokens":65535,"prior_evidence":"none"},
+    {"openrouter_model_id":"google/gemma-3-27b-it","llambo_selector":"openrouter/google/gemma-3-27b-it","input_per_1m":0.08,"output_per_1m":0.45,"context_length":131072,"max_completion_tokens":117964,"prior_evidence":"none"},
+    {"openrouter_model_id":"nvidia/nemotron-3-ultra-550b-a55b:free","llambo_selector":"openrouter/nvidia/nemotron-3-ultra-550b-a55b:free","input_per_1m":0,"output_per_1m":0,"context_length":1000000,"max_completion_tokens":65536,"prior_evidence":"none","disabled":true,"disabled_reason":"OpenRouter returned HTTP 200 with zero response choices on 2026-08-29"},
+    {"openrouter_model_id":"poolside/laguna-s-2.1:free","llambo_selector":"openrouter/poolside/laguna-s-2.1:free","input_per_1m":0,"output_per_1m":0,"context_length":262144,"max_completion_tokens":32768,"prior_evidence":"none"},
+    {"openrouter_model_id":"minimax/minimax-m3:free","llambo_selector":"openrouter/minimax/minimax-m3:free","input_per_1m":0,"output_per_1m":0,"context_length":1048576,"max_completion_tokens":943718,"prior_evidence":"none"},
+    {"openrouter_model_id":"nvidia/nemotron-3.5-lightning:free","llambo_selector":"openrouter/nvidia/nemotron-3.5-lightning:free","input_per_1m":0,"output_per_1m":0,"context_length":1000000,"max_completion_tokens":65536,"prior_evidence":"none","disabled":true,"disabled_reason":"First response ended length after 122.49s; higher-token retry was canceled at the 3-minute overall limit on 2026-08-29"},
+    {"openrouter_model_id":"cohere/north-mini-code:free","llambo_selector":"openrouter/cohere/north-mini-code:free","input_per_1m":0,"output_per_1m":0,"context_length":256000,"max_completion_tokens":64000,"prior_evidence":"none"},
+    {"openrouter_model_id":"thinkingmachines/inkling:free","llambo_selector":"openrouter/thinkingmachines/inkling:free","input_per_1m":0,"output_per_1m":0,"context_length":1048576,"max_completion_tokens":262144,"prior_evidence":"none"},
+    {"openrouter_model_id":"dots-studio/dots-3-note-preview:free","llambo_selector":"openrouter/dots-studio/dots-3-note-preview:free","input_per_1m":0,"output_per_1m":0,"context_length":512000,"max_completion_tokens":460800,"prior_evidence":"none"},
+    {"openrouter_model_id":"poolside/laguna-xs-2.1:free","llambo_selector":"openrouter/poolside/laguna-xs-2.1:free","input_per_1m":0,"output_per_1m":0,"context_length":262144,"max_completion_tokens":32768,"prior_evidence":"none","disabled":true,"disabled_reason":"OpenRouter upstream shared pool returned HTTP 429 from Poolside on 2026-08-29"},
+    {"openrouter_model_id":"minimax/minimax-m2.7:free","llambo_selector":"openrouter/minimax/minimax-m2.7:free","input_per_1m":0,"output_per_1m":0,"context_length":196608,"max_completion_tokens":176947,"prior_evidence":"none"},
+    {"openrouter_model_id":"thinkingmachines/inkling-small:free","llambo_selector":"openrouter/thinkingmachines/inkling-small:free","input_per_1m":0,"output_per_1m":0,"context_length":1048576,"max_completion_tokens":262144,"prior_evidence":"none"},
+    {"openrouter_model_id":"inclusionai/ling-3.0-flash-fin:free","llambo_selector":"openrouter/inclusionai/ling-3.0-flash-fin:free","input_per_1m":0,"output_per_1m":0,"context_length":262144,"max_completion_tokens":32768,"prior_evidence":"none"},
+    {"openrouter_model_id":"nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free","llambo_selector":"openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free","input_per_1m":0,"output_per_1m":0,"context_length":256000,"max_completion_tokens":65536,"prior_evidence":"none"},
+    {"openrouter_model_id":"z-ai/glm-5.2:free","llambo_selector":"openrouter/z-ai/glm-5.2:free","input_per_1m":0,"output_per_1m":0,"context_length":256000,"max_completion_tokens":230400,"prior_evidence":"none","disabled":true,"disabled_reason":"OpenRouter upstream shared pool returned HTTP 429 from Decart on 2026-08-29"}
+  ],
+  "excluded": [
+    {"name":"SOx Alpha","reason":"No current exact OpenRouter model ID or price"},
+    {"name":"Google Gemini Pro models","reason":"Output price exceeds $10 per 1M tokens"},
+    {"name":"Local OMLX routes","reason":"Campaign is OpenRouter-only"}
+  ]
+}
