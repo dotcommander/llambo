@@ -1,0 +1,11 @@
+{
+  "public_only": true,
+  "pairs": [
+    {"format":"blog","dimension":"depth_and_development","task":"Explain a safe token rotation workflow with its necessary ordering.","reader_profile":"An on-call application engineer.","strong":"Rotate the secondary token, verify its health check, then shift callers before revoking the old token.","defective":"Rotate the token safely and enjoy a smooth rotation."},
+    {"format":"cheatsheet","dimension":"anti_repetition","task":"Provide a compact command cheatsheet for inspecting a service.","reader_profile":"A developer new to the service.","strong":"Inspect status with `service status`; inspect logs with `service logs --tail 50`.","defective":"Inspect the service status first. Then inspect the service status again. Status inspection is important."},
+    {"format":"workflow","dimension":"mechanics","task":"Give a clean release workflow with explicit verification.","reader_profile":"A maintainer preparing a small release.","strong":"1. Build the release artifact. 2. Verify its checksum. 3. Publish after approval.","defective":"1. Build the artifact. TODO: add verification. ```"},
+    {"format":"technical note","dimension":"target_reader_fit","task":"Explain the first safe diagnostic step for a service failure.","reader_profile":"A new service operator who needs a concrete starting point.","strong":"For a new operator, start with the single health endpoint and read the failure code before changing configuration.","defective":"The Byzantine quorum protocol has elegant theoretical properties."},
+    {"format":"article","dimension":"structural_coherence","task":"Explain a measured change in baseline-change-result order.","reader_profile":"An engineer reviewing an operational experiment.","strong":"First establish the baseline. Next apply the change. Finally compare the measured result.","defective":"The comparison is final. Baselines are useful. Apply a change after the conclusion."},
+    {"format":"guide","dimension":"prose_craft","task":"Explain how validation failure protects caller-owned state.","reader_profile":"A Go developer integrating a validation command.","strong":"The process exits nonzero when validation fails, so the caller can stop before writing state.","defective":"The system unlocks a shining new era of seamless excellence and transformative harmony."}
+  ]
+}

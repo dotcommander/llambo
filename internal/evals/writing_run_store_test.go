@@ -1,6 +1,7 @@
 package evals
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -74,6 +75,53 @@ func TestWritingRunStoreResumeAndManifest(t *testing.T) {
 	mismatch.Identity.Judge.Model = "different"
 	if _, err := OpenWritingRunStore(dir, mismatch); err == nil {
 		t.Fatal("expected manifest mismatch")
+	}
+}
+
+func TestWritingRunStoreNormalizesLegacyEQBenchTemperatureIdentity(t *testing.T) {
+	legacy := testWritingManifest()
+	legacy.Identity.BenchmarkID = "eqbench-creative-v3"
+	legacy.Identity.AdapterVersion = "eqbench-creative-v3-local-rubric-v1"
+	legacy.Identity.Generation = WritingGenerationSettings{Temperature: 0.7, ExtraBody: map[string]any{"min_p": 0.1}}
+	legacy.RunID = "legacy-v2-eqbench"
+	current := legacy
+	current.Identity.Generation.TemperatureSet = true
+	current.RunID = WritingRunIdentityHash(current)[:16]
+	if WritingRunIdentityHash(legacy) != WritingRunIdentityHash(current) {
+		t.Fatalf("legacy and current EQ-Bench hashes diverged")
+	}
+	dir := t.TempDir()
+	store, err := OpenWritingRunStore(dir, legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	resumed, err := OpenWritingRunStore(dir, current)
+	if err != nil {
+		t.Fatalf("legacy v2 resume failed: %v", err)
+	}
+	defer resumed.Close()
+
+	writingBench := testWritingManifest()
+	if normalized := normalizedWritingRunIdentity(writingBench.Identity); normalized.Generation.TemperatureSet {
+		t.Fatalf("WritingBench unspecified zero was changed")
+	}
+	legacyWritingBenchJSON, err := json.Marshal(writingBench.Identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if WritingRunIdentityHash(writingBench) != writingHash(string(legacyWritingBenchJSON)) {
+		t.Fatalf("WritingBench identity hash changed")
+	}
+	prose := writingBench
+	prose.Identity.BenchmarkID = "prose-screen"
+	prose.Identity.Generation = WritingGenerationSettings{Temperature: 0, TemperatureSet: true}
+	implicitZero := prose
+	implicitZero.Identity.Generation.TemperatureSet = false
+	if WritingRunIdentityHash(prose) == WritingRunIdentityHash(implicitZero) {
+		t.Fatalf("explicit prose zero collapsed into historical unspecified zero")
 	}
 }
 

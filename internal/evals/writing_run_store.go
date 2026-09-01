@@ -138,11 +138,11 @@ func sameWritingRunIdentity(existing, requested WritingRunManifest) error {
 	if existing.SchemaVersion != requested.SchemaVersion {
 		return fmt.Errorf("resume manifest schema mismatch: have %d, requested %d", existing.SchemaVersion, requested.SchemaVersion)
 	}
-	a, err := json.Marshal(existing.Identity)
+	a, err := json.Marshal(normalizedWritingRunIdentity(existing.Identity))
 	if err != nil {
 		return err
 	}
-	b, err := json.Marshal(requested.Identity)
+	b, err := json.Marshal(normalizedWritingRunIdentity(requested.Identity))
 	if err != nil {
 		return err
 	}

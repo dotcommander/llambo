@@ -36,20 +36,10 @@ func (e *commandWritingExecutor) Execute(parent context.Context, call evals.Writ
 	if !ok {
 		return evals.WritingExecutionResult{}, fmt.Errorf("no runtime config for %s", call.Model.ID())
 	}
-	cfg.MaxTokens = call.MaxOutputTokens
-	if call.Settings.Temperature > 0 {
-		cfg.Temperature = call.Settings.Temperature
-	}
-	cfg.ExtraBody = maps.Clone(cfg.ExtraBody)
-	if cfg.ExtraBody == nil {
-		cfg.ExtraBody = make(map[string]any)
-	}
-	for key, value := range call.Settings.ExtraBody {
-		cfg.ExtraBody[key] = value
-	}
 	entry := providers.ProviderEntry{Name: call.Model.Provider, Config: cfg}
 	ctx, cancel := context.WithTimeout(parent, e.timeout)
 	defer cancel()
+	ctx = writingExecutionContext(ctx, cfg, call)
 	release, err := e.run.acquireProvider(ctx, entry)
 	if err != nil {
 		return evals.WritingExecutionResult{}, err
@@ -97,6 +87,31 @@ func (e *commandWritingExecutor) Execute(parent context.Context, call evals.Writ
 		return output, err
 	}
 	return output, nil
+}
+
+func writingExecutionContext(parent context.Context, cfg providers.Config, call evals.WritingExecutionCall) context.Context {
+	maxTokens := call.MaxOutputTokens
+	var temperature *float64
+	if call.Settings.TemperatureSet {
+		temperature = &call.Settings.Temperature
+	}
+	ctx := providers.WithChatRequestOverrides(parent, &maxTokens, temperature, nil)
+	overrides := maps.Clone(call.Settings.ExtraBody)
+	if incoming, ok := overrides["chat_template_kwargs"].(map[string]any); ok {
+		merged := make(map[string]any)
+		for _, configured := range []map[string]any{cfg.ExtraBody, cfg.ExtraBodyByModel[cfg.Model]} {
+			if kwargs, ok := configured["chat_template_kwargs"].(map[string]any); ok {
+				for key, value := range kwargs {
+					merged[key] = value
+				}
+			}
+		}
+		for key, value := range incoming {
+			merged[key] = value
+		}
+		overrides["chat_template_kwargs"] = merged
+	}
+	return providers.WithJSONOverrides(ctx, overrides)
 }
 
 func (e *commandWritingExecutor) providerFor(kind string, entry providers.ProviderEntry) (*providers.OpenAIProvider, error) {

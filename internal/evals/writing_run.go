@@ -72,7 +72,7 @@ func NewWritingRunManifest(inputPath, inputHash string, records []WritingPromptR
 			InputSHA256:             inputHash,
 			BenchmarkID:             adapter.ID(),
 			AdapterVersion:          adapter.Version(),
-			JudgePromptVersion:      WritingJudgePromptVersion,
+			JudgePromptVersion:      writingAdapterJudgePromptVersion(adapter),
 			GenerationPromptVersion: WritingGenerationPromptVersion,
 			PromptIDs:               promptIDs,
 			Models:                  append([]WritingModelSpec(nil), models...),
@@ -87,16 +87,25 @@ func NewWritingRunManifest(inputPath, inputHash string, records []WritingPromptR
 			JudgeConcurrency:        1,
 		},
 	}
-	identityJSON, _ := json.Marshal(manifest.Identity)
-	runHash := sha256.Sum256(identityJSON)
-	manifest.RunID = hex.EncodeToString(runHash[:8])
+	manifest.RunID = WritingRunIdentityHash(manifest)[:16]
 	return manifest
 }
 
 func WritingRunIdentityHash(manifest WritingRunManifest) string {
-	identityJSON, _ := json.Marshal(manifest.Identity)
+	identityJSON, _ := json.Marshal(normalizedWritingRunIdentity(manifest.Identity))
 	runHash := sha256.Sum256(identityJSON)
 	return hex.EncodeToString(runHash[:])
+}
+
+// normalizedWritingRunIdentity makes old schema-v2 manifests with an implicit
+// nonzero temperature equivalent to their new explicit representation. It
+// leaves zero unspecified so prose-screen's explicit deterministic zero stays
+// distinct from historical adapter defaults.
+func normalizedWritingRunIdentity(identity WritingRunIdentity) WritingRunIdentity {
+	if identity.Generation.Temperature != 0 && !identity.Generation.TemperatureSet {
+		identity.Generation.TemperatureSet = true
+	}
+	return identity
 }
 
 func PlanWritingRun(manifest WritingRunManifest, records []WritingPromptRecord, adapter WritingBenchmarkAdapter) (WritingRunPlan, error) {
@@ -143,7 +152,7 @@ func PlanWritingRun(manifest WritingRunManifest, records []WritingPromptRecord, 
 			for iteration := 1; iteration <= manifest.Identity.Iterations; iteration++ {
 				plan.GenerationCalls++
 				plan.WorstCaseCostUSD += estimateWritingCallCost(record.Prompt, model.MaxOutputTokens, model)
-				system, user, err := BuildCombinedWritingJudgePrompt(record, strings.Repeat("x", model.MaxOutputTokens*4), criteria)
+				system, user, err := buildWritingAdapterJudgmentPrompt(adapter, record, strings.Repeat("x", model.MaxOutputTokens*4), criteria)
 				if err != nil {
 					return WritingRunPlan{}, err
 				}

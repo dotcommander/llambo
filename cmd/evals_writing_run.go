@@ -16,21 +16,24 @@ import (
 )
 
 type evalsWritingRunCommand struct {
-	Input           string        `required:"" help:"Sealed writing prompt JSONL exported by llambo"`
-	Benchmark       string        `required:"" enum:"writingbench,eqbench-creative-v3" help:"Benchmark adapter"`
-	Model           string        `required:"" help:"One exact generation target as provider/model"`
-	JudgeModel      string        `name:"judge-model" required:"" help:"Exact judge target as provider/model"`
-	OutputDir       string        `name:"output-dir" required:"" help:"Explicit run directory for the manifest, ledgers, reports, and receipt"`
-	CampaignLedger  string        `name:"campaign-ledger" required:"" help:"Shared campaign budget ledger JSON"`
-	PricingFile     string        `name:"pricing-file" help:"Run-scoped explicit pricing CSV overlay; does not mutate the live catalog"`
-	Iterations      int           `help:"Iterations: WritingBench requires 1; EQ-Bench defaults to 3 (1..3)"`
-	Concurrency     int           `default:"2" help:"Global worker limit (1..8; provider worker limits also apply)"`
-	Timeout         time.Duration `default:"5m" help:"Per-call timeout"`
-	JudgeTokens     int           `name:"judge-max-output-tokens" default:"8192" help:"Maximum judge output tokens (1..65536)"`
-	MaxRunCost      float64       `name:"max-run-cost" help:"Required positive worst-case USD budget with --execute"`
-	MaxCampaignCost float64       `name:"max-campaign-cost" help:"Total campaign USD cap; required with --execute"`
-	LocalUseCase    string        `name:"local-use-case" help:"Specific reason external benchmark evidence is insufficient; required for local targets with --execute"`
-	Execute         bool          `help:"Allow provider-backed generation and judging; omitted means provider-free dry run"`
+	Input            string        `required:"" help:"Sealed writing prompt JSONL exported by llambo"`
+	Benchmark        string        `required:"" enum:"writingbench,eqbench-creative-v3,prose-screen" help:"Benchmark adapter"`
+	Model            string        `required:"" help:"One exact generation target as provider/model"`
+	JudgeModel       string        `name:"judge-model" required:"" help:"Exact judge target as provider/model"`
+	OutputDir        string        `name:"output-dir" required:"" help:"Explicit run directory for the manifest, ledgers, reports, and receipt"`
+	CampaignLedger   string        `name:"campaign-ledger" required:"" help:"Shared campaign budget ledger JSON"`
+	PricingFile      string        `name:"pricing-file" help:"Run-scoped explicit pricing CSV overlay; does not mutate the live catalog"`
+	Iterations       int           `help:"Iterations: WritingBench and prose-screen require 1; EQ-Bench defaults to 3 (1..3)"`
+	Concurrency      int           `default:"2" help:"Global worker limit (1..8; provider worker limits also apply)"`
+	Timeout          time.Duration `default:"5m" help:"Per-call timeout"`
+	JudgeTokens      int           `name:"judge-max-output-tokens" default:"8192" help:"Maximum judge output tokens (1..65536)"`
+	GenerationTokens int           `name:"generation-max-output-tokens" help:"Override candidate generation output tokens (1..65536); omitted uses model config"`
+	ReasoningEffort  string        `name:"reasoning-effort" default:"default" enum:"default,off,low,medium,high" help:"Candidate generation reasoning effort; off explicitly disables thinking, default leaves model settings unchanged"`
+	ThinkingBudget   int           `name:"thinking-budget-tokens" help:"Candidate thinking-token budget (1..65536); omitted leaves the provider/model budget unchanged"`
+	MaxRunCost       float64       `name:"max-run-cost" help:"Required positive worst-case USD budget with --execute"`
+	MaxCampaignCost  float64       `name:"max-campaign-cost" help:"Total campaign USD cap; required with --execute"`
+	LocalUseCase     string        `name:"local-use-case" help:"Specific reason external benchmark evidence is insufficient; required for local targets with --execute"`
+	Execute          bool          `help:"Allow provider-backed generation and judging; omitted means provider-free dry run"`
 }
 
 func (c *evalsWritingRunCommand) Run(parent *evalsCommand, io *commandIO) error {
@@ -64,11 +67,24 @@ func runWritingEvaluationCommand(cmd *commandIO, options *evalsWritingRunCommand
 	if options.JudgeTokens < 1 || options.JudgeTokens > 65536 {
 		return fmt.Errorf("--judge-max-output-tokens must be between 1 and 65536")
 	}
+	if options.GenerationTokens < 0 || options.GenerationTokens > 65536 || (options.GenerationTokens == 0 && cmd.FlagChanged("generation-max-output-tokens")) {
+		return fmt.Errorf("--generation-max-output-tokens must be between 1 and 65536")
+	}
+	if options.ThinkingBudget < 0 || options.ThinkingBudget > 65536 || (options.ThinkingBudget == 0 && cmd.FlagChanged("thinking-budget-tokens")) {
+		return fmt.Errorf("--thinking-budget-tokens must be between 1 and 65536")
+	}
+	if options.ThinkingBudget > 0 && options.ReasoningEffort == "off" {
+		return fmt.Errorf("--thinking-budget-tokens cannot be combined with --reasoning-effort off")
+	}
 	cleanOutputDir := filepath.Clean(options.OutputDir)
 	if cleanOutputDir == "." || strings.TrimSpace(options.OutputDir) == "" || filepath.Dir(cleanOutputDir) == cleanOutputDir {
 		return fmt.Errorf("--output-dir must be an explicit directory")
 	}
 	adapter, err := evals.WritingAdapter(options.Benchmark)
+	if err != nil {
+		return err
+	}
+	judgeTokens, err := writingJudgeTokenCap(adapter, options.JudgeTokens, cmd.FlagChanged("judge-max-output-tokens"))
 	if err != nil {
 		return err
 	}
@@ -86,11 +102,20 @@ func runWritingEvaluationCommand(cmd *commandIO, options *evalsWritingRunCommand
 	if err := evals.ValidateWritingPromptRecords(records, adapter); err != nil {
 		return err
 	}
-	models, judge, configs, err := resolveWritingModels([]string{options.Model}, options.JudgeModel, options.JudgeTokens, options.PricingFile)
+	models, judge, configs, err := resolveWritingModels([]string{options.Model}, options.JudgeModel, judgeTokens, options.PricingFile)
 	if err != nil {
 		return err
 	}
+	if options.GenerationTokens > 0 {
+		for i := range models {
+			models[i].MaxOutputTokens = options.GenerationTokens
+			cfg := configs[models[i].ID()]
+			cfg.MaxTokens = options.GenerationTokens
+			configs[models[i].ID()] = cfg
+		}
+	}
 	manifest := evals.NewWritingRunManifest(options.Input, inputHash, records, adapter, models, judge, iterations, options.Concurrency, options.Timeout, options.MaxRunCost, time.Now())
+	applyWritingReasoningSettings(&manifest.Identity.Generation, strings.TrimSpace(options.ReasoningEffort), options.ThinkingBudget)
 	manifest.Identity.LocalUseCase = strings.TrimSpace(options.LocalUseCase)
 	manifest.RunID = writingManifestRunID(manifest)
 	plan, err := evals.PlanWritingRun(manifest, records, adapter)
@@ -151,6 +176,13 @@ func runWritingEvaluationCommand(cmd *commandIO, options *evalsWritingRunCommand
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "Writing evaluation %s: %s\nJudge execution: %s\nReport: %s\nObserved cost: $%.6f\n", receipt.RunID, receipt.Status, plan.JudgeExecution, filepath.Join(options.OutputDir, "report.md"), receipt.Report.ObservedCostUSD)
 	return runErr
+}
+
+func writingJudgeTokenCap(adapter evals.WritingBenchmarkAdapter, requested int, explicit bool) (int, error) {
+	if adapter.ID() == "prose-screen" && !explicit {
+		return evals.DefaultProseEvaluationMaxTokens, nil
+	}
+	return requested, nil
 }
 
 type writingCommandExecutor interface {
@@ -215,6 +247,11 @@ func writingIterations(benchmark string, requested int) (int, error) {
 			return 0, fmt.Errorf("EQ-Bench Creative v3 --iterations must be between 1 and 3")
 		}
 		return requested, nil
+	case "prose-screen":
+		if requested == 0 || requested == 1 {
+			return 1, nil
+		}
+		return 0, fmt.Errorf("prose-screen requires --iterations 1")
 	default:
 		return 0, fmt.Errorf("unsupported writing benchmark %q", benchmark)
 	}

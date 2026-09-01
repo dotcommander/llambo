@@ -29,8 +29,9 @@ type WritingModelSpec struct {
 func (m WritingModelSpec) ID() string { return m.Provider + "/" + m.Model }
 
 type WritingGenerationSettings struct {
-	Temperature float64        `json:"temperature"`
-	ExtraBody   map[string]any `json:"extra_body,omitempty"`
+	Temperature    float64        `json:"temperature"`
+	TemperatureSet bool           `json:"temperature_set,omitempty"`
+	ExtraBody      map[string]any `json:"extra_body,omitempty"`
 }
 
 type WritingRunIdentity struct {
@@ -75,10 +76,12 @@ type WritingUsage struct {
 }
 
 type WritingCriterionJudgment struct {
-	CriterionID string `json:"criterion_id"`
-	Criterion   string `json:"criterion"`
-	Score       int    `json:"score"`
-	Reason      string `json:"reason"`
+	CriterionID string              `json:"criterion_id"`
+	Criterion   string              `json:"criterion"`
+	Score       int                 `json:"score"`
+	Reason      string              `json:"reason"`
+	Applicable  bool                `json:"applicable,omitempty"`
+	Evidence    []ProseEvidenceSpan `json:"evidence,omitempty"`
 }
 
 // WritingDispatchIntent is fsynced before each provider call. If a process
@@ -190,12 +193,15 @@ type WritingScore struct {
 }
 
 type WritingCriterionScore struct {
-	Provider    string `json:"provider"`
-	Model       string `json:"model"`
-	PromptID    string `json:"prompt_id"`
-	Iteration   int    `json:"iteration"`
-	CriterionID string `json:"criterion_id"`
-	Score       int    `json:"score"`
+	Provider    string              `json:"provider"`
+	Model       string              `json:"model"`
+	PromptID    string              `json:"prompt_id"`
+	Iteration   int                 `json:"iteration"`
+	CriterionID string              `json:"criterion_id"`
+	Score       int                 `json:"score"`
+	Applicable  bool                `json:"applicable,omitempty"`
+	Evidence    []ProseEvidenceSpan `json:"evidence,omitempty"`
+	Reason      string              `json:"reason,omitempty"`
 }
 
 type WritingPromptScore struct {
@@ -218,20 +224,44 @@ type WritingDomainScore struct {
 }
 
 type WritingRunReport struct {
-	SchemaVersion      int                     `json:"schema_version"`
-	RunID              string                  `json:"run_id"`
-	BenchmarkID        string                  `json:"benchmark_id"`
-	ScoreIdentity      string                  `json:"score_identity"`
-	Complete           bool                    `json:"complete"`
-	Generations        int                     `json:"generations"`
-	GenerationFailures int                     `json:"generation_failures"`
-	Judgments          int                     `json:"judgments"`
-	JudgmentFailures   int                     `json:"judgment_failures"`
-	ObservedCostUSD    float64                 `json:"observed_cost_usd"`
-	Scores             []WritingScore          `json:"scores"`
-	PromptScores       []WritingPromptScore    `json:"prompt_scores"`
-	DomainScores       []WritingDomainScore    `json:"domain_scores,omitempty"`
-	CriterionScores    []WritingCriterionScore `json:"criterion_scores"`
+	SchemaVersion      int                      `json:"schema_version"`
+	RunID              string                   `json:"run_id"`
+	BenchmarkID        string                   `json:"benchmark_id"`
+	ScoreIdentity      string                   `json:"score_identity"`
+	Complete           bool                     `json:"complete"`
+	Generations        int                      `json:"generations"`
+	GenerationFailures int                      `json:"generation_failures"`
+	Judgments          int                      `json:"judgments"`
+	JudgmentFailures   int                      `json:"judgment_failures"`
+	ObservedCostUSD    float64                  `json:"observed_cost_usd"`
+	Scores             []WritingScore           `json:"scores"`
+	PromptScores       []WritingPromptScore     `json:"prompt_scores"`
+	DomainScores       []WritingDomainScore     `json:"domain_scores,omitempty"`
+	CriterionScores    []WritingCriterionScore  `json:"criterion_scores"`
+	PreScreenOnly      bool                     `json:"pre_screen_only,omitempty"`
+	ModelDispersion    []WritingModelDispersion `json:"model_dispersion,omitempty"`
+	ModelAggregates    []WritingModelAggregate  `json:"model_aggregates,omitempty"`
+}
+
+type WritingModelDispersion struct {
+	Provider           string  `json:"provider"`
+	Model              string  `json:"model"`
+	Samples            int     `json:"samples"`
+	Mean               float64 `json:"mean"`
+	Median             float64 `json:"median"`
+	Min                float64 `json:"min"`
+	Max                float64 `json:"max"`
+	Spread             float64 `json:"spread"`
+	InsufficientSample bool    `json:"insufficient_sample"`
+}
+
+type WritingModelAggregate struct {
+	Version       string  `json:"version"`
+	Provider      string  `json:"provider"`
+	Model         string  `json:"model"`
+	Samples       int     `json:"samples"`
+	Score         float64 `json:"score"`
+	MechanicsCaps int     `json:"mechanics_caps"`
 }
 
 type WritingRunReceipt struct {

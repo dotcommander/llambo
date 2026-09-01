@@ -1,0 +1,22 @@
+{
+  "prose_style": {
+    "score": 4,
+    "justification": "Precise diction keeps the imagery specific."
+  },
+  "prose_style": {
+    "score": 3,
+    "justification": "Repeated phrasing weakens the otherwise controlled prose."
+  },
+  "narrative_coherence": {
+    "score": 5,
+    "justification": "Each event follows causally while the viewpoint remains stable."
+  },
+  "character_voice": {
+    "score": 4,
+    "justification": "The narrator maintains a distinct and consistent register."
+  },
+  "mechanics": {
+    "score": 5,
+    "justification": "Grammar and formatting remain clean without production artifacts."
+  }
+}

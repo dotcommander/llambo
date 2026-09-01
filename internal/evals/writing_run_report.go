@@ -21,6 +21,9 @@ func BuildWritingRunReport(manifest WritingRunManifest, adapter WritingBenchmark
 		ScoreIdentity: adapter.ScoreIdentity(),
 		Complete:      complete,
 	}
+	if adapter.ID() == "prose-screen" {
+		report.PreScreenOnly = true
+	}
 	for _, record := range generations {
 		report.ObservedCostUSD += record.Usage.CostUSD
 		if record.Status == "success" {
@@ -28,6 +31,9 @@ func BuildWritingRunReport(manifest WritingRunManifest, adapter WritingBenchmark
 		} else {
 			report.GenerationFailures++
 		}
+	}
+	if adapter.ID() == "prose-screen" {
+		return buildProseScreenRunReport(report, generations, judgments)
 	}
 	type accumulator struct {
 		total int
@@ -55,8 +61,10 @@ func BuildWritingRunReport(manifest WritingRunManifest, adapter WritingBenchmark
 		}
 		for _, result := range results {
 			report.Judgments++
-			entry.total += result.Score
-			entry.count++
+			if result.Applicable || adapter.ID() != "prose-screen" {
+				entry.total += result.Score
+				entry.count++
+			}
 		}
 		promptEntry := byPrompt[generation.Key]
 		if promptEntry == nil {
@@ -65,9 +73,11 @@ func BuildWritingRunReport(manifest WritingRunManifest, adapter WritingBenchmark
 			promptGeneration[generation.Key] = generation
 		}
 		for _, result := range results {
-			promptEntry.total += result.Score
-			promptEntry.count++
-			report.CriterionScores = append(report.CriterionScores, WritingCriterionScore{Provider: generation.Provider, Model: generation.Model, PromptID: generation.PromptID, Iteration: generation.Iteration, CriterionID: result.CriterionID, Score: result.Score})
+			if result.Applicable || adapter.ID() != "prose-screen" {
+				promptEntry.total += result.Score
+				promptEntry.count++
+			}
+			report.CriterionScores = append(report.CriterionScores, WritingCriterionScore{Provider: generation.Provider, Model: generation.Model, PromptID: generation.PromptID, Iteration: generation.Iteration, CriterionID: result.CriterionID, Score: result.Score, Applicable: result.Applicable, Evidence: append([]ProseEvidenceSpan(nil), result.Evidence...), Reason: result.Reason})
 		}
 	}
 	keys := make([]string, 0, len(byModel))
@@ -78,7 +88,9 @@ func BuildWritingRunReport(manifest WritingRunManifest, adapter WritingBenchmark
 	for _, key := range keys {
 		provider, model, _ := strings.Cut(key, "\x00")
 		entry := byModel[key]
-		report.Scores = append(report.Scores, WritingScore{Provider: provider, Model: model, Score: float64(entry.total) / float64(entry.count), Judgments: entry.count})
+		if entry.count > 0 {
+			report.Scores = append(report.Scores, WritingScore{Provider: provider, Model: model, Score: float64(entry.total) / float64(entry.count), Judgments: entry.count})
+		}
 	}
 	promptKeys := make([]string, 0, len(byPrompt))
 	for key := range byPrompt {
@@ -88,6 +100,9 @@ func BuildWritingRunReport(manifest WritingRunManifest, adapter WritingBenchmark
 	for _, key := range promptKeys {
 		generation := promptGeneration[key]
 		entry := byPrompt[key]
+		if entry.count == 0 {
+			continue
+		}
 		report.PromptScores = append(report.PromptScores, WritingPromptScore{
 			Provider: generation.Provider, Model: generation.Model, PromptID: generation.PromptID,
 			Iteration: generation.Iteration, Domain1: generation.Domain1, Domain2: generation.Domain2,
@@ -131,6 +146,87 @@ func BuildWritingRunReport(manifest WritingRunManifest, adapter WritingBenchmark
 	return report
 }
 
+func buildProseScreenRunReport(report WritingRunReport, generations []WritingGenerationRecord, judgments []WritingJudgmentRecord) WritingRunReport {
+	type caseScore struct {
+		generation WritingGenerationRecord
+		aggregate  ProseEvaluationAggregate
+	}
+	byModel := map[string][]caseScore{}
+	for _, record := range judgments {
+		report.ObservedCostUSD += record.Usage.CostUSD
+		if record.Status != "success" {
+			report.JudgmentFailures++
+			continue
+		}
+		aggregate, ok := proseAggregateFromJudgments(record.Results)
+		if !ok {
+			report.JudgmentFailures++
+			continue
+		}
+		generation := generationByKey(generations, record.GenerationKey)
+		if generation.Key == "" {
+			report.JudgmentFailures++
+			continue
+		}
+		report.Judgments++
+		for _, result := range record.Results {
+			report.CriterionScores = append(report.CriterionScores, WritingCriterionScore{Provider: generation.Provider, Model: generation.Model, PromptID: generation.PromptID, Iteration: generation.Iteration, CriterionID: result.CriterionID, Score: result.Score, Applicable: result.Applicable, Evidence: append([]ProseEvidenceSpan(nil), result.Evidence...), Reason: result.Reason})
+		}
+		key := generation.Provider + "\x00" + generation.Model
+		byModel[key] = append(byModel[key], caseScore{generation: generation, aggregate: aggregate})
+		report.PromptScores = append(report.PromptScores, WritingPromptScore{Provider: generation.Provider, Model: generation.Model, PromptID: generation.PromptID, Iteration: generation.Iteration, Domain1: generation.Domain1, Domain2: generation.Domain2, Score: aggregate.Score, Judgments: 1})
+	}
+	keys := make([]string, 0, len(byModel))
+	for key := range byModel {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		provider, model, _ := strings.Cut(key, "\x00")
+		cases := byModel[key]
+		values := make([]float64, 0, len(cases))
+		caps := 0
+		for _, item := range cases {
+			values = append(values, item.aggregate.Score)
+			if item.aggregate.MechanicsCapApplied {
+				caps++
+			}
+		}
+		mean, median, min, max := proseScreenDistribution(values)
+		report.Scores = append(report.Scores, WritingScore{Provider: provider, Model: model, Score: mean, Judgments: len(values)})
+		report.ModelAggregates = append(report.ModelAggregates, WritingModelAggregate{Version: "prose-evaluation-aggregate-v2", Provider: provider, Model: model, Samples: len(values), Score: mean, MechanicsCaps: caps})
+		report.ModelDispersion = append(report.ModelDispersion, WritingModelDispersion{Provider: provider, Model: model, Samples: len(values), Mean: mean, Median: median, Min: min, Max: max, Spread: max - min, InsufficientSample: len(values) < 2})
+	}
+	sort.Slice(report.PromptScores, func(i, j int) bool {
+		a, b := report.PromptScores[i], report.PromptScores[j]
+		return strings.Join([]string{a.Provider, a.Model, a.PromptID, fmt.Sprint(a.Iteration)}, "\x00") < strings.Join([]string{b.Provider, b.Model, b.PromptID, fmt.Sprint(b.Iteration)}, "\x00")
+	})
+	sort.Slice(report.CriterionScores, func(i, j int) bool {
+		a, b := report.CriterionScores[i], report.CriterionScores[j]
+		return strings.Join([]string{a.Provider, a.Model, a.PromptID, fmt.Sprint(a.Iteration), a.CriterionID}, "\x00") < strings.Join([]string{b.Provider, b.Model, b.PromptID, fmt.Sprint(b.Iteration), b.CriterionID}, "\x00")
+	})
+	return report
+}
+
+func proseScreenDistribution(values []float64) (mean, median, min, max float64) {
+	if len(values) == 0 {
+		return 0, 0, 0, 0
+	}
+	for _, value := range values {
+		mean += value
+	}
+	mean /= float64(len(values))
+	sorted := append([]float64(nil), values...)
+	sort.Float64s(sorted)
+	min, max = sorted[0], sorted[len(sorted)-1]
+	middle := len(sorted) / 2
+	median = sorted[middle]
+	if len(sorted)%2 == 0 {
+		median = (sorted[middle-1] + sorted[middle]) / 2
+	}
+	return mean, median, min, max
+}
+
 func domainLabel(level, value string) string {
 	value = strings.TrimSpace(value)
 	if value == "" {
@@ -163,7 +259,14 @@ func RenderWritingRunMarkdown(report WritingRunReport) string {
 	fmt.Fprintf(&out, "- **Score identity:** `%s`\n", report.ScoreIdentity)
 	fmt.Fprintf(&out, "- **Status:** `%s`\n", map[bool]string{true: "complete", false: "partial"}[report.Complete])
 	fmt.Fprintf(&out, "- **Observed provider cost:** `$%.6f`\n\n", report.ObservedCostUSD)
-	out.WriteString("| Provider | Model | Mean score (1–10) | Judgments |\n")
+	if report.PreScreenOnly {
+		out.WriteString("> **Pre-screen only:** this report cannot establish factual support, semantic qualification, or writer promotion. TLDW remains authoritative for those decisions.\n\n")
+	}
+	scoreScale := "1–10"
+	if report.PreScreenOnly {
+		scoreScale = "1–5"
+	}
+	fmt.Fprintf(&out, "| Provider | Model | Mean score (%s) | Judgments |\n", scoreScale)
 	out.WriteString("| --- | --- | ---: | ---: |\n")
 	for _, score := range report.Scores {
 		fmt.Fprintf(&out, "| %s | %s | %.3f | %d |\n", escapeWritingMarkdown(score.Provider), escapeWritingMarkdown(score.Model), score.Score, score.Judgments)
@@ -172,6 +275,22 @@ func RenderWritingRunMarkdown(report WritingRunReport) string {
 		out.WriteString("\n## Domain scores\n\n| Provider | Model | Domain | Mean score | Prompts |\n| --- | --- | --- | ---: | ---: |\n")
 		for _, score := range report.DomainScores {
 			fmt.Fprintf(&out, "| %s | %s | %s | %.3f | %d |\n", escapeWritingMarkdown(score.Provider), escapeWritingMarkdown(score.Model), escapeWritingMarkdown(score.Domain), score.Score, score.Prompts)
+		}
+	}
+	if len(report.ModelDispersion) > 0 {
+		out.WriteString("\n## Model dispersion\n\n| Provider | Model | Cases | Mean | Median | Min | Max | Spread | Status |\n| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |\n")
+		for _, item := range report.ModelDispersion {
+			status := "sufficient"
+			if item.InsufficientSample {
+				status = "insufficient sample"
+			}
+			fmt.Fprintf(&out, "| %s | %s | %d | %.3f | %.3f | %.3f | %.3f | %.3f | %s |\n", escapeWritingMarkdown(item.Provider), escapeWritingMarkdown(item.Model), item.Samples, item.Mean, item.Median, item.Min, item.Max, item.Spread, status)
+		}
+	}
+	if len(report.ModelAggregates) > 0 {
+		out.WriteString("\n## Go-computed prose aggregates\n\n| Version | Provider | Model | Cases | Aggregate | Mechanics caps |\n| --- | --- | --- | ---: | ---: | ---: |\n")
+		for _, item := range report.ModelAggregates {
+			fmt.Fprintf(&out, "| %s | %s | %s | %d | %.3f | %d |\n", escapeWritingMarkdown(item.Version), escapeWritingMarkdown(item.Provider), escapeWritingMarkdown(item.Model), item.Samples, item.Score, item.MechanicsCaps)
 		}
 	}
 	out.WriteString("\n## Prompt scores\n\n| Provider | Model | Prompt | Iteration | Mean score | Judgments |\n| --- | --- | --- | ---: | ---: | ---: |\n")
@@ -206,7 +325,7 @@ func WriteWritingRunArtifacts(dir string, manifest WritingRunManifest, adapter W
 	reportJSON = append(reportJSON, '\n')
 	reportMarkdown := []byte(RenderWritingRunMarkdown(report))
 	quality := make([]WritingQualityImportRecord, 0, len(report.Scores))
-	if complete {
+	if complete && !report.PreScreenOnly {
 		for _, score := range report.Scores {
 			quality = append(quality, WritingQualityImportRecord{
 				Provider: score.Provider,
@@ -245,8 +364,10 @@ func WriteWritingRunArtifacts(dir string, manifest WritingRunManifest, adapter W
 		hashes[name] = hex.EncodeToString(sum[:])
 	}
 	status := "partial"
-	if complete {
+	if complete && !report.PreScreenOnly {
 		status = "complete_quality"
+	} else if complete && report.PreScreenOnly {
+		status = "complete_pre_screen"
 	}
 	requested, served, servedJudges := make([]string, 0, len(manifest.Identity.Models)), []string{}, []string{}
 	for _, model := range manifest.Identity.Models {

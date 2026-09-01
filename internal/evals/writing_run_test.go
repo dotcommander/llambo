@@ -2,6 +2,7 @@ package evals
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"sync"
@@ -19,6 +20,29 @@ type fixtureWritingExecutor struct {
 type cancelWritingExecutor struct {
 	cancel context.CancelFunc
 	calls  int
+}
+
+type recordingProseScreenExecutor struct {
+	calls            []WritingExecutionCall
+	generationFinish string
+	judgmentFinish   string
+}
+
+func (e *recordingProseScreenExecutor) Execute(_ context.Context, call WritingExecutionCall) (WritingExecutionResult, error) {
+	e.calls = append(e.calls, call)
+	if call.Kind == "generation" {
+		finish := e.generationFinish
+		if finish == "" {
+			finish = "stop"
+		}
+		return WritingExecutionResult{Content: proseInput().Prose, Provider: call.Model.Provider, Model: call.Model.Model, FinishReason: finish}, nil
+	}
+	data, _ := json.Marshal(validProseEvaluation())
+	finish := e.judgmentFinish
+	if finish == "" {
+		finish = "stop"
+	}
+	return WritingExecutionResult{Content: string(data), Provider: call.Model.Provider, Model: call.Model.Model, FinishReason: finish}, nil
 }
 
 func (e *cancelWritingExecutor) Execute(ctx context.Context, call WritingExecutionCall) (WritingExecutionResult, error) {
@@ -79,6 +103,106 @@ func TestWritingRunCancellationStopsDispatch(t *testing.T) {
 	}
 	if executor.calls != 1 {
 		t.Fatalf("calls after cancellation = %d, want 1", executor.calls)
+	}
+}
+
+func TestProseScreenRunUsesAdapterOwnedSchemaAndControls(t *testing.T) {
+	adapter := ProseScreenAdapter{}
+	record := WritingPromptRecord{BenchmarkID: adapter.ID(), ID: "case", Prompt: "Write a deployment note.", SourceRecord: []byte(`{"prompt":"Write a deployment note.","task":"Explain deployment safety.","reader_profile":"An operator."}`)}
+	model := WritingModelSpec{Provider: "p", Model: "writer", MaxOutputTokens: 64}
+	judge := WritingModelSpec{Provider: "p", Model: "judge", MaxOutputTokens: DefaultProseEvaluationMaxTokens}
+	manifest := NewWritingRunManifest("input", "hash", []WritingPromptRecord{record}, adapter, []WritingModelSpec{model}, judge, 1, 1, time.Minute, 1, time.Unix(1, 0))
+	store, err := OpenWritingRunStore(t.TempDir(), manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	executor := &recordingProseScreenExecutor{}
+	if err := RunWritingEvaluation(t.Context(), manifest, []WritingPromptRecord{record}, adapter, executor, store); err != nil {
+		t.Fatal(err)
+	}
+	if len(executor.calls) != 2 {
+		t.Fatalf("calls=%d", len(executor.calls))
+	}
+	for _, call := range executor.calls {
+		if !call.Settings.TemperatureSet || call.Settings.Temperature != 0 {
+			t.Fatalf("call settings=%#v", call.Settings)
+		}
+	}
+	judgment := executor.calls[1]
+	if judgment.MaxOutputTokens != DefaultProseEvaluationMaxTokens {
+		t.Fatalf("judge tokens=%d", judgment.MaxOutputTokens)
+	}
+	generationConfig, ok := judgment.Settings.ExtraBody["generationConfig"].(map[string]any)
+	if !ok || generationConfig["responseMimeType"] != "application/json" {
+		t.Fatalf("settings=%#v", judgment.Settings)
+	}
+	schemaJSON, err := json.Marshal(generationConfig["responseSchema"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, absent := range []string{"$schema", "$id", "definitions", "additionalProperties", "$ref"} {
+		if strings.Contains(string(schemaJSON), absent) {
+			t.Fatalf("projected schema retained %q: %s", absent, schemaJSON)
+		}
+	}
+	for _, required := range []string{"depth_and_development", "applicable", "evidence", "minimum", "maximum", "required"} {
+		if !strings.Contains(string(schemaJSON), required) {
+			t.Fatalf("projected schema lost %q: %s", required, schemaJSON)
+		}
+	}
+	if strings.Contains(string(schemaJSON), "criterion_id") {
+		t.Fatalf("schema=%s", schemaJSON)
+	}
+	generations, judgments := store.Records()
+	if len(generations) != 1 || generations[0].Status != "success" || len(judgments) != 1 || judgments[0].Status != "success" || len(judgments[0].Results) != 6 {
+		t.Fatalf("records=%#v %#v", generations, judgments)
+	}
+}
+
+func TestWritingFinishReasonTruncated(t *testing.T) {
+	for _, reason := range []string{"length", "max_tokens", "truncated", "token_limit"} {
+		if !writingFinishReasonTruncated(reason) {
+			t.Fatalf("%q was accepted", reason)
+		}
+	}
+	for _, reason := range []string{"", "stop", "end_turn"} {
+		if writingFinishReasonTruncated(reason) {
+			t.Fatalf("%q was rejected", reason)
+		}
+	}
+}
+
+func TestProseScreenRunRejectsTruncatedGenerationAndJudgment(t *testing.T) {
+	newRun := func(t *testing.T, executor *recordingProseScreenExecutor) ([]WritingGenerationRecord, []WritingJudgmentRecord, error) {
+		t.Helper()
+		adapter := ProseScreenAdapter{}
+		record := WritingPromptRecord{BenchmarkID: adapter.ID(), ID: "case", Prompt: "Write a deployment note.", SourceRecord: []byte(`{"prompt":"Write a deployment note.","task":"Explain deployment safety.","reader_profile":"An operator."}`)}
+		model := WritingModelSpec{Provider: "p", Model: "writer", MaxOutputTokens: 64}
+		judge := WritingModelSpec{Provider: "p", Model: "judge", MaxOutputTokens: DefaultProseEvaluationMaxTokens}
+		manifest := NewWritingRunManifest("input", "hash", []WritingPromptRecord{record}, adapter, []WritingModelSpec{model}, judge, 1, 1, time.Minute, 1, time.Unix(1, 0))
+		store, err := OpenWritingRunStore(t.TempDir(), manifest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer store.Close()
+		runErr := RunWritingEvaluation(t.Context(), manifest, []WritingPromptRecord{record}, adapter, executor, store)
+		generations, judgments := store.Records()
+		return generations, judgments, runErr
+	}
+	gens, judgments, err := newRun(t, &recordingProseScreenExecutor{generationFinish: "length"})
+	if err == nil || !strings.Contains(err.Error(), "truncating finish") {
+		t.Fatalf("generation error=%v", err)
+	}
+	if len(gens) != 1 || gens[0].Status != "failed" || len(judgments) != 0 {
+		t.Fatalf("generation truncation records=%#v %#v", gens, judgments)
+	}
+	gens, judgments, err = newRun(t, &recordingProseScreenExecutor{judgmentFinish: "max_tokens"})
+	if !errors.Is(err, ErrWritingRunIncomplete) {
+		t.Fatalf("judgment error=%v", err)
+	}
+	if len(gens) != 1 || gens[0].Status != "success" || len(judgments) != 1 || judgments[0].Status != "failed" || len(judgments[0].Results) != 0 {
+		t.Fatalf("judgment truncation records=%#v %#v", gens, judgments)
 	}
 }
 

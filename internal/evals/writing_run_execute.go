@@ -54,7 +54,7 @@ func RunWritingEvaluation(ctx context.Context, manifest WritingRunManifest, reco
 		return err
 	}
 	if err := runWritingJobs(ctx, manifest.Identity.JudgeConcurrency, judgmentJobs, func(ctx context.Context, job writingJudgmentJob) error {
-		return executeWritingJudgment(ctx, manifest, executor, store, budget, job.record, job.generation, job.criteria)
+		return executeWritingJudgment(ctx, manifest, adapter, executor, store, budget, job.record, job.generation, job.criteria)
 	}); err != nil {
 		return err
 	}
@@ -111,8 +111,12 @@ func executeWritingGeneration(ctx context.Context, manifest WritingRunManifest, 
 		AccountingCostUSD: accountingCost,
 	}
 	recordOut.Domain1, recordOut.Domain2 = writingPromptDomains(record)
+	if callErr == nil && writingFinishReasonTruncated(result.FinishReason) {
+		callErr = fmt.Errorf("generation returned truncating finish reason %q", result.FinishReason)
+	}
 	if callErr != nil {
 		recordOut.Status, recordOut.Error = "failed", callErr.Error()
+		recordOut.Content = result.Content
 	} else {
 		recordOut.Status, recordOut.Content = "success", result.Content
 		recordOut.ContentSHA256 = writingHash(result.Content)
@@ -124,14 +128,14 @@ func executeWritingGeneration(ctx context.Context, manifest WritingRunManifest, 
 	return appendErr
 }
 
-func executeWritingJudgment(ctx context.Context, manifest WritingRunManifest, executor WritingExecutor, store *WritingRunStore, budget *writingBudget, record WritingPromptRecord, generation WritingGenerationRecord, criteria []WritingCriterion) error {
+func executeWritingJudgment(ctx context.Context, manifest WritingRunManifest, adapter WritingBenchmarkAdapter, executor WritingExecutor, store *WritingRunStore, budget *writingBudget, record WritingPromptRecord, generation WritingGenerationRecord, criteria []WritingCriterion) error {
 	key := writingCombinedJudgmentKey(generation.Key, generation.ContentSHA256, manifest.Identity.Judge.ID(), manifest.Identity.JudgePromptVersion)
-	system, user, err := BuildCombinedWritingJudgePrompt(record, generation.Content, criteria)
+	system, user, err := buildWritingAdapterJudgmentPrompt(adapter, record, generation.Content, criteria)
 	if err != nil {
 		return err
 	}
 	for attempt := store.NextJudgmentAttempt(key); attempt <= maxWritingJudgmentAttempts; attempt++ {
-		settings, err := CombinedWritingJudgeSettings(manifest.Identity.JudgeThinkingLevel)
+		settings, err := writingAdapterJudgmentSettings(adapter, manifest)
 		if err != nil {
 			return err
 		}
@@ -156,10 +160,13 @@ func executeWritingJudgment(ctx context.Context, manifest WritingRunManifest, ex
 			FinishReason: result.FinishReason, Route: result.Route, Usage: result.Usage,
 			AccountingCostUSD: accountingCost,
 		}
+		if callErr == nil && writingFinishReasonTruncated(result.FinishReason) {
+			callErr = fmt.Errorf("judgment returned truncating finish reason %q", result.FinishReason)
+		}
 		if callErr != nil {
 			judgment.Status, judgment.Error = "failed", callErr.Error()
 		} else {
-			results, err := ParseCombinedWritingJudgment(result.Content, criteria)
+			results, err := parseWritingAdapterJudgment(adapter, result.Content, generation.Content, criteria)
 			if err != nil {
 				judgment.Status, judgment.Error = "failed", err.Error()
 			} else {
@@ -178,6 +185,11 @@ func executeWritingJudgment(ctx context.Context, manifest WritingRunManifest, ex
 		}
 	}
 	return nil
+}
+
+func writingFinishReasonTruncated(reason string) bool {
+	reason = strings.ToLower(strings.TrimSpace(reason))
+	return strings.Contains(reason, "truncat") || strings.Contains(reason, "max_token") || strings.Contains(reason, "token_limit") || reason == "length"
 }
 
 func writingExecutionCallHash(call WritingExecutionCall) string {

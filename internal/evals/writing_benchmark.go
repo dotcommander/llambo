@@ -17,15 +17,52 @@ type WritingBenchmarkAdapter interface {
 	Criteria(WritingPromptRecord) ([]WritingCriterion, error)
 }
 
+type writingJudgmentAdapter interface {
+	BuildJudgmentPrompt(WritingPromptRecord, string, []WritingCriterion) (string, string, error)
+	ParseJudgment(string, string, []WritingCriterion) ([]WritingCriterionJudgment, error)
+}
+
+type writingJudgePromptVersioner interface{ JudgePromptVersion() string }
+type writingJudgmentSettingsAdapter interface {
+	JudgmentSettings(WritingRunManifest) (WritingGenerationSettings, error)
+}
+
 func WritingAdapter(id string) (WritingBenchmarkAdapter, error) {
 	switch strings.ToLower(strings.TrimSpace(id)) {
 	case "writingbench":
 		return WritingBenchAdapter{}, nil
 	case "eqbench-creative-v3":
 		return EQCreativeLocalRubricAdapter{}, nil
+	case "prose-screen":
+		return ProseScreenAdapter{}, nil
 	default:
-		return nil, fmt.Errorf("unsupported writing benchmark %q (supported: writingbench, eqbench-creative-v3)", id)
+		return nil, fmt.Errorf("unsupported writing benchmark %q (supported: writingbench, eqbench-creative-v3, prose-screen)", id)
 	}
+}
+
+func buildWritingAdapterJudgmentPrompt(adapter WritingBenchmarkAdapter, record WritingPromptRecord, response string, criteria []WritingCriterion) (string, string, error) {
+	if specialized, ok := adapter.(writingJudgmentAdapter); ok {
+		return specialized.BuildJudgmentPrompt(record, response, criteria)
+	}
+	return BuildCombinedWritingJudgePrompt(record, response, criteria)
+}
+func parseWritingAdapterJudgment(adapter WritingBenchmarkAdapter, raw, response string, criteria []WritingCriterion) ([]WritingCriterionJudgment, error) {
+	if specialized, ok := adapter.(writingJudgmentAdapter); ok {
+		return specialized.ParseJudgment(raw, response, criteria)
+	}
+	return ParseCombinedWritingJudgment(raw, criteria)
+}
+func writingAdapterJudgePromptVersion(adapter WritingBenchmarkAdapter) string {
+	if versioned, ok := adapter.(writingJudgePromptVersioner); ok {
+		return versioned.JudgePromptVersion()
+	}
+	return WritingJudgePromptVersion
+}
+func writingAdapterJudgmentSettings(adapter WritingBenchmarkAdapter, manifest WritingRunManifest) (WritingGenerationSettings, error) {
+	if specialized, ok := adapter.(writingJudgmentSettingsAdapter); ok {
+		return specialized.JudgmentSettings(manifest)
+	}
+	return CombinedWritingJudgeSettings(manifest.Identity.JudgeThinkingLevel)
 }
 
 func ValidateWritingPromptRecords(records []WritingPromptRecord, adapter WritingBenchmarkAdapter) error {

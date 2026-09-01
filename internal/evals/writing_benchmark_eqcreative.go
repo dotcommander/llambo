@@ -13,7 +13,7 @@ func (EQCreativeLocalRubricAdapter) ScoreIdentity() string {
 	return "eqbench-creative-v3/local-rubric"
 }
 func (EQCreativeLocalRubricAdapter) GenerationSettings() WritingGenerationSettings {
-	return WritingGenerationSettings{Temperature: 0.7, ExtraBody: map[string]any{"min_p": 0.1}}
+	return WritingGenerationSettings{Temperature: 0.7, TemperatureSet: true, ExtraBody: map[string]any{"min_p": 0.1}}
 }
 
 func (a EQCreativeLocalRubricAdapter) ValidateRecord(record WritingPromptRecord) error {
