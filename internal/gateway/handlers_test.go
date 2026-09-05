@@ -105,12 +105,18 @@ func sseIndexField(t *testing.T, data map[string]any) int {
 
 type handlerMockStreamChatProvider struct {
 	*handlerMockChatProvider
-	streamChunks []providers.ChatStreamChunk
-	streamResult providers.ChatResult
-	streamErr    error
+	streamChunks    []providers.ChatStreamChunk
+	streamResult    providers.ChatResult
+	streamErr       error
+	lastStreamCtx   context.Context
+	onStreamContext func(context.Context)
 }
 
 func (m *handlerMockStreamChatProvider) ChatStreamWithInfoContext(ctx context.Context, systemPrompt, userContent string, onChunk providers.ChatStreamHandler) (providers.ChatResult, error) {
+	m.lastStreamCtx = ctx
+	if m.onStreamContext != nil {
+		m.onStreamContext(ctx)
+	}
 	for _, ch := range m.streamChunks {
 		if onChunk != nil {
 			if err := onChunk(ch); err != nil {

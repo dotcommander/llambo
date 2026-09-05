@@ -1,7 +1,6 @@
 package gateway
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -27,11 +26,8 @@ func (s *Server) handleChatCompletionStream(w http.ResponseWriter, r *http.Reque
 
 	systemPrompt, userContent := ExtractPrompts(req.Messages)
 
-	ctx, cancel := context.WithTimeout(r.Context(), HandlerTimeout)
+	ctx, cancel := openAIRequestContext(r.Context(), req)
 	defer cancel()
-	ctx = providers.WithChatRequestOverrides(ctx, req.MaxTokens, req.Temperature, req.TopP)
-	ctx = providers.WithJSONOverrides(ctx, chatJSONOverrides(req))
-	ctx = providers.WithResponseFormatOverride(ctx, responseFormatOverride(req.ResponseFormat))
 
 	completionID := generateID("chatcmpl")
 	created := time.Now().Unix()

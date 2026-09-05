@@ -1,7 +1,6 @@
 package gateway
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -36,12 +35,8 @@ func (s *Server) handleChatCompletion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create request-scoped timeout
-	ctx, cancel := context.WithTimeout(r.Context(), HandlerTimeout)
+	ctx, cancel := openAIRequestContext(r.Context(), req)
 	defer cancel()
-	ctx = providers.WithChatRequestOverrides(ctx, req.MaxTokens, req.Temperature, req.TopP)
-	ctx = providers.WithJSONOverrides(ctx, chatJSONOverrides(req))
-	ctx = providers.WithResponseFormatOverride(ctx, responseFormatOverride(req.ResponseFormat))
 
 	start := time.Now()
 	result, err := s.provider.ChatWithInfoContext(ctx, systemPrompt, userContent)
