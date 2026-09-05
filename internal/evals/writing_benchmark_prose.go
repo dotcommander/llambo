@@ -17,7 +17,14 @@ func (ProseScreenAdapter) ScoreIdentity() string { return "prose-screen/v2-pre-s
 func (ProseScreenAdapter) GenerationSettings() WritingGenerationSettings {
 	return WritingGenerationSettings{Temperature: 0, TemperatureSet: true}
 }
+func (ProseScreenAdapter) Iterations(requested int) (int, error) {
+	return singleWritingIteration("prose-screen", requested)
+}
 func (ProseScreenAdapter) JudgePromptVersion() string { return ProseEvaluationPromptVersion }
+func (ProseScreenAdapter) buildRunReport(report WritingRunReport, generations []WritingGenerationRecord, judgments []WritingJudgmentRecord) WritingRunReport {
+	report.PreScreenOnly = true
+	return buildProseScreenRunReport(report, generations, judgments)
+}
 
 func (a ProseScreenAdapter) ValidateRecord(record WritingPromptRecord) error {
 	object, err := proseScreenSourceObject(record.SourceRecord)

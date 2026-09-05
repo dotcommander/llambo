@@ -4,31 +4,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 )
 
 func fetchLechMazurWriting(ctx context.Context, opts Options) (sourceSnapshot, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, opts.LechMazurWritingURL, nil)
+	body, headers, err := fetchWritingEvidenceHTTP(ctx, opts.Client, opts.LechMazurWritingURL, "Lech Mazur writing leaderboard", maxWritingSourceBody)
 	if err != nil {
 		return sourceSnapshot{}, err
-	}
-	req.Header.Set("User-Agent", "llambo-evals/1")
-	resp, err := opts.Client.Do(req)
-	if err != nil {
-		return sourceSnapshot{}, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return sourceSnapshot{}, fmt.Errorf("GET %s: HTTP %d", opts.LechMazurWritingURL, resp.StatusCode)
-	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxWritingSourceBody+1))
-	if err != nil {
-		return sourceSnapshot{}, fmt.Errorf("read Lech Mazur writing leaderboard: %w", err)
-	}
-	if len(body) > maxWritingSourceBody {
-		return sourceSnapshot{}, fmt.Errorf("Lech Mazur writing leaderboard exceeds %d bytes", maxWritingSourceBody)
 	}
 	rows, err := ParseWritingLeaderboard(string(body))
 	if err != nil {
@@ -36,10 +18,10 @@ func fetchLechMazurWriting(ctx context.Context, opts Options) (sourceSnapshot, e
 	}
 	sum := sha256.Sum256(body)
 	contentSHA := fmt.Sprintf("%x", sum)
-	version := normalizeHTTPETag(resp.Header.Get("ETag"))
-	commit := strings.TrimSpace(resp.Header.Get("X-Repo-Commit"))
+	version := normalizeHTTPETag(headers.Get("ETag"))
+	commit := strings.TrimSpace(headers.Get("X-Repo-Commit"))
 	if commit == "" {
-		commit = strings.TrimSpace(resp.Header.Get("X-Linked-ETag"))
+		commit = strings.TrimSpace(headers.Get("X-Linked-ETag"))
 	}
 	if version == "" {
 		version = commit

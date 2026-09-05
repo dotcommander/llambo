@@ -13,13 +13,25 @@ type WritingBenchmarkAdapter interface {
 	Version() string
 	ScoreIdentity() string
 	GenerationSettings() WritingGenerationSettings
+	Iterations(int) (int, error)
 	ValidateRecord(WritingPromptRecord) error
 	Criteria(WritingPromptRecord) ([]WritingCriterion, error)
+}
+
+func singleWritingIteration(name string, requested int) (int, error) {
+	if requested == 0 || requested == 1 {
+		return 1, nil
+	}
+	return 0, fmt.Errorf("%s requires --iterations 1", name)
 }
 
 type writingJudgmentAdapter interface {
 	BuildJudgmentPrompt(WritingPromptRecord, string, []WritingCriterion) (string, string, error)
 	ParseJudgment(string, string, []WritingCriterion) ([]WritingCriterionJudgment, error)
+}
+
+type writingRunReportAdapter interface {
+	buildRunReport(WritingRunReport, []WritingGenerationRecord, []WritingJudgmentRecord) WritingRunReport
 }
 
 type writingJudgePromptVersioner interface{ JudgePromptVersion() string }

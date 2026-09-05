@@ -21,9 +21,6 @@ func BuildWritingRunReport(manifest WritingRunManifest, adapter WritingBenchmark
 		ScoreIdentity: adapter.ScoreIdentity(),
 		Complete:      complete,
 	}
-	if adapter.ID() == "prose-screen" {
-		report.PreScreenOnly = true
-	}
 	for _, record := range generations {
 		report.ObservedCostUSD += record.Usage.CostUSD
 		if record.Status == "success" {
@@ -32,8 +29,8 @@ func BuildWritingRunReport(manifest WritingRunManifest, adapter WritingBenchmark
 			report.GenerationFailures++
 		}
 	}
-	if adapter.ID() == "prose-screen" {
-		return buildProseScreenRunReport(report, generations, judgments)
+	if specialized, ok := adapter.(writingRunReportAdapter); ok {
+		return specialized.buildRunReport(report, generations, judgments)
 	}
 	type accumulator struct {
 		total int
@@ -61,10 +58,8 @@ func BuildWritingRunReport(manifest WritingRunManifest, adapter WritingBenchmark
 		}
 		for _, result := range results {
 			report.Judgments++
-			if result.Applicable || adapter.ID() != "prose-screen" {
-				entry.total += result.Score
-				entry.count++
-			}
+			entry.total += result.Score
+			entry.count++
 		}
 		promptEntry := byPrompt[generation.Key]
 		if promptEntry == nil {
@@ -73,10 +68,8 @@ func BuildWritingRunReport(manifest WritingRunManifest, adapter WritingBenchmark
 			promptGeneration[generation.Key] = generation
 		}
 		for _, result := range results {
-			if result.Applicable || adapter.ID() != "prose-screen" {
-				promptEntry.total += result.Score
-				promptEntry.count++
-			}
+			promptEntry.total += result.Score
+			promptEntry.count++
 			report.CriterionScores = append(report.CriterionScores, WritingCriterionScore{Provider: generation.Provider, Model: generation.Model, PromptID: generation.PromptID, Iteration: generation.Iteration, CriterionID: result.CriterionID, Score: result.Score, Applicable: result.Applicable, Evidence: append([]ProseEvidenceSpan(nil), result.Evidence...), Reason: result.Reason})
 		}
 	}

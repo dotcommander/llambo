@@ -63,27 +63,23 @@ func (c OMLXAccelerationChatClient) AccelerationChat(ctx context.Context, reques
 	if len(body) > localAdapterResponseLimit {
 		return AccelerationChatResponse{}, fmt.Errorf("acceleration request exceeds %d bytes", localAdapterResponseLimit)
 	}
-	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, root+"/v1/chat/completions", bytes.NewReader(body))
-	if err != nil {
-		return AccelerationChatResponse{}, fmt.Errorf("build acceleration request: %w", err)
-	}
-	httpRequest.Header.Set("Content-Type", "application/json")
-	if c.APIKey != "" {
-		httpRequest.Header.Set("Authorization", "Bearer "+c.APIKey)
-	}
-	client := c.Client
-	if client == nil {
-		client = &http.Client{Timeout: 10 * time.Minute}
-	}
-	response, err := client.Do(httpRequest)
-	if err != nil {
-		return AccelerationChatResponse{}, fmt.Errorf("request acceleration chat: %w", err)
-	}
-	defer response.Body.Close()
-	responseBody, err := readBoundedLocalBody(response.Body, localAdapterResponseLimit)
+	httpResponse, err := executeLocalOMLXHTTP(ctx, localOMLXHTTPRequest{
+		method:        http.MethodPost,
+		endpoint:      root + "/v1/chat/completions",
+		body:          bytes.NewReader(body),
+		contentType:   "application/json",
+		apiKey:        c.APIKey,
+		client:        c.Client,
+		responseLimit: localAdapterResponseLimit,
+		buildError:    "build acceleration request",
+		requestError:  "request acceleration chat",
+	})
 	if err != nil {
 		return AccelerationChatResponse{}, err
 	}
+	response := httpResponse.response
+	defer response.Body.Close()
+	responseBody := httpResponse.body
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		return AccelerationChatResponse{}, fmt.Errorf("acceleration chat HTTP %d: %s", response.StatusCode, boundedErrorText(responseBody))
 	}

@@ -5,8 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"sort"
 	"strings"
 )
@@ -23,25 +21,9 @@ type arenaCreativeRating struct {
 }
 
 func fetchArenaCreative(ctx context.Context, opts Options) (sourceSnapshot, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, opts.ArenaCreativeURL, nil)
+	body, headers, err := fetchWritingEvidenceHTTP(ctx, opts.Client, opts.ArenaCreativeURL, "Arena Creative Writing source", maxArenaCreativeBody)
 	if err != nil {
 		return sourceSnapshot{}, err
-	}
-	req.Header.Set("User-Agent", "llambo-evals/1")
-	resp, err := opts.Client.Do(req)
-	if err != nil {
-		return sourceSnapshot{}, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return sourceSnapshot{}, fmt.Errorf("GET %s: HTTP %d", opts.ArenaCreativeURL, resp.StatusCode)
-	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxArenaCreativeBody+1))
-	if err != nil {
-		return sourceSnapshot{}, fmt.Errorf("read Arena Creative Writing source: %w", err)
-	}
-	if len(body) > maxArenaCreativeBody {
-		return sourceSnapshot{}, fmt.Errorf("Arena Creative Writing source exceeds %d bytes", maxArenaCreativeBody)
 	}
 	var categories map[string]map[string]arenaCreativeRating
 	if err := json.Unmarshal(body, &categories); err != nil {
@@ -53,8 +35,8 @@ func fetchArenaCreative(ctx context.Context, opts Options) (sourceSnapshot, erro
 	}
 	sum := sha256.Sum256(body)
 	contentSHA := fmt.Sprintf("%x", sum)
-	version := normalizeHTTPETag(resp.Header.Get("ETag"))
-	commit := strings.TrimSpace(resp.Header.Get("X-Repo-Commit"))
+	version := normalizeHTTPETag(headers.Get("ETag"))
+	commit := strings.TrimSpace(headers.Get("X-Repo-Commit"))
 	if version == "" {
 		version = commit
 	}

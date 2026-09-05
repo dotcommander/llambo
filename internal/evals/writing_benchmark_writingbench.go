@@ -15,6 +15,9 @@ func (WritingBenchAdapter) ScoreIdentity() string { return "writingbench/local-c
 func (WritingBenchAdapter) GenerationSettings() WritingGenerationSettings {
 	return WritingGenerationSettings{}
 }
+func (WritingBenchAdapter) Iterations(requested int) (int, error) {
+	return singleWritingIteration("WritingBench", requested)
+}
 
 func (a WritingBenchAdapter) ValidateRecord(record WritingPromptRecord) error {
 	object, err := sourceObject(record.SourceRecord)

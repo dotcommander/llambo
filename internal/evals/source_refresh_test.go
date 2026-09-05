@@ -7,10 +7,36 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestWritingEvidenceSourceDescriptorsOwnDefaultsAndMetadata(t *testing.T) {
+	opts := Options{
+		WritingBenchURL:     "https://example.test/writingbench",
+		EQBenchCreativeURL:  "https://example.test/eqbench",
+		LechMazurWritingURL: "https://example.test/lechmazur",
+		ArenaCreativeURL:    "https://example.test/arena",
+	}
+	wantIDs := []string{"writingbench", "eqbench-creative-v3", WritingPrimaryID, ArenaCreativeSourceID}
+	wantNames := []string{"WritingBench", "EQ-Bench Creative v3", "Lech Mazur Creative Story-Writing", "Arena Creative Writing"}
+	wantURLs := []string{opts.WritingBenchURL, opts.EQBenchCreativeURL, opts.LechMazurWritingURL, opts.ArenaCreativeURL}
+
+	if got := defaultWritingEvidenceSourceNames(); !reflect.DeepEqual(got, wantIDs) {
+		t.Fatalf("default source IDs = %v, want %v", got, wantIDs)
+	}
+	for i, id := range wantIDs {
+		source, ok := writingEvidenceSourceFor(id)
+		if !ok {
+			t.Fatalf("source %q missing from descriptor lookup", id)
+		}
+		if source.name != wantNames[i] || source.url(opts) != wantURLs[i] || source.fetcher == nil {
+			t.Errorf("source %q metadata = name %q url %q fetcher_nil=%t", id, source.name, source.url(opts), source.fetcher == nil)
+		}
+	}
+}
 
 func TestRefreshEvaluationSourcesIsScopedAndValidatesProvenance(t *testing.T) {
 	var writingRequests, eqBenchRequests, lechRequests int

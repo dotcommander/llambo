@@ -15,6 +15,15 @@ func (EQCreativeLocalRubricAdapter) ScoreIdentity() string {
 func (EQCreativeLocalRubricAdapter) GenerationSettings() WritingGenerationSettings {
 	return WritingGenerationSettings{Temperature: 0.7, TemperatureSet: true, ExtraBody: map[string]any{"min_p": 0.1}}
 }
+func (EQCreativeLocalRubricAdapter) Iterations(requested int) (int, error) {
+	if requested == 0 {
+		return 3, nil
+	}
+	if requested < 1 || requested > 3 {
+		return 0, fmt.Errorf("EQ-Bench Creative v3 --iterations must be between 1 and 3")
+	}
+	return requested, nil
+}
 
 func (a EQCreativeLocalRubricAdapter) ValidateRecord(record WritingPromptRecord) error {
 	object, err := sourceObject(record.SourceRecord)

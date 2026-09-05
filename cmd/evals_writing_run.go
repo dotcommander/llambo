@@ -88,7 +88,7 @@ func runWritingEvaluationCommand(cmd *commandIO, options *evalsWritingRunCommand
 	if err != nil {
 		return err
 	}
-	iterations, err := writingIterations(adapter.ID(), options.Iterations)
+	iterations, err := adapter.Iterations(options.Iterations)
 	if err != nil {
 		return err
 	}
@@ -230,31 +230,6 @@ func isGPTProModel(selector string) bool {
 		return false
 	}
 	return strings.HasSuffix(model, "-pro") || strings.Contains(model, "-pro-")
-}
-
-func writingIterations(benchmark string, requested int) (int, error) {
-	switch benchmark {
-	case "writingbench":
-		if requested == 0 || requested == 1 {
-			return 1, nil
-		}
-		return 0, fmt.Errorf("WritingBench requires --iterations 1")
-	case "eqbench-creative-v3":
-		if requested == 0 {
-			return 3, nil
-		}
-		if requested < 1 || requested > 3 {
-			return 0, fmt.Errorf("EQ-Bench Creative v3 --iterations must be between 1 and 3")
-		}
-		return requested, nil
-	case "prose-screen":
-		if requested == 0 || requested == 1 {
-			return 1, nil
-		}
-		return 0, fmt.Errorf("prose-screen requires --iterations 1")
-	default:
-		return 0, fmt.Errorf("unsupported writing benchmark %q", benchmark)
-	}
 }
 
 func writeWritingDryRun(out io.Writer, manifest evals.WritingRunManifest, plan evals.WritingRunPlan) error {

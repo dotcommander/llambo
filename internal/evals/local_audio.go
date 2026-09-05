@@ -196,30 +196,23 @@ func (a OMLXAudioAdapter) Synthesize(ctx context.Context, request TTSSpeechReque
 }
 
 func (a OMLXAudioAdapter) doHTTP(ctx context.Context, method, endpoint string, body io.Reader, contentType string) (*http.Response, []byte, time.Duration, error) {
-	req, err := http.NewRequestWithContext(ctx, method, endpoint, body)
+	result, err := executeLocalOMLXHTTP(ctx, localOMLXHTTPRequest{
+		method:         method,
+		endpoint:       endpoint,
+		body:           body,
+		contentType:    contentType,
+		apiKey:         a.APIKey,
+		client:         a.Client,
+		responseLimit:  localAudioLimit,
+		buildError:     "build audio request",
+		requestError:   "request audio endpoint",
+		measureLatency: true,
+	})
 	if err != nil {
-		return nil, nil, 0, fmt.Errorf("build audio request: %w", err)
+		return nil, nil, result.elapsed, err
 	}
-	req.Header.Set("Content-Type", contentType)
-	if a.APIKey != "" {
-		req.Header.Set("Authorization", "Bearer "+a.APIKey)
-	}
-	client := a.Client
-	if client == nil {
-		client = &http.Client{Timeout: 10 * time.Minute}
-	}
-	started := time.Now()
-	response, err := client.Do(req)
-	elapsed := time.Since(started)
-	if err != nil {
-		return nil, nil, elapsed, fmt.Errorf("request audio endpoint: %w", err)
-	}
-	defer response.Body.Close()
-	responseBody, err := readBoundedLocalBody(response.Body, localAudioLimit)
-	if err != nil {
-		return nil, nil, elapsed, err
-	}
-	return response, responseBody, elapsed, nil
+	defer result.response.Body.Close()
+	return result.response, result.body, result.elapsed, nil
 }
 
 func validatedOMLXRoot(baseURL string) (string, error) {

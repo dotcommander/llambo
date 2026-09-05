@@ -5,11 +5,45 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
 
-var defaultWritingEvidenceSources = []string{"writingbench", "eqbench-creative-v3", WritingPrimaryID, ArenaCreativeSourceID}
+type writingEvidenceSource struct {
+	id      string
+	name    string
+	url     func(Options) string
+	fetcher func(context.Context, Options) (sourceSnapshot, error)
+}
+
+func writingEvidenceSources() []writingEvidenceSource {
+	return []writingEvidenceSource{
+		{id: "writingbench", name: "WritingBench", url: func(opts Options) string { return opts.WritingBenchURL }, fetcher: fetchWritingBench},
+		{id: "eqbench-creative-v3", name: "EQ-Bench Creative v3", url: func(opts Options) string { return opts.EQBenchCreativeURL }, fetcher: fetchEQBenchCreative},
+		{id: WritingPrimaryID, name: "Lech Mazur Creative Story-Writing", url: func(opts Options) string { return opts.LechMazurWritingURL }, fetcher: fetchLechMazurWriting},
+		{id: ArenaCreativeSourceID, name: "Arena Creative Writing", url: func(opts Options) string { return opts.ArenaCreativeURL }, fetcher: fetchArenaCreative},
+	}
+}
+
+func writingEvidenceSourceFor(name string) (writingEvidenceSource, bool) {
+	name = strings.TrimSpace(strings.ToLower(name))
+	for _, source := range writingEvidenceSources() {
+		if source.id == name {
+			return source, true
+		}
+	}
+	return writingEvidenceSource{}, false
+}
+
+func defaultWritingEvidenceSourceNames() []string {
+	sources := writingEvidenceSources()
+	names := make([]string, 0, len(sources))
+	for _, source := range sources {
+		names = append(names, source.id)
+	}
+	return names
+}
 
 // RefreshEvaluationSources is the single source-ingestion entry point. It owns
 // source selection, validation, predecessor preservation, and cache publication
@@ -18,7 +52,7 @@ var defaultWritingEvidenceSources = []string{"writingbench", "eqbench-creative-v
 func RefreshEvaluationSources(ctx context.Context, opts Options, names []string) ([]SourceStatus, []string, error) {
 	opts.applyDefaults()
 	if len(names) == 0 {
-		names = append([]string(nil), defaultWritingEvidenceSources...)
+		names = defaultWritingEvidenceSourceNames()
 	}
 	normalized := make([]string, 0, len(names))
 	for _, name := range names {
@@ -89,20 +123,18 @@ func preserveEvaluationSourceCaches(cacheDir string, names []string, now time.Ti
 // Fetches are staged in memory first so a later validation failure cannot leave
 // a partially refreshed source set.
 func refreshWritingEvidenceSources(ctx context.Context, opts Options, names []string) ([]SourceStatus, error) {
-	fetchers := map[string]func(context.Context, Options) (sourceSnapshot, error){
-		"writingbench":        fetchWritingBench,
-		"eqbench-creative-v3": fetchEQBenchCreative,
-		WritingPrimaryID:      fetchLechMazurWriting,
-		ArenaCreativeSourceID: fetchArenaCreative,
-	}
 	opts.Refresh = true
 	type stagedSource struct {
-		name     string
+		source   writingEvidenceSource
 		snapshot sourceSnapshot
 	}
 	staged := make([]stagedSource, 0, len(names))
 	for _, name := range names {
-		snapshot, err := fetchers[name](ctx, opts)
+		source, ok := writingEvidenceSourceFor(name)
+		if !ok {
+			return nil, fmt.Errorf("unsupported evaluation source %q", name)
+		}
+		snapshot, err := source.fetcher(ctx, opts)
 		if err != nil {
 			return nil, fmt.Errorf("fetch %s: %w", name, err)
 		}
@@ -110,24 +142,24 @@ func refreshWritingEvidenceSources(ctx context.Context, opts Options, names []st
 		if err := validateWritingEvidenceSnapshot(name, snapshot); err != nil {
 			return nil, fmt.Errorf("validate %s: %w", name, err)
 		}
-		staged = append(staged, stagedSource{name: name, snapshot: snapshot})
+		staged = append(staged, stagedSource{source: source, snapshot: snapshot})
 	}
 	statuses := make([]SourceStatus, 0, len(staged))
-	for _, source := range staged {
-		if err := writeSnapshot(filepath.Join(opts.CacheDir, source.name+".json"), source.snapshot); err != nil {
-			return nil, fmt.Errorf("cache %s: %w", source.name, err)
+	for _, staged := range staged {
+		if err := writeSnapshot(filepath.Join(opts.CacheDir, staged.source.id+".json"), staged.snapshot); err != nil {
+			return nil, fmt.Errorf("cache %s: %w", staged.source.id, err)
 		}
-		statuses = append(statuses, statusFor(writingEvidenceSourceName(source.name), writingEvidenceSourceURL(source.name, opts), source.snapshot, "fetched", nil))
+		statuses = append(statuses, statusFor(staged.source.name, staged.source.url(opts), staged.snapshot, "fetched", nil))
 	}
 	return statuses, nil
 }
 
 func validateWritingEvidenceSourceNames(names []string) error {
 	for _, name := range names {
-		switch strings.TrimSpace(strings.ToLower(name)) {
-		case "writingbench", "eqbench-creative-v3", WritingPrimaryID, ArenaCreativeSourceID:
-		default:
-			return fmt.Errorf("unsupported evaluation source %q (supported: arena-creative-writing, eqbench-creative-v3, lechmazur-writing, writingbench)", name)
+		if _, ok := writingEvidenceSourceFor(name); !ok {
+			supported := defaultWritingEvidenceSourceNames()
+			sort.Strings(supported)
+			return fmt.Errorf("unsupported evaluation source %q (supported: %s)", name, strings.Join(supported, ", "))
 		}
 	}
 	return nil
@@ -188,32 +220,6 @@ func RefreshLLMStatsStatsV1Source(ctx context.Context, opts Options) (SourceStat
 		return SourceStatus{}, "", fmt.Errorf("cache llm-stats-stats-v1: %w", err)
 	}
 	return statusFor("LLM Stats", opts.LLMStatsStatsV1ModelsURL, snapshot, "fetched", nil), backup, nil
-}
-
-func writingEvidenceSourceName(name string) string {
-	if name == "eqbench-creative-v3" {
-		return "EQ-Bench Creative v3"
-	}
-	if name == WritingPrimaryID {
-		return "Lech Mazur Creative Story-Writing"
-	}
-	if name == ArenaCreativeSourceID {
-		return "Arena Creative Writing"
-	}
-	return "WritingBench"
-}
-
-func writingEvidenceSourceURL(name string, opts Options) string {
-	if name == "eqbench-creative-v3" {
-		return opts.EQBenchCreativeURL
-	}
-	if name == WritingPrimaryID {
-		return opts.LechMazurWritingURL
-	}
-	if name == ArenaCreativeSourceID {
-		return opts.ArenaCreativeURL
-	}
-	return opts.WritingBenchURL
 }
 
 // WritingEvidenceSourceBackupPath provides the recovery artifact named by the

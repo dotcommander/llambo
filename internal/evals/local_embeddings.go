@@ -9,7 +9,6 @@ import (
 	"math"
 	"net/http"
 	"strings"
-	"time"
 )
 
 // A sealed retrieval case can return 80 high-dimensional float vectors. Keep
@@ -74,27 +73,23 @@ func (a OMLXEmbeddingAdapter) Evaluate(ctx context.Context, model string, c Embe
 	if len(body) > localAdapterResponseLimit {
 		return EmbeddingEvaluation{}, fmt.Errorf("embedding request exceeds %d bytes", localAdapterResponseLimit)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, root+"/v1/embeddings", bytes.NewReader(body))
-	if err != nil {
-		return EmbeddingEvaluation{}, fmt.Errorf("build embeddings request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if a.APIKey != "" {
-		req.Header.Set("Authorization", "Bearer "+a.APIKey)
-	}
-	client := a.Client
-	if client == nil {
-		client = &http.Client{Timeout: 10 * time.Minute}
-	}
-	response, err := client.Do(req)
-	if err != nil {
-		return EmbeddingEvaluation{}, fmt.Errorf("request embeddings: %w", err)
-	}
-	defer response.Body.Close()
-	responseBody, err := readBoundedLocalBody(response.Body, localEmbeddingResponseLimit)
+	httpResponse, err := executeLocalOMLXHTTP(ctx, localOMLXHTTPRequest{
+		method:        http.MethodPost,
+		endpoint:      root + "/v1/embeddings",
+		body:          bytes.NewReader(body),
+		contentType:   "application/json",
+		apiKey:        a.APIKey,
+		client:        a.Client,
+		responseLimit: localEmbeddingResponseLimit,
+		buildError:    "build embeddings request",
+		requestError:  "request embeddings",
+	})
 	if err != nil {
 		return EmbeddingEvaluation{}, err
 	}
+	response := httpResponse.response
+	defer response.Body.Close()
+	responseBody := httpResponse.body
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		return EmbeddingEvaluation{}, fmt.Errorf("embeddings HTTP %d: %s", response.StatusCode, boundedErrorText(responseBody))
 	}

@@ -13,33 +13,6 @@ import (
 	"github.com/dotcommander/llambo/providers"
 )
 
-func TestWritingIterations(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		benchmark string
-		requested int
-		want      int
-		wantErr   bool
-	}{
-		{"writingbench", 0, 1, false},
-		{"writingbench", 2, 0, true},
-		{"eqbench-creative-v3", 0, 3, false},
-		{"eqbench-creative-v3", 1, 1, false},
-		{"eqbench-creative-v3", 4, 0, true},
-		{"prose-screen", 0, 1, false},
-		{"prose-screen", 2, 0, true},
-	}
-	for _, test := range tests {
-		t.Run(test.benchmark, func(t *testing.T) {
-			t.Parallel()
-			got, err := writingIterations(test.benchmark, test.requested)
-			if got != test.want || (err != nil) != test.wantErr {
-				t.Fatalf("writingIterations(%q, %d) = %d, %v", test.benchmark, test.requested, got, err)
-			}
-		})
-	}
-}
-
 func TestWritingJudgeTokenCap(t *testing.T) {
 	prose := evals.ProseScreenAdapter{}
 	if got, err := writingJudgeTokenCap(prose, 8192, false); err != nil || got != evals.DefaultProseEvaluationMaxTokens {
