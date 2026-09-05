@@ -84,6 +84,146 @@ func TestApply_NewModel(t *testing.T) {
 	require.True(t, entry.LastSeen.Equal(entry.FirstSeen), "first_seen == last_seen on first observation")
 }
 
+func TestOpenAICompatFetcherPreservesEmptyBaseEndpoint(t *testing.T) {
+	t.Parallel()
+	_, endpoint, err := (openaiCompatFetcher{}).Fetch(context.Background(), providers.Config{ProviderType: "openai", RequiresKey: false})
+	require.Error(t, err)
+	require.Equal(t, "/v1/models", endpoint)
+}
+
+func TestBuildOpenAIModelsRequestSpec(t *testing.T) {
+	t.Parallel()
+
+	spec := BuildOpenAIModelsRequestSpec("https://models.example/api", "catalog-key", map[string]string{
+		"accept":        "application/vnd.models+json",
+		"aUtHoRiZaTiOn": "Bearer gateway-key",
+		"X-Gateway":     "catalog",
+	})
+
+	require.Equal(t, "https://models.example/api/v1/models", spec.Endpoint)
+	require.Equal(t, map[string]string{
+		"Accept":        "application/vnd.models+json",
+		"Authorization": "Bearer gateway-key",
+		"X-Gateway":     "catalog",
+	}, spec.Headers)
+}
+
+func TestDecodeOpenAICompatibleModelsPreservesMetadataAndOrder(t *testing.T) {
+	t.Parallel()
+
+	models, err := DecodeOpenAICompatibleModels([]byte(`{
+		"data": [
+			{
+				"id": "second",
+				"canonical_slug": "vendor/second",
+				"name": "Second model",
+				"created": 1700000000,
+				"owned_by": "vendor",
+				"context_length": 128000,
+				"architecture": {"modality": "text->text", "input_modalities": ["text"], "output_modalities": ["text"], "tokenizer": "test", "instruct_type": "chat"},
+				"pricing": {"prompt": "0.1", "completion": "0.2", "image": "0.3", "audio": "0.4", "web_search": "0.5", "internal_reasoning": "0.6", "input_cache_read": "0.7", "input_cache_write": "0.8"},
+				"top_provider": {"context_length": 64000, "max_completion_tokens": 4096, "is_moderated": true},
+				"supported_parameters": ["max_tokens", "tools"],
+				"default_parameters": {"temperature": 1},
+				"reasoning": {"enabled": true},
+				"benchmarks": {"mmlu": 0.9}
+			},
+			{"id": ""},
+			{"id": "first", "owned_by": "other"}
+		]
+	}`))
+	require.NoError(t, err)
+	require.Len(t, models, 2)
+	require.Equal(t, []string{"second", "first"}, []string{models[0].ID, models[1].ID})
+	require.Equal(t, "vendor", models[0].OwnedBy)
+	require.Equal(t, time.Unix(1700000000, 0).UTC(), models[0].UpstreamCreated)
+	require.Equal(t, ModelMetadata{
+		Name:                "Second model",
+		CanonicalSlug:       "vendor/second",
+		ContextLength:       128000,
+		SupportedParameters: []string{"max_tokens", "tools"},
+		DefaultParameters:   map[string]any{"temperature": float64(1)},
+		Pricing: ModelPricing{
+			Prompt: "0.1", Completion: "0.2", Image: "0.3", Audio: "0.4",
+			WebSearch: "0.5", InternalReasoning: "0.6", InputCacheRead: "0.7", InputCacheWrite: "0.8",
+		},
+		Architecture: ModelArchitecture{
+			Modality: "text->text", InputModalities: []string{"text"}, OutputModalities: []string{"text"}, Tokenizer: "test", InstructType: "chat",
+		},
+		TopProvider: ModelTopProvider{ContextLength: 64000, MaxCompletionTokens: 4096, IsModerated: true},
+		Reasoning:   map[string]any{"enabled": true},
+		Benchmarks:  map[string]any{"mmlu": 0.9},
+	}, models[0].Metadata)
+	require.Equal(t, "other", models[1].OwnedBy)
+}
+
+func TestDecodeOpenAICompatibleModelsRejectsMalformedMetadata(t *testing.T) {
+	t.Parallel()
+
+	_, err := DecodeOpenAICompatibleModels([]byte(`{"data":[{"id":"usable","architecture":"not-an-object"}]}`))
+	require.Error(t, err)
+}
+
+func TestDecodeGeminiModelsPreservesMetadataOrderAndOnePrefix(t *testing.T) {
+	t.Parallel()
+
+	models, err := DecodeGeminiModels([]byte(`{
+		"models": [
+			{
+				"name": "models/second",
+				"displayName": "Second model",
+				"description": "Second description",
+				"inputTokenLimit": 128000,
+				"outputTokenLimit": 8192,
+				"supportedGenerationMethods": ["generateContent", "countTokens"]
+			},
+			{"name": "models/models/first"},
+			{"name": "models/"}
+		]
+	}`))
+	require.NoError(t, err)
+	require.Equal(t, []UpstreamModel{
+		{
+			ID: "second",
+			Metadata: ModelMetadata{
+				Name:                       "Second model",
+				Description:                "Second description",
+				ContextLength:              128000,
+				InputTokenLimit:            128000,
+				OutputTokenLimit:           8192,
+				SupportedGenerationMethods: []string{"generateContent", "countTokens"},
+			},
+		},
+		{ID: "models/first"},
+	}, models)
+}
+
+func TestDecodeGeminiModelsRejectsMalformedMetadata(t *testing.T) {
+	t.Parallel()
+
+	_, err := DecodeGeminiModels([]byte(`{"models":[{"name":"models/usable","supportedGenerationMethods":"not-an-array"}]}`))
+	require.Error(t, err)
+}
+
+func TestAPIKeyUsesFirstConfiguredArrayKey(t *testing.T) {
+	t.Parallel()
+
+	key, err := apiKey("catalog", providers.Config{
+		APIKeys:     []string{"", "catalog-array-key"},
+		RequiresKey: true,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "catalog-array-key", key)
+}
+
+func TestAPIKeyPreservesRequiredKeyError(t *testing.T) {
+	t.Parallel()
+
+	key, err := apiKey("catalog", providers.Config{RequiresKey: true})
+	require.Empty(t, key)
+	require.EqualError(t, err, "no API key configured for provider \"catalog\" (set api_key, api_keys, or )")
+}
+
 func TestApply_OpenRouterMetadata(t *testing.T) {
 	t.Parallel()
 

@@ -43,19 +43,8 @@ func RecordQualityEvidence(cat *Catalog, record QualityImportRecord, now time.Ti
 	if cat.Providers == nil {
 		cat.Providers = make(map[string]*ProviderCatalog)
 	}
-	pc := cat.Providers[provider]
-	if pc == nil {
-		pc = &ProviderCatalog{Models: make(map[string]*ModelEntry)}
-		cat.Providers[provider] = pc
-	}
-	if pc.Models == nil {
-		pc.Models = make(map[string]*ModelEntry)
-	}
-	entry := pc.Models[model]
-	if entry == nil {
-		entry = &ModelEntry{FirstSeen: now, LastSeen: now}
-		pc.Models[model] = entry
-	}
+	pc := ensureProviderCatalog(cat, provider)
+	entry := ensureModelEntry(pc, model, now)
 	if entry.Quality == nil {
 		entry.Quality = make(map[string]QualityEvidence)
 	}

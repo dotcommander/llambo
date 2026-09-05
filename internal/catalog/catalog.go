@@ -45,6 +45,32 @@ type ModelEntry struct {
 	FailureCount    int                          `json:"failure_count,omitempty"`
 }
 
+// ensureProviderCatalog returns the provider catalog, creating its model map when
+// the provider has not been observed yet. Callers own Catalog initialization.
+func ensureProviderCatalog(cat *Catalog, name string) *ProviderCatalog {
+	pc := cat.Providers[name]
+	if pc == nil {
+		pc = &ProviderCatalog{Models: make(map[string]*ModelEntry)}
+		cat.Providers[name] = pc
+		return pc
+	}
+	if pc.Models == nil {
+		pc.Models = make(map[string]*ModelEntry)
+	}
+	return pc
+}
+
+// ensureModelEntry returns the model entry, recording its first observation when
+// it has not been seen before.
+func ensureModelEntry(pc *ProviderCatalog, id string, seenAt time.Time) *ModelEntry {
+	entry := pc.Models[id]
+	if entry == nil {
+		entry = &ModelEntry{FirstSeen: seenAt, LastSeen: seenAt}
+		pc.Models[id] = entry
+	}
+	return entry
+}
+
 // ModelMetadata stores optional provider-supplied model facts. It is additive
 // catalog metadata; pin/avoid/tags remain the user-owned policy state.
 type ModelMetadata struct {
@@ -154,28 +180,6 @@ func Load(path string) (*Catalog, error) {
 		cat.Providers = make(map[string]*ProviderCatalog)
 	}
 	return &cat, nil
-}
-
-// Save writes the catalog atomically: write to a temp file in the same dir, then os.Rename.
-// Creates parent dir if needed (0o755). File mode 0o644.
-func Save(path string, cat *Catalog) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("create catalog dir: %w", err)
-	}
-
-	data, err := json.MarshalIndent(cat, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal catalog: %w", err)
-	}
-
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return fmt.Errorf("write catalog tmp: %w", err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		return fmt.Errorf("rename catalog: %w", err)
-	}
-	return nil
 }
 
 // PinnedModels returns pinned, non-avoided model IDs for enabled providers.

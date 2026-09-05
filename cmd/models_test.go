@@ -131,6 +131,121 @@ func TestModelsListAvailableCanTargetOneProvider(t *testing.T) {
 	}
 }
 
+func TestFetchOpenAICompatibleModelsContextUsesSharedRequestSpec(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			t.Errorf("request path = %q, want /v1/models", r.URL.Path)
+		}
+		if got := r.Header.Get("Accept"); got != "application/vnd.llambo+json" {
+			t.Errorf("Accept = %q, want extra-header override", got)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer gateway-key" {
+			t.Errorf("Authorization = %q, want extra-header override", got)
+		}
+		fmt.Fprint(w, `{"data":[{"id":"zeta","name":"Zeta"},{"id":"alpha","owned_by":"test"}]}`)
+	}))
+	defer server.Close()
+
+	got := fetchOpenAICompatibleModelsContext(context.Background(), "test", providers.Config{
+		BaseURL: server.URL,
+		APIKey:  "source-key",
+		ExtraHeaders: map[string]string{
+			"Accept":        "application/vnd.llambo+json",
+			"Authorization": "Bearer gateway-key",
+		},
+	}, 1)
+	if want := []string{"alpha", "zeta"}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("models = %v, want %v", got, want)
+	}
+}
+
+func TestFetchOpenAICompatibleModelsContextRejectsBlankBaseURL(t *testing.T) {
+	t.Parallel()
+
+	if got := fetchOpenAICompatibleModelsContext(context.Background(), "test", providers.Config{APIKey: "key"}, 1); got != nil {
+		t.Fatalf("models = %v, want nil for blank base URL", got)
+	}
+}
+
+func TestFetchOpenAICompatibleModelsContextAcceptsMalformedOptionalMetadata(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `{"data":[{"id":"usable","architecture":"provider-specific"}]}`)
+	}))
+	defer server.Close()
+
+	got := fetchOpenAICompatibleModelsContext(context.Background(), "test", providers.Config{BaseURL: server.URL}, 1)
+	if want := []string{"usable"}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("models = %v, want %v", got, want)
+	}
+}
+
+func TestFetchGeminiModelsContextUsesTolerantSharedDecoder(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/models" {
+			t.Errorf("request path = %q, want /models", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("key"); got != "source-key" {
+			t.Errorf("key = %q, want source-key", got)
+		}
+		fmt.Fprint(w, `{
+			"models": [
+				{"name": "models/zeta", "displayName": 99},
+				{"name": "models/models/alpha", "supportedGenerationMethods": "not-an-array"},
+				{"name": "models/"}
+			]
+		}`)
+	}))
+	defer server.Close()
+
+	got := fetchGeminiModelsContext(context.Background(), "test", providers.Config{
+		BaseURL: server.URL,
+		APIKey:  "source-key",
+	}, 1)
+	if want := []string{"models/alpha", "zeta"}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("models = %v, want %v", got, want)
+	}
+}
+
+func TestFetchModelListContextReturnsNilForNonSuccessStatus(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	called := false
+	decode := func([]byte) ([]string, error) {
+		called = true
+		return []string{"unexpected"}, nil
+	}
+	if got := fetchModelListContext(context.Background(), server.URL, nil, 1, decode); got != nil {
+		t.Fatalf("models = %v, want nil", got)
+	}
+	if called {
+		t.Fatal("decoder called for non-success response")
+	}
+}
+
+func TestFetchModelListContextReturnsNilForDecodeFailure(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `{invalid`)
+	}))
+	defer server.Close()
+
+	if got := fetchModelListContext(context.Background(), server.URL, nil, 1, catalog.DecodeOpenAICompatibleModelIDs); got != nil {
+		t.Fatalf("models = %v, want nil", got)
+	}
+}
+
 func TestModelsListMetricsUsesCatalogWithoutProviderCalls(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

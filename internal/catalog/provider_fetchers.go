@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -13,34 +14,78 @@ import (
 
 type openaiCompatFetcher struct{}
 
-func (openaiCompatFetcher) Fetch(ctx context.Context, cfg providers.Config) ([]UpstreamModel, string, error) {
-	name := inferProviderName(cfg)
-	key, err := apiKey(name, cfg)
-	if err != nil {
-		return nil, "", err
-	}
+// OpenAIModelsRequestSpec describes the OpenAI-compatible model-list request.
+// Callers retain transport policy such as timeouts and response-size limits.
+type OpenAIModelsRequestSpec struct {
+	Endpoint string
+	Headers  map[string]string
+}
 
-	base := strings.TrimSuffix(cfg.BaseURL, "/")
-	if !strings.HasSuffix(base, "/v1") && !strings.HasSuffix(base, "/v4") {
-		base += "/v1"
+// BuildOpenAIModelsRequestSpec builds the shared OpenAI-compatible model-list
+// endpoint and headers. Provider-specific headers intentionally apply last so
+// they can override the defaults or authentication when required by a gateway.
+func BuildOpenAIModelsRequestSpec(baseURL, apiKey string, extraHeaders map[string]string) OpenAIModelsRequestSpec {
+	base := providers.NormalizeOpenAIBaseURL(baseURL)
+	if base == "" {
+		base = "/v1"
 	}
-	endpoint := base + "/models"
 
 	headers := map[string]string{"Accept": "application/json"}
-	if key != "" {
-		headers["Authorization"] = "Bearer " + key
+	if apiKey != "" {
+		headers["Authorization"] = "Bearer " + apiKey
 	}
-	for k, v := range cfg.ExtraHeaders {
-		headers[k] = v
+	for k, v := range extraHeaders {
+		headers[http.CanonicalHeaderKey(k)] = v
 	}
+	return OpenAIModelsRequestSpec{Endpoint: base + "/models", Headers: headers}
+}
 
-	body, err := doGet(ctx, endpoint, headers)
-	if err != nil {
-		return nil, endpoint, err
-	}
-
+func decodeOpenAICompatibleModelData(body []byte) ([]json.RawMessage, error) {
 	var payload struct {
-		Data []struct {
+		Data []json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, fmt.Errorf("parse response: %w", err)
+	}
+	return payload.Data, nil
+}
+
+// DecodeOpenAICompatibleModelIDs decodes model IDs without interpreting
+// optional provider metadata. It is for callers whose established contract only
+// needs a tolerant inventory of usable IDs.
+func DecodeOpenAICompatibleModelIDs(body []byte) ([]string, error) {
+	data, err := decodeOpenAICompatibleModelData(body)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]string, 0, len(data))
+	for _, raw := range data {
+		var model struct {
+			ID string `json:"id"`
+		}
+		if err := json.Unmarshal(raw, &model); err != nil {
+			return nil, fmt.Errorf("parse response: %w", err)
+		}
+		if model.ID != "" {
+			out = append(out, model.ID)
+		}
+	}
+	return out, nil
+}
+
+// DecodeOpenAICompatibleModels decodes an OpenAI-compatible model list without
+// changing upstream order. It retains all metadata currently used by catalog
+// refresh; callers may project the result to a smaller representation.
+func DecodeOpenAICompatibleModels(body []byte) ([]UpstreamModel, error) {
+	data, err := decodeOpenAICompatibleModelData(body)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]UpstreamModel, 0, len(data))
+	for _, raw := range data {
+		var d struct {
 			ID                  string          `json:"id"`
 			CanonicalSlug       string          `json:"canonical_slug"`
 			Name                string          `json:"name"`
@@ -54,14 +99,10 @@ func (openaiCompatFetcher) Fetch(ctx context.Context, cfg providers.Config) ([]U
 			DefaultParameters   map[string]any  `json:"default_parameters"`
 			Reasoning           map[string]any  `json:"reasoning"`
 			Benchmarks          map[string]any  `json:"benchmarks"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return nil, endpoint, fmt.Errorf("parse response: %w", err)
-	}
-
-	out := make([]UpstreamModel, 0, len(payload.Data))
-	for _, d := range payload.Data {
+		}
+		if err := json.Unmarshal(raw, &d); err != nil {
+			return nil, fmt.Errorf("parse response: %w", err)
+		}
 		if d.ID == "" {
 			continue
 		}
@@ -83,7 +124,27 @@ func (openaiCompatFetcher) Fetch(ctx context.Context, cfg providers.Config) ([]U
 		}
 		out = append(out, m)
 	}
-	return out, endpoint, nil
+	return out, nil
+}
+
+func (openaiCompatFetcher) Fetch(ctx context.Context, cfg providers.Config) ([]UpstreamModel, string, error) {
+	name := inferProviderName(cfg)
+	key, err := apiKey(name, cfg)
+	if err != nil {
+		return nil, "", err
+	}
+
+	spec := BuildOpenAIModelsRequestSpec(cfg.BaseURL, key, cfg.ExtraHeaders)
+	body, err := doGet(ctx, spec.Endpoint, spec.Headers)
+	if err != nil {
+		return nil, spec.Endpoint, err
+	}
+
+	models, err := DecodeOpenAICompatibleModels(body)
+	if err != nil {
+		return nil, spec.Endpoint, err
+	}
+	return models, spec.Endpoint, nil
 }
 
 type architectureRaw struct {
@@ -127,6 +188,84 @@ func (t topProviderRaw) model() ModelTopProvider {
 
 type geminiFetcher struct{}
 
+func decodeGeminiModelData(body []byte) ([]json.RawMessage, error) {
+	var payload struct {
+		Models []json.RawMessage `json:"models"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, fmt.Errorf("parse response: %w", err)
+	}
+	return payload.Models, nil
+}
+
+func geminiModelID(name string) string {
+	return strings.TrimPrefix(name, "models/")
+}
+
+// DecodeGeminiModelIDs decodes model IDs without interpreting optional Gemini
+// metadata. It preserves the CLI's established tolerant inventory behavior.
+func DecodeGeminiModelIDs(body []byte) ([]string, error) {
+	data, err := decodeGeminiModelData(body)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]string, 0, len(data))
+	for _, raw := range data {
+		var model struct {
+			Name string `json:"name"`
+		}
+		if err := json.Unmarshal(raw, &model); err != nil {
+			return nil, fmt.Errorf("parse response: %w", err)
+		}
+		if id := geminiModelID(model.Name); id != "" {
+			out = append(out, id)
+		}
+	}
+	return out, nil
+}
+
+// DecodeGeminiModels decodes a Gemini model list without changing upstream
+// order. It retains the full catalog metadata and remains strict about its
+// corresponding payload fields.
+func DecodeGeminiModels(body []byte) ([]UpstreamModel, error) {
+	data, err := decodeGeminiModelData(body)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]UpstreamModel, 0, len(data))
+	for _, raw := range data {
+		var model struct {
+			Name                       string   `json:"name"`
+			DisplayName                string   `json:"displayName"`
+			Description                string   `json:"description"`
+			InputTokenLimit            int      `json:"inputTokenLimit"`
+			OutputTokenLimit           int      `json:"outputTokenLimit"`
+			SupportedGenerationMethods []string `json:"supportedGenerationMethods"`
+		}
+		if err := json.Unmarshal(raw, &model); err != nil {
+			return nil, fmt.Errorf("parse response: %w", err)
+		}
+		id := geminiModelID(model.Name)
+		if id == "" {
+			continue
+		}
+		out = append(out, UpstreamModel{
+			ID: id,
+			Metadata: ModelMetadata{
+				Name:                       model.DisplayName,
+				Description:                model.Description,
+				ContextLength:              model.InputTokenLimit,
+				InputTokenLimit:            model.InputTokenLimit,
+				OutputTokenLimit:           model.OutputTokenLimit,
+				SupportedGenerationMethods: append([]string(nil), model.SupportedGenerationMethods...),
+			},
+		})
+	}
+	return out, nil
+}
+
 func (geminiFetcher) Fetch(ctx context.Context, cfg providers.Config) ([]UpstreamModel, string, error) {
 	name := inferProviderName(cfg)
 	key, err := apiKey(name, cfg)
@@ -147,39 +286,11 @@ func (geminiFetcher) Fetch(ctx context.Context, cfg providers.Config) ([]Upstrea
 		return nil, endpoint, err
 	}
 
-	var payload struct {
-		Models []struct {
-			Name                       string   `json:"name"`
-			DisplayName                string   `json:"displayName"`
-			Description                string   `json:"description"`
-			InputTokenLimit            int      `json:"inputTokenLimit"`
-			OutputTokenLimit           int      `json:"outputTokenLimit"`
-			SupportedGenerationMethods []string `json:"supportedGenerationMethods"`
-		} `json:"models"`
+	models, err := DecodeGeminiModels(body)
+	if err != nil {
+		return nil, endpoint, err
 	}
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return nil, endpoint, fmt.Errorf("parse response: %w", err)
-	}
-
-	out := make([]UpstreamModel, 0, len(payload.Models))
-	for _, m := range payload.Models {
-		id := strings.TrimPrefix(m.Name, "models/")
-		if id == "" {
-			continue
-		}
-		out = append(out, UpstreamModel{
-			ID: id,
-			Metadata: ModelMetadata{
-				Name:                       m.DisplayName,
-				Description:                m.Description,
-				ContextLength:              m.InputTokenLimit,
-				InputTokenLimit:            m.InputTokenLimit,
-				OutputTokenLimit:           m.OutputTokenLimit,
-				SupportedGenerationMethods: append([]string(nil), m.SupportedGenerationMethods...),
-			},
-		})
-	}
-	return out, endpoint, nil
+	return models, endpoint, nil
 }
 
 type anthropicFetcher struct{}

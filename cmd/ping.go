@@ -120,7 +120,7 @@ func runPing(cmd *commandIO, args []string) error {
 		}
 		fmt.Fprintf(out, "Routing metrics updated: %s\n", runCtx.Routing.MetricsPath)
 	}
-	if err := recordPingCatalogHealth(results); err != nil {
+	if err := recordPingCatalogHealth(cmd.Context(), results); err != nil {
 		fmt.Fprintf(cmd.ErrOrStderr(), "Warning: %v\n", err)
 	}
 
@@ -214,11 +214,7 @@ func loadPingTargetsWithIO(cmd *commandIO) ([]pingTarget, providers.RoutingConfi
 		if err != nil {
 			return nil, providers.RoutingConfig{}, err
 		}
-		cat, err := catalog.Load(catPath)
-		if err != nil {
-			return nil, providers.RoutingConfig{}, fmt.Errorf("load catalog: %w", err)
-		}
-		selected, err := catalog.ResolveModels(cat, cfg.Providers, costMap, catalog.SelectorOptions{
+		selected, err := resolveTextChatSelection(cmd.ErrOrStderr(), catPath, cfg.Providers, costMap, catalog.SelectorOptions{
 			Selector:           selector,
 			ProviderFilter:     pingProviders,
 			IncludeQuarantine:  pingIncludeQuarantine,
@@ -231,13 +227,7 @@ func loadPingTargetsWithIO(cmd *commandIO) ([]pingTarget, providers.RoutingConfi
 			return nil, providers.RoutingConfig{}, err
 		}
 		targets := make([]pingTarget, 0, len(selected))
-		skippedNonChat := 0
 		for _, target := range selected {
-			if ok, reason := catalog.TextChatCapability(target.Provider, target.Model, modelEntryForTarget(cat, target.Provider, target.Model)); !ok {
-				skippedNonChat++
-				fmt.Fprintf(cmd.ErrOrStderr(), "Chat filter: skipped %s/%s (%s)\n", target.Provider, target.Model, reason)
-				continue
-			}
 			targets = append(targets, pingTarget{
 				Name:       target.Provider,
 				Config:     target.Config,
@@ -245,12 +235,6 @@ func loadPingTargetsWithIO(cmd *commandIO) ([]pingTarget, providers.RoutingConfi
 				InputCost:  target.InputPer1M,
 				OutputCost: target.OutputPer1M,
 			})
-		}
-		if skippedNonChat > 0 {
-			fmt.Fprintf(cmd.ErrOrStderr(), "Chat filter: skipped %d non-text chat target(s)\n", skippedNonChat)
-		}
-		if len(targets) == 0 {
-			return nil, providers.RoutingConfig{}, fmt.Errorf("no text chat-capable models match selector %q", selector)
 		}
 		return targets, cfg.Routing, nil
 	}

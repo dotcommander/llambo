@@ -29,8 +29,7 @@ func buildPingTargets(configs map[string]providers.Config, costMap map[string]co
 
 func buildPingTargetsWithWriter(errOut io.Writer, configs map[string]providers.Config, costMap map[string]costs.ModelCost, bl providers.Blocklist, maxOutputCost float64, includeUnknown bool, cat *catalog.Catalog) []pingTarget {
 	enabled := providers.FilterEnabledProviders(configs)
-	targets := make([]pingTarget, 0, len(enabled))
-	skippedNonChat := 0
+	candidates := make([]pingTarget, 0, len(enabled))
 
 	for _, entry := range enabled {
 		models := modelVariants(entry.Config)
@@ -38,24 +37,25 @@ func buildPingTargetsWithWriter(errOut io.Writer, configs map[string]providers.C
 			if bl.Blocked(entry.Name, model) {
 				continue
 			}
-			if ok, reason := catalog.TextChatCapability(entry.Name, model, modelEntryForTarget(cat, entry.Name, model)); !ok {
-				skippedNonChat++
-				fmt.Fprintf(errOut, "Chat filter: skipped %s/%s (%s)\n", entry.Name, model, reason)
-				continue
-			}
 			cfg := entry.Config
 			cfg.Model = model
 			status, input, output := catalog.CostForModel(costMap, entry.Name, model)
-			if !catalog.CostWithinCap(status, output, maxOutputCost, includeUnknown) {
-				continue
-			}
-			targets = append(targets, pingTarget{
+			candidates = append(candidates, pingTarget{
 				Name:       entry.Name,
 				Config:     cfg,
 				CostStatus: status,
 				InputCost:  input,
 				OutputCost: output,
 			})
+		}
+	}
+	candidates, skippedNonChat := filterTextChatTargets(errOut, cat, candidates, func(target pingTarget) (string, string) {
+		return target.Name, target.Config.Model
+	})
+	targets := candidates[:0]
+	for _, target := range candidates {
+		if catalog.CostWithinCap(target.CostStatus, target.OutputCost, maxOutputCost, includeUnknown) {
+			targets = append(targets, target)
 		}
 	}
 
@@ -97,10 +97,7 @@ func buildPingTargetsWithWriter(errOut io.Writer, configs map[string]providers.C
 		fmt.Fprintf(errOut, "Cost filter: skipped %d, unknown pricing %d (cap $%.2f/1M output)\n",
 			filteredCount, unknownCount, pingMaxOutputCost)
 	}
-	if skippedNonChat > 0 {
-		fmt.Fprintf(errOut, "Chat filter: skipped %d non-text chat target(s)\n", skippedNonChat)
-	}
-
+	writeTextChatSkippedSummary(errOut, skippedNonChat)
 	return targets
 }
 

@@ -19,7 +19,7 @@ func candidateModels(cat *Catalog, providerName string, cfg providers.Config, se
 	if selector == "configured" {
 		return configModels(cfg)
 	}
-	if selector == "category:missing_speed" || selector == "category:missing-speed" {
+	if policy, ok := categoryPolicyForSelector(selector); ok && policy.configuredOnly {
 		return configModels(cfg)
 	}
 	pc := providerCatalog(cat, providerName)
@@ -92,28 +92,7 @@ func directSelectorMatches(selector, providerName, modelID string) bool {
 }
 
 func matchesCategory(category, providerName, modelID string, m *ModelEntry, costMap map[string]costs.ModelCost, now time.Time) bool {
-	category = normalizeTag(category)
-	switch category {
-	case "free":
-		status, _, _ := modelCostStatusForEntry(costMap, providerName, modelID, m)
-		return status == CostFree
-	case "healthy":
-		return m != nil && m.LastPing.Success && !m.QuarantineUntil.After(now)
-	case "speed":
-		return m != nil && m.LastPing.Success && m.LastPing.LatencyMS > 0 && time.Duration(m.LastPing.LatencyMS)*time.Millisecond <= SlowPingThreshold && !m.QuarantineUntil.After(now)
-	case "missing_speed", "missing-speed":
-		return !hasSpeedMeasurement(m)
-	case "long_context":
-		return HasTag(m, category) || metadataContextLength(m) >= 128_000
-	case "tools":
-		return HasTag(m, category) || metadataSupportsAny(m, "tools", "tool_choice")
-	case "structured_outputs":
-		return HasTag(m, category) || metadataSupportsAny(m, "structured_outputs", "response_format")
-	case "reasoning":
-		return HasTag(m, category) || metadataHasReasoning(m) || metadataSupportsAny(m, "reasoning", "include_reasoning", "reasoning_effort")
-	default:
-		return HasTag(m, category)
-	}
+	return categoryPolicyFor(category).matches(providerName, modelID, m, costMap, now)
 }
 
 func hasSpeedMeasurement(m *ModelEntry) bool {

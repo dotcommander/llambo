@@ -228,17 +228,15 @@ func runModelsCatalogImportQuality(cmd *commandIO, args []string) error {
 	if err != nil {
 		return err
 	}
-	cat, err := catalog.Load(catPath)
-	if err != nil {
-		return err
-	}
 	now := time.Now().UTC()
-	for i, record := range records {
-		if err := catalog.RecordQualityEvidence(cat, record, now); err != nil {
-			return fmt.Errorf("quality record %d: %w", i+1, err)
+	if err := catalog.Update(cmd.Context(), catPath, func(cat *catalog.Catalog) error {
+		for i, record := range records {
+			if err := catalog.RecordQualityEvidence(cat, record, now); err != nil {
+				return fmt.Errorf("quality record %d: %w", i+1, err)
+			}
 		}
-	}
-	if err := catalog.Save(catPath, cat); err != nil {
+		return nil
+	}); err != nil {
 		return fmt.Errorf("save catalog: %w", err)
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "Imported %d quality record(s)\n", len(records))
@@ -251,23 +249,18 @@ func mutateCatalogEntry(cmd *commandIO, providerName, modelID string, mutate fun
 	if err != nil {
 		return err
 	}
-	cat, err := catalog.Load(catPath)
-	if err != nil {
-		return err
-	}
-
-	pc, ok := cat.Providers[providerName]
-	if !ok {
-		return fmt.Errorf("provider %q not found in catalog (run: llambo providers refresh)", providerName)
-	}
-	entry, ok := pc.Models[modelID]
-	if !ok {
-		return fmt.Errorf("model %q not found for provider %q in catalog", modelID, providerName)
-	}
-
-	mutate(entry)
-
-	if err := catalog.Save(catPath, cat); err != nil {
+	if err := catalog.Update(cmd.Context(), catPath, func(cat *catalog.Catalog) error {
+		pc, ok := cat.Providers[providerName]
+		if !ok {
+			return fmt.Errorf("provider %q not found in catalog (run: llambo providers refresh)", providerName)
+		}
+		entry, ok := pc.Models[modelID]
+		if !ok {
+			return fmt.Errorf("model %q not found for provider %q in catalog", modelID, providerName)
+		}
+		mutate(entry)
+		return nil
+	}); err != nil {
 		return fmt.Errorf("save catalog: %w", err)
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "Updated %s/%s\n", providerName, modelID)

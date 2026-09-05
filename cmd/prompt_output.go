@@ -1,13 +1,14 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"time"
 
 	"github.com/dotcommander/llambo/internal/catalog"
 )
 
-func recordPromptCatalogHealth(results []PromptResult) error {
+func recordPromptCatalogHealth(ctx context.Context, results []PromptResult) error {
 	if len(results) == 0 {
 		return nil
 	}
@@ -15,60 +16,22 @@ func recordPromptCatalogHealth(results []PromptResult) error {
 	if err != nil {
 		return err
 	}
-	cat, err := catalog.Load(catPath)
-	if err != nil {
-		return fmt.Errorf("load catalog: %w", err)
-	}
 	now := time.Now().UTC()
-	for _, result := range results {
-		errText := ""
-		if result.Error != nil {
-			errText = result.Error.Error()
+	if err := catalog.Update(ctx, catPath, func(cat *catalog.Catalog) error {
+		for _, result := range results {
+			errText := ""
+			if result.Error != nil {
+				errText = result.Error.Error()
+			}
+			catalog.RecordPrompt(cat, result.Provider, result.Model, catalog.HealthObservation{
+				Success: result.Error == nil, Latency: result.Latency, Error: errText, CheckedAt: now,
+			})
 		}
-		priorQuarantine, hadPriorQuarantine := promptCatalogQuarantine(cat, result.Provider, result.Model)
-		catalog.RecordPing(cat, result.Provider, result.Model, result.Error == nil, result.Latency, 0, 0, errText, now)
-		if result.Error == nil && result.Latency > catalog.SlowPingThreshold {
-			restorePromptCatalogQuarantine(cat, result.Provider, result.Model, priorQuarantine, hadPriorQuarantine)
-		}
-	}
-	if err := catalog.Save(catPath, cat); err != nil {
+		return nil
+	}); err != nil {
 		return fmt.Errorf("save catalog health: %w", err)
 	}
 	return nil
-}
-
-func promptCatalogQuarantine(cat *catalog.Catalog, providerName, modelID string) (time.Time, bool) {
-	if cat == nil || cat.Providers == nil {
-		return time.Time{}, false
-	}
-	providerCatalog := cat.Providers[providerName]
-	if providerCatalog == nil || providerCatalog.Models == nil {
-		return time.Time{}, false
-	}
-	entry := providerCatalog.Models[modelID]
-	if entry == nil {
-		return time.Time{}, false
-	}
-	return entry.QuarantineUntil, true
-}
-
-func restorePromptCatalogQuarantine(cat *catalog.Catalog, providerName, modelID string, prior time.Time, hadPrior bool) {
-	if cat == nil || cat.Providers == nil {
-		return
-	}
-	providerCatalog := cat.Providers[providerName]
-	if providerCatalog == nil || providerCatalog.Models == nil {
-		return
-	}
-	entry := providerCatalog.Models[modelID]
-	if entry == nil {
-		return
-	}
-	if hadPrior {
-		entry.QuarantineUntil = prior
-		return
-	}
-	entry.QuarantineUntil = time.Time{}
 }
 
 func promptCostLabel(result PromptResult) string {

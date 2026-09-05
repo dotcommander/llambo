@@ -339,7 +339,8 @@ func TestPromptTextForModel_OnlyWrapsWhenFuseEnabled(t *testing.T) {
 	assert.Contains(t, got, "Assigned lens:")
 }
 
-func TestRestorePromptCatalogQuarantine_PreservesPreviousState(t *testing.T) {
+func TestRecordPromptPreservesPreviousQuarantine(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 6, 22, 12, 0, 0, 0, time.UTC)
 	cat := &catalog.Catalog{
 		Providers: map[string]*catalog.ProviderCatalog{
@@ -351,20 +352,14 @@ func TestRestorePromptCatalogQuarantine_PreservesPreviousState(t *testing.T) {
 		},
 	}
 
-	prior, hadPrior := promptCatalogQuarantine(cat, "p", "m")
-	catalog.RecordPing(cat, "p", "m", true, catalog.SlowPingThreshold+time.Second, 0, 0, "", now)
-	require.True(t, cat.Providers["p"].Models["m"].QuarantineUntil.After(now))
-
-	restorePromptCatalogQuarantine(cat, "p", "m", prior, hadPrior)
+	observation := catalog.HealthObservation{Success: true, Latency: catalog.SlowPingThreshold + time.Second, CheckedAt: now}
+	catalog.RecordPrompt(cat, "p", "m", observation)
 
 	require.True(t, cat.Providers["p"].Models["m"].QuarantineUntil.IsZero())
 
 	existingQuarantine := now.Add(time.Hour)
 	cat.Providers["p"].Models["m"].QuarantineUntil = existingQuarantine
-	prior, hadPrior = promptCatalogQuarantine(cat, "p", "m")
-	catalog.RecordPing(cat, "p", "m", true, catalog.SlowPingThreshold+time.Second, 0, 0, "", now)
-
-	restorePromptCatalogQuarantine(cat, "p", "m", prior, hadPrior)
+	catalog.RecordPrompt(cat, "p", "m", observation)
 
 	require.Equal(t, existingQuarantine, cat.Providers["p"].Models["m"].QuarantineUntil)
 }

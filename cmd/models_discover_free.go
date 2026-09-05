@@ -80,15 +80,19 @@ func runModelsDiscoverFree(cmd *commandIO, args []string) error {
 
 	now := time.Now().UTC()
 	for _, result := range resultsPing {
-		catalog.RecordPingWithMetrics(cat, result.Provider, result.Model, result.Success, result.Latency, result.TTFB, result.Generation, result.SpeedTokensPS, result.TokensIn, result.TokensOut, result.Error, now)
-		if discoverFreePin && result.Success {
-			if entry := findCatalogEntry(cat, result.Provider, result.Model); entry != nil {
-				entry.Pinned = true
-			}
-		}
 		printResult(out, result)
 	}
-	if err := catalog.Save(catPath, cat); err != nil {
+	if err := catalog.Update(cmd.Context(), catPath, func(cat *catalog.Catalog) error {
+		for _, result := range resultsPing {
+			catalog.RecordPingWithMetrics(cat, result.Provider, result.Model, result.Success, result.Latency, result.TTFB, result.Generation, result.SpeedTokensPS, result.TokensIn, result.TokensOut, result.Error, now)
+			if discoverFreePin && result.Success {
+				if entry := findCatalogEntry(cat, result.Provider, result.Model); entry != nil {
+					entry.Pinned = true
+				}
+			}
+		}
+		return nil
+	}); err != nil {
 		return fmt.Errorf("save catalog health: %w", err)
 	}
 	return nil

@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"encoding/csv"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -403,27 +402,41 @@ func fetchOpenAICompatibleModels(name string, cfg providers.Config, timeoutSec i
 }
 
 func fetchOpenAICompatibleModelsContext(ctx context.Context, name string, cfg providers.Config, timeoutSec int) []string {
+	if strings.TrimSuffix(cfg.BaseURL, "/") == "" {
+		return nil
+	}
+	spec := catalog.BuildOpenAIModelsRequestSpec(cfg.BaseURL, providers.GetAPIKey(name, cfg), cfg.ExtraHeaders)
+	return fetchModelListContext(ctx, spec.Endpoint, spec.Headers, timeoutSec, catalog.DecodeOpenAICompatibleModelIDs)
+}
+
+func fetchGeminiModels(name string, cfg providers.Config, timeoutSec int) []string {
+	return fetchGeminiModelsContext(context.Background(), name, cfg, timeoutSec)
+}
+
+func fetchGeminiModelsContext(ctx context.Context, name string, cfg providers.Config, timeoutSec int) []string {
 	baseURL := strings.TrimSuffix(cfg.BaseURL, "/")
 	if baseURL == "" {
 		return nil
 	}
-
-	if !strings.HasSuffix(baseURL, "/v1") && !strings.HasSuffix(baseURL, "/v4") {
-		baseURL += "/v1"
+	apiKey := providers.GetAPIKey(name, cfg)
+	if apiKey == "" {
+		return nil
 	}
-	url := baseURL + "/models"
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	url := baseURL + "/models?key=" + apiKey
+	return fetchModelListContext(ctx, url, nil, timeoutSec, catalog.DecodeGeminiModelIDs)
+}
+
+type modelListDecoder func([]byte) ([]string, error)
+
+// fetchModelListContext runs the command's best-effort model-list HTTP lifecycle.
+// Protocol-specific callers retain endpoint, authentication, and decoding policy.
+func fetchModelListContext(ctx context.Context, endpoint string, headers map[string]string, timeoutSec int, decode modelListDecoder) []string {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil
 	}
-	req.Header.Set("Accept", "application/json")
-
-	apiKey := providers.GetAPIKey(name, cfg)
-	if apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+apiKey)
-	}
-	for k, v := range cfg.ExtraHeaders {
+	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
 
@@ -442,76 +455,13 @@ func fetchOpenAICompatibleModelsContext(ctx context.Context, name string, cfg pr
 		return nil
 	}
 
-	var payload struct {
-		Data []struct {
-			ID string `json:"id"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return nil
-	}
-
-	out := make([]string, 0, len(payload.Data))
-	for _, d := range payload.Data {
-		if d.ID != "" {
-			out = append(out, d.ID)
-		}
-	}
-	sort.Strings(out)
-	return out
-}
-
-func fetchGeminiModels(name string, cfg providers.Config, timeoutSec int) []string {
-	return fetchGeminiModelsContext(context.Background(), name, cfg, timeoutSec)
-}
-
-func fetchGeminiModelsContext(ctx context.Context, name string, cfg providers.Config, timeoutSec int) []string {
-	baseURL := strings.TrimSuffix(cfg.BaseURL, "/")
-	if baseURL == "" {
-		return nil
-	}
-	apiKey := providers.GetAPIKey(name, cfg)
-	if apiKey == "" {
-		return nil
-	}
-
-	url := baseURL + "/models?key=" + apiKey
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	models, err := decode(body)
 	if err != nil {
 		return nil
 	}
 
-	client := &http.Client{Timeout: time.Duration(timeoutSec) * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil
-	}
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20)) // 4 MB cap on model list responses
-	if err != nil {
-		return nil
-	}
-
-	var payload struct {
-		Models []struct {
-			Name string `json:"name"`
-		} `json:"models"`
-	}
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return nil
-	}
-
-	out := make([]string, 0, len(payload.Models))
-	for _, m := range payload.Models {
-		name := strings.TrimPrefix(m.Name, "models/")
-		if name != "" {
-			out = append(out, name)
-		}
-	}
+	out := make([]string, 0, len(models))
+	out = append(out, models...)
 	sort.Strings(out)
 	return out
 }

@@ -29,20 +29,10 @@ func executePromptAgainstAllProvidersCore(ctx context.Context, errOut io.Writer,
 	if err != nil {
 		return nil, err
 	}
-	filtered := enabled[:0]
-	skippedNonChat := 0
-	for _, entry := range enabled {
-		if ok, reason := catalog.TextChatCapability(entry.Name, entry.Config.Model, modelEntryForTarget(cat, entry.Name, entry.Config.Model)); !ok {
-			skippedNonChat++
-			fmt.Fprintf(errOut, "Chat filter: skipped %s/%s (%s)\n", entry.Name, entry.Config.Model, reason)
-			continue
-		}
-		filtered = append(filtered, entry)
-	}
-	enabled = filtered
-	if skippedNonChat > 0 {
-		fmt.Fprintf(errOut, "Chat filter: skipped %d non-text chat target(s)\n", skippedNonChat)
-	}
+	enabled, skippedNonChat := filterTextChatTargets(errOut, cat, enabled, func(entry providers.ProviderEntry) (string, string) {
+		return entry.Name, entry.Config.Model
+	})
+	writeTextChatSkippedSummary(errOut, skippedNonChat)
 	if len(enabled) == 0 {
 		return nil, fmt.Errorf("no enabled text chat-capable providers found in config")
 	}
@@ -100,11 +90,7 @@ func executePromptAgainstSelectedModelsCore(ctx context.Context, errOut io.Write
 	if err != nil {
 		return nil, err
 	}
-	cat, err := catalog.Load(catPath)
-	if err != nil {
-		return nil, fmt.Errorf("load catalog: %w", err)
-	}
-	selected, err := catalog.ResolveModels(cat, globalCfg.Providers, costMap, catalog.SelectorOptions{
+	selected, err := resolveTextChatSelection(errOut, catPath, globalCfg.Providers, costMap, catalog.SelectorOptions{
 		Selector:           selector,
 		ProviderFilter:     promptProviders,
 		IncludeQuarantine:  promptIncludeQuarantine,
@@ -115,23 +101,6 @@ func executePromptAgainstSelectedModelsCore(ctx context.Context, errOut io.Write
 	})
 	if err != nil {
 		return nil, err
-	}
-	filtered := selected[:0]
-	skippedNonChat := 0
-	for _, target := range selected {
-		if ok, reason := catalog.TextChatCapability(target.Provider, target.Model, modelEntryForTarget(cat, target.Provider, target.Model)); !ok {
-			skippedNonChat++
-			fmt.Fprintf(errOut, "Chat filter: skipped %s/%s (%s)\n", target.Provider, target.Model, reason)
-			continue
-		}
-		filtered = append(filtered, target)
-	}
-	selected = filtered
-	if skippedNonChat > 0 {
-		fmt.Fprintf(errOut, "Chat filter: skipped %d non-text chat target(s)\n", skippedNonChat)
-	}
-	if len(selected) == 0 {
-		return nil, fmt.Errorf("no text chat-capable models match selector %q", selector)
 	}
 
 	results := runOrderedParallel(selected, func(index int, target catalog.ModelTarget) PromptResult {

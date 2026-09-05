@@ -42,12 +42,9 @@ func FetcherFor(cfg providers.Config) Fetcher {
 	return openaiCompatFetcher{}
 }
 
-// apiKey returns the first available key: APIKeys[0] → APIKey → EnvVar.
+// apiKey returns the primary provider key: api_keys → api_key → EnvVar.
 // Returns "" if none found and cfg does not require a key.
 func apiKey(name string, cfg providers.Config) (string, error) {
-	if len(cfg.APIKeys) > 0 && cfg.APIKeys[0] != "" {
-		return cfg.APIKeys[0], nil
-	}
 	key := providers.GetAPIKey(name, cfg)
 	if key != "" {
 		return key, nil

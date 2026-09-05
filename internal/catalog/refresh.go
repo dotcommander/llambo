@@ -2,7 +2,6 @@ package catalog
 
 import (
 	"context"
-	"sync"
 	"time"
 
 	"github.com/dotcommander/llambo/providers"
@@ -24,79 +23,77 @@ type RefreshResult struct {
 // catalog.json in place. Returns per-provider results. A fetch error for one provider does NOT
 // lose other providers' data.
 func Refresh(ctx context.Context, names []string, cfgs map[string]providers.Config, catalogPath string) ([]RefreshResult, error) {
-	cat, err := Load(catalogPath)
-	if err != nil {
+	if _, err := Load(catalogPath); err != nil {
 		return nil, err
 	}
 
 	// Build provider list to refresh.
 	targets := buildTargetList(names, cfgs)
-
-	var mu sync.Mutex
 	now := time.Now().UTC()
 
-	p := pool.NewWithResults[RefreshResult]().WithMaxGoroutines(8).WithContext(ctx)
+	p := pool.NewWithResults[refreshFetch]().WithMaxGoroutines(8).WithContext(ctx)
 	for _, entry := range targets {
 		name := entry.Name
 		cfg := entry.Config
-		p.Go(func(ctx context.Context) (RefreshResult, error) {
-			result := refreshOne(ctx, name, cfg, cat, now, &mu)
-			// Always return result — errors are surfaced via result.Err, not pool error.
-			return result, nil
+		p.Go(func(ctx context.Context) (refreshFetch, error) {
+			return fetchRefresh(ctx, name, cfg), nil
 		})
 	}
 
-	results, _ := p.Wait()
-
-	// Save once after all goroutines finish.
-	if saveErr := Save(catalogPath, cat); saveErr != nil {
-		return results, saveErr
+	fetched, _ := p.Wait()
+	results := make([]RefreshResult, len(fetched))
+	for i := range fetched {
+		results[i] = fetched[i].result
+	}
+	if err := Update(ctx, catalogPath, func(cat *Catalog) error {
+		for i := range fetched {
+			if fetched[i].result.Err != nil {
+				continue
+			}
+			results[i] = mergeRefresh(cat, fetched[i], now)
+		}
+		return nil
+	}); err != nil {
+		return results, err
 	}
 	return results, nil
 }
 
-// refreshOne fetches and merges one provider's model list into the shared catalog.
-// Mutations to cat are protected by mu.
-func refreshOne(ctx context.Context, name string, cfg providers.Config, cat *Catalog, now time.Time, mu *sync.Mutex) RefreshResult {
-	result := RefreshResult{Provider: name}
+type refreshFetch struct {
+	result   RefreshResult
+	upstream []UpstreamModel
+}
 
+func fetchRefresh(ctx context.Context, name string, cfg providers.Config) refreshFetch {
+	fetched := refreshFetch{result: RefreshResult{Provider: name}}
 	upstream, endpoint, err := FetchForProvider(ctx, name, cfg)
-	result.Endpoint = endpoint
+	fetched.result.Endpoint = endpoint
 	if err != nil {
-		result.Err = err
-		return result
+		fetched.result.Err = err
+		return fetched
 	}
+	fetched.upstream = upstream
+	fetched.result.Total = len(upstream)
+	return fetched
+}
 
-	result.Total = len(upstream)
+func mergeRefresh(cat *Catalog, fetched refreshFetch, now time.Time) RefreshResult {
+	result := fetched.result
+	upstream := fetched.upstream
 	upstreamIDs := make(map[string]struct{}, len(upstream))
 	for _, m := range upstream {
 		upstreamIDs[m.ID] = struct{}{}
 	}
 
-	mu.Lock()
-	defer mu.Unlock()
-
-	pc := cat.Providers[name]
-	if pc == nil {
-		pc = &ProviderCatalog{
-			Models: make(map[string]*ModelEntry),
-		}
-		cat.Providers[name] = pc
-	}
-	if pc.Models == nil {
-		pc.Models = make(map[string]*ModelEntry)
-	}
+	pc := ensureProviderCatalog(cat, result.Provider)
 
 	for _, m := range upstream {
 		entry, exists := pc.Models[m.ID]
 		if !exists {
-			pc.Models[m.ID] = &ModelEntry{
-				FirstSeen:       now,
-				LastSeen:        now,
-				UpstreamCreated: m.UpstreamCreated,
-				OwnedBy:         m.OwnedBy,
-				Metadata:        m.Metadata,
-			}
+			entry = ensureModelEntry(pc, m.ID, now)
+			entry.UpstreamCreated = m.UpstreamCreated
+			entry.OwnedBy = m.OwnedBy
+			entry.Metadata = m.Metadata
 			result.NewIDs = append(result.NewIDs, m.ID)
 		} else {
 			entry.LastSeen = now

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -18,7 +19,7 @@ func TestRunModelsCatalogImportQuality(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := runModelsCatalogImportQuality(&commandIO{}, []string{inputPath}); err != nil {
+	if err := runModelsCatalogImportQuality(&commandIO{ctx: context.Background()}, []string{inputPath}); err != nil {
 		t.Fatalf("runModelsCatalogImportQuality: %v", err)
 	}
 

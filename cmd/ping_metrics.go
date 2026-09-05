@@ -41,7 +41,7 @@ func recordPingRoutingMetrics(results []PingResult, routing providers.RoutingCon
 	for _, result := range results {
 		recordPingResultMetric(store, result.Provider, result)
 		if strings.TrimSpace(strings.ToLower(routing.CatalogModels)) == "pinned" {
-			recordPingResultMetric(store, catalogBackendName(result.Provider, result.Model), result)
+			recordPingResultMetric(store, providers.ModelBackendName(result.Provider, result.Model), result)
 		}
 	}
 	if err := store.Save(); err != nil {
@@ -51,7 +51,7 @@ func recordPingRoutingMetrics(results []PingResult, routing providers.RoutingCon
 	return nil
 }
 
-func recordPingCatalogHealth(results []PingResult) error {
+func recordPingCatalogHealth(ctx context.Context, results []PingResult) error {
 	if len(results) == 0 {
 		return nil
 	}
@@ -59,15 +59,13 @@ func recordPingCatalogHealth(results []PingResult) error {
 	if err != nil {
 		return err
 	}
-	cat, err := catalog.Load(catPath)
-	if err != nil {
-		return fmt.Errorf("load catalog: %w", err)
-	}
 	now := time.Now().UTC()
-	for _, result := range results {
-		catalog.RecordPingWithMetrics(cat, result.Provider, result.Model, result.Success, result.Latency, result.TTFB, result.Generation, result.SpeedTokensPS, result.TokensIn, result.TokensOut, result.Error, now)
-	}
-	if err := catalog.Save(catPath, cat); err != nil {
+	if err := catalog.Update(ctx, catPath, func(cat *catalog.Catalog) error {
+		for _, result := range results {
+			catalog.RecordPingWithMetrics(cat, result.Provider, result.Model, result.Success, result.Latency, result.TTFB, result.Generation, result.SpeedTokensPS, result.TokensIn, result.TokensOut, result.Error, now)
+		}
+		return nil
+	}); err != nil {
 		return fmt.Errorf("save catalog health: %w", err)
 	}
 	return nil

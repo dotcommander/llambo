@@ -93,7 +93,7 @@ func runPromptCommand(cmd *commandIO, args []string) error {
 	if fusion != nil {
 		healthResults = append(append([]PromptResult(nil), healthResults...), fusion.Result)
 	}
-	if err := recordPromptCatalogHealth(healthResults); err != nil {
+	if err := recordPromptCatalogHealth(cmd.Context(), healthResults); err != nil {
 		fmt.Fprintf(cmd.ErrOrStderr(), "Warning: %v\n", err)
 	}
 
