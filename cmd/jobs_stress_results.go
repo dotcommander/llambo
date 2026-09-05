@@ -3,7 +3,6 @@ package cmd
 import (
 	"io"
 	"os"
-	"sort"
 	"strings"
 	"time"
 
@@ -36,8 +35,7 @@ func printStressResultsTo(out io.Writer, results []stressJobResult, totalDuratio
 
 	var totalCompleted, totalFailed int
 	var successfulJobs int
-	backendCounts := make(map[string]int)
-	allLatencies := make([]time.Duration, 0)
+	metrics := newJobRequestMetrics()
 
 	for i, r := range results {
 		jobName := fmt.Sprintf("job-%d", i+1)
@@ -68,15 +66,7 @@ func printStressResultsTo(out io.Writer, results []stressJobResult, totalDuratio
 		totalFailed += r.response.Failed
 		successfulJobs++
 
-		// Aggregate backend counts and latencies
-		for _, result := range r.response.Results {
-			if result.Backend != "" {
-				backendCounts[result.Backend]++
-			}
-			if result.DurationMs > 0 {
-				allLatencies = append(allLatencies, time.Duration(result.DurationMs)*time.Millisecond)
-			}
-		}
+		metrics.addAll(r.response.Results)
 	}
 
 	fmt.Println()
@@ -106,55 +96,6 @@ func printStressResultsTo(out io.Writer, results []stressJobResult, totalDuratio
 	}
 	fmt.Println()
 
-	// Latency percentiles
-	if len(allLatencies) > 0 {
-		fmt.Println(styles.Header.Render("Latency (across all requests)"))
-		sort.Slice(allLatencies, func(i, j int) bool {
-			return allLatencies[i] < allLatencies[j]
-		})
-
-		var total time.Duration
-		for _, l := range allLatencies {
-			total += l
-		}
-		avg := total / time.Duration(len(allLatencies))
-
-		p50Idx := len(allLatencies) / 2
-		p95Idx := int(float64(len(allLatencies)) * 0.95)
-		p99Idx := int(float64(len(allLatencies)) * 0.99)
-
-		// Ensure valid indices
-		if p95Idx >= len(allLatencies) {
-			p95Idx = len(allLatencies) - 1
-		}
-		if p99Idx >= len(allLatencies) {
-			p99Idx = len(allLatencies) - 1
-		}
-
-		fmt.Printf("  Min:     %s\n", allLatencies[0].Round(time.Millisecond))
-		fmt.Printf("  Average: %s\n", avg.Round(time.Millisecond))
-		fmt.Printf("  P50:     %s\n", allLatencies[p50Idx].Round(time.Millisecond))
-		fmt.Printf("  P95:     %s\n", allLatencies[p95Idx].Round(time.Millisecond))
-		fmt.Printf("  P99:     %s\n", allLatencies[p99Idx].Round(time.Millisecond))
-		fmt.Printf("  Max:     %s\n", allLatencies[len(allLatencies)-1].Round(time.Millisecond))
-		fmt.Println()
-	}
-
-	// Backend distribution
-	if len(backendCounts) > 0 {
-		fmt.Println(styles.Header.Render("Backend Distribution"))
-
-		backends := make([]string, 0, len(backendCounts))
-		for b := range backendCounts {
-			backends = append(backends, b)
-		}
-		sort.Strings(backends)
-
-		for _, backend := range backends {
-			count := backendCounts[backend]
-			pct := float64(count) / float64(totalCompleted) * 100
-			fmt.Printf("  %-15s %4d (%5.1f%%)\n", backend, count, pct)
-		}
-		fmt.Println()
-	}
+	printRequestLatencyStats(fmt, "Latency (across all requests)", metrics.latencies)
+	printRequestBackendDistribution(fmt, metrics.backendCounts, totalCompleted)
 }

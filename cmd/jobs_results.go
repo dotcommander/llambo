@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sort"
 	"strings"
 	"time"
 
@@ -13,12 +12,13 @@ import (
 )
 
 func calculateStats(resp *gateway.JobResponse, originalRequests []gateway.JobRequest, verify bool) *JobStats {
+	metrics := newJobRequestMetrics()
 	stats := &JobStats{
 		TotalRequests: resp.Total,
 		Completed:     resp.Completed,
 		Failed:        resp.Failed,
-		BackendCounts: make(map[string]int),
-		Latencies:     make([]time.Duration, 0),
+		BackendCounts: metrics.backendCounts,
+		Latencies:     metrics.latencies,
 	}
 
 	// Build map of original request IDs
@@ -31,12 +31,7 @@ func calculateStats(resp *gateway.JobResponse, originalRequests []gateway.JobReq
 	seenIDs := make(map[string]bool)
 
 	for _, result := range resp.Results {
-		if result.Backend != "" {
-			stats.BackendCounts[result.Backend]++
-		}
-		if result.DurationMs > 0 {
-			stats.Latencies = append(stats.Latencies, time.Duration(result.DurationMs)*time.Millisecond)
-		}
+		metrics.add(result)
 
 		// Integrity checks
 		if verify {
@@ -50,6 +45,7 @@ func calculateStats(resp *gateway.JobResponse, originalRequests []gateway.JobReq
 			}
 		}
 	}
+	stats.Latencies = metrics.latencies
 
 	// Check for missing IDs
 	if verify {
@@ -117,60 +113,8 @@ func printJobResultsTo(out io.Writer, resp *gateway.JobResponse, stats *JobStats
 	}
 	fmt.Println()
 
-	// Latency stats
-	if len(stats.Latencies) > 0 {
-		fmt.Println(styles.Header.Render("Latency"))
-		sort.Slice(stats.Latencies, func(i, j int) bool {
-			return stats.Latencies[i] < stats.Latencies[j]
-		})
-
-		var total time.Duration
-		for _, l := range stats.Latencies {
-			total += l
-		}
-		avg := total / time.Duration(len(stats.Latencies))
-		n := len(stats.Latencies)
-		p95Idx := int(float64(n) * 0.95)
-		if p95Idx >= n {
-			p95Idx = n - 1
-		}
-		p99Idx := int(float64(n) * 0.99)
-		if p99Idx >= n {
-			p99Idx = n - 1
-		}
-		p50 := stats.Latencies[n/2]
-		p95 := stats.Latencies[p95Idx]
-		p99 := stats.Latencies[p99Idx]
-		min := stats.Latencies[0]
-		max := stats.Latencies[n-1]
-
-		fmt.Printf("  Min:     %s\n", min.Round(time.Millisecond))
-		fmt.Printf("  Average: %s\n", avg.Round(time.Millisecond))
-		fmt.Printf("  P50:     %s\n", p50.Round(time.Millisecond))
-		fmt.Printf("  P95:     %s\n", p95.Round(time.Millisecond))
-		fmt.Printf("  P99:     %s\n", p99.Round(time.Millisecond))
-		fmt.Printf("  Max:     %s\n", max.Round(time.Millisecond))
-		fmt.Println()
-	}
-
-	// Backend distribution
-	if len(stats.BackendCounts) > 0 {
-		fmt.Println(styles.Header.Render("Backend Distribution"))
-
-		// Sort backends for consistent output
-		backends := make([]string, 0, len(stats.BackendCounts))
-		for b := range stats.BackendCounts {
-			backends = append(backends, b)
-		}
-		sort.Strings(backends)
-
-		for _, backend := range backends {
-			count := stats.BackendCounts[backend]
-			pct := float64(count) / float64(stats.TotalRequests) * 100
-			fmt.Printf("  %-15s %4d (%5.1f%%)\n", backend, count, pct)
-		}
-		fmt.Println()
-	}
+	printRequestLatencyStats(fmt, "Latency", stats.Latencies)
+	printRequestBackendDistribution(fmt, stats.BackendCounts, stats.TotalRequests)
 
 	// Integrity verification
 	if runVerify {
