@@ -24,6 +24,25 @@ var DefaultChatConfig = ChatRequestConfig{
 	Backoffs:   DefaultRetryBackoffs,
 }
 
+type chatRetryAction uint8
+
+const (
+	chatRetryStop chatRetryAction = iota
+	chatRetryAfterBackoff
+	chatRetryWithoutNativeStops
+)
+
+func decideChatRetry(err error, cfg Config, attempt, maxRetries int, usedNativeStops, emitted bool) (chatRetryAction, error) {
+	if usedNativeStops && !emitted && isUnsupportedStopError(err) {
+		return chatRetryWithoutNativeStops, nil
+	}
+	wrapped := wrapProviderError(err, cfg)
+	if emitted || !IsRetryable(wrapped) || attempt >= maxRetries {
+		return chatRetryStop, wrapped
+	}
+	return chatRetryAfterBackoff, wrapped
+}
+
 // ExecuteChatRequest sends a chat request through a wormhole provider with llambo-owned retry logic.
 // It handles parameter building, transient error retries, and usage/tool-call mapping.
 // Returns content, usage (may be nil), finish reason, tool calls (if any), and error.
@@ -66,15 +85,16 @@ func executeChatRequestWithIdentity(
 			return content, usageOrEstimate(usage, systemPrompt, userContent, content), finishReason, toolCalls, identity, err
 		}
 
-		if usedNativeStops && isUnsupportedStopError(err) {
+		action, wrapped := decideChatRetry(err, cfg, attempt, reqConfig.MaxRetries, usedNativeStops, false)
+		if action == chatRetryWithoutNativeStops {
 			request.Stop = nil
 			usedNativeStops = false
 			attempt--
 			continue
 		}
 
-		lastErr = wrapProviderError(err, cfg)
-		if !IsRetryable(lastErr) || attempt >= reqConfig.MaxRetries {
+		lastErr = wrapped
+		if action == chatRetryStop {
 			break
 		}
 		if err := waitChatBackoff(ctx, reqConfig, attempt); err != nil {
@@ -118,14 +138,15 @@ func executeChatStreamRequestWithIdentity(
 	for attempt := 0; attempt <= reqConfig.MaxRetries; attempt++ {
 		stream, err := client.Stream(ctx, request)
 		if err != nil {
-			if usedNativeStops && isUnsupportedStopError(err) {
+			action, wrapped := decideChatRetry(err, cfg, attempt, reqConfig.MaxRetries, usedNativeStops, false)
+			if action == chatRetryWithoutNativeStops {
 				request.Stop = nil
 				usedNativeStops = false
 				attempt--
 				continue
 			}
-			lastErr = wrapProviderError(err, cfg)
-			if !IsRetryable(lastErr) || attempt >= reqConfig.MaxRetries {
+			lastErr = wrapped
+			if action == chatRetryStop {
 				slog.Debug("provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "error")
 				return "", nil, "", nil, false, chatResponseIdentity{}, lastErr
 			}
@@ -142,15 +163,16 @@ func executeChatStreamRequestWithIdentity(
 			return content, usageOrEstimate(usage, systemPrompt, userContent, content), finishReason, toolCalls, emitted, identity, nil
 		}
 
-		if usedNativeStops && !emitted && isUnsupportedStopError(err) {
+		action, wrapped := decideChatRetry(err, cfg, attempt, reqConfig.MaxRetries, usedNativeStops, emitted)
+		if action == chatRetryWithoutNativeStops {
 			request.Stop = nil
 			usedNativeStops = false
 			attempt--
 			continue
 		}
 
-		lastErr = wrapProviderError(err, cfg)
-		if emitted || !IsRetryable(lastErr) || attempt >= reqConfig.MaxRetries {
+		lastErr = wrapped
+		if action == chatRetryStop {
 			slog.Debug("provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "error")
 			return "", nil, "", nil, emitted, chatResponseIdentity{}, lastErr
 		}

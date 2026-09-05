@@ -117,7 +117,7 @@ func scoreCandidates(configs map[string]Config, healthy []Backend, routing Routi
 		}
 
 		lname := strings.ToLower(b.Name)
-		lbase := strings.ToLower(baseProviderName(b.Name))
+		lbase := strings.ToLower(BaseProviderName(b.Name, cfg.Model))
 		if len(allowed) > 0 {
 			if _, ok := allowed[lname]; !ok {
 				if _, ok := allowed[lbase]; !ok {
@@ -185,13 +185,6 @@ func scoreCandidates(configs map[string]Config, healthy []Backend, routing Routi
 	})
 
 	return scored
-}
-
-func baseProviderName(backendName string) string {
-	if before, _, found := strings.Cut(backendName, ":"); found {
-		return before
-	}
-	return backendName
 }
 
 func exceedsDailyQuota(routing RoutingConfig, provider string, m ProviderRuntimeMetrics, estimatedTokens int, estimatedCost float64) bool {

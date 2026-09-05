@@ -68,21 +68,21 @@ func TestScoreCandidates_RespectsWildcardDailyLimits(t *testing.T) {
 func TestScoreCandidates_CatalogBackendMatchesBaseProviderFilters(t *testing.T) {
 	t.Parallel()
 	configs := map[string]Config{
-		"openai:gpt-5": {Model: "gpt-5", Quality: 0.8},
-		"groq:llama":   {Model: "llama", Quality: 0.8},
+		"edge-primary:vendor:model": {Model: "vendor:model", Quality: 0.8},
+		"groq:llama":                {Model: "llama", Quality: 0.8},
 	}
 	healthy := []Backend{
-		{Name: "openai:gpt-5", Model: "gpt-5"},
+		{Name: "edge-primary:vendor:model", Model: "vendor:model"},
 		{Name: "groq:llama", Model: "llama"},
 	}
 
-	got := scoreCandidates(configs, healthy, RoutingConfig{AllowedProviders: []string{"openai"}}, nil, IntentChat, 1000)
-	if len(got) != 1 || got[0].Provider != "openai:gpt-5" {
-		t.Fatalf("expected base-provider allow rule to keep only openai:gpt-5, got %#v", got)
+	got := scoreCandidates(configs, healthy, RoutingConfig{AllowedProviders: []string{"edge-primary"}}, nil, IntentChat, 1000)
+	if len(got) != 1 || got[0].Provider != "edge-primary:vendor:model" {
+		t.Fatalf("expected base-provider allow rule to keep only edge-primary:vendor:model, got %#v", got)
 	}
 
-	got = scoreCandidates(configs, healthy, RoutingConfig{DeniedProviders: []string{"openai"}}, nil, IntentChat, 1000)
+	got = scoreCandidates(configs, healthy, RoutingConfig{DeniedProviders: []string{"edge-primary"}}, nil, IntentChat, 1000)
 	if len(got) != 1 || got[0].Provider != "groq:llama" {
-		t.Fatalf("expected base-provider deny rule to exclude openai:gpt-5, got %#v", got)
+		t.Fatalf("expected base-provider deny rule to exclude edge-primary:vendor:model, got %#v", got)
 	}
 }

@@ -54,15 +54,7 @@ func NewOpenAI(configs map[string]Config) (*OpenAIProvider, error) {
 func NewOpenAIWithSharedRoutingMetrics(configs map[string]Config, metrics *RoutingMetricsStore) (*OpenAIProvider, error) {
 	defaultRouting := RoutingConfig{}
 	defaultRouting.ApplyDefaults()
-	oc, err := createOpenAIClientsWithRoutingMetrics(configs, defaultRouting, nil, metrics)
-	if err != nil {
-		return nil, err
-	}
-	return &OpenAIProvider{
-		oc:        oc,
-		configs:   configs,
-		maxTokens: MaxTokensFromConfigs(configs, DefaultMaxTokens),
-	}, nil
+	return newOpenAIProvider(configs, defaultRouting, nil, metrics, nil)
 }
 
 // NewOpenAIWithCallbacks creates an OpenAI provider with optional event callbacks
@@ -74,7 +66,11 @@ func NewOpenAIWithCallbacks(configs map[string]Config, cbCallback CircuitBreaker
 
 // NewOpenAIWithRoutingCallbacks creates an OpenAI provider with routing config and optional callbacks.
 func NewOpenAIWithRoutingCallbacks(configs map[string]Config, routing RoutingConfig, cbCallback CircuitBreakerCallback, failoverCallback FailoverCallback) (*OpenAIProvider, error) {
-	oc, err := CreateOpenAIClientsWithRouting(configs, routing, cbCallback)
+	return newOpenAIProvider(configs, routing, cbCallback, nil, failoverCallback)
+}
+
+func newOpenAIProvider(configs map[string]Config, routing RoutingConfig, circuitCallback CircuitBreakerCallback, sharedMetrics *RoutingMetricsStore, failoverCallback FailoverCallback) (*OpenAIProvider, error) {
+	oc, err := createOpenAIClientsWithRoutingMetrics(configs, routing, circuitCallback, sharedMetrics)
 	if err != nil {
 		return nil, err
 	}

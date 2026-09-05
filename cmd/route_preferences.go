@@ -112,7 +112,7 @@ func routeQuery(query string, configs map[string]providers.Config, routing provi
 	cfg := configs[decision.Chosen]
 	return routeQueryResult{
 		Intent:   intent,
-		Provider: routeBaseProviderName(decision.Chosen),
+		Provider: providers.BaseProviderName(decision.Chosen, cfg.Model),
 		Model:    cfg.Model,
 		Reason:   decision.Reason,
 	}, nil
@@ -173,19 +173,12 @@ func routeFallbackMode(prefs routePreferenceSet) string {
 
 func findConfiguredRouteModel(configs map[string]providers.Config, provider, model string) (string, string) {
 	for name, cfg := range configs {
-		if !strings.EqualFold(routeBaseProviderName(name), provider) {
+		if !strings.EqualFold(providers.BaseProviderName(name, cfg.Model), provider) {
 			continue
 		}
 		if strings.EqualFold(cfg.Model, model) {
-			return routeBaseProviderName(name), cfg.Model
+			return providers.BaseProviderName(name, cfg.Model), cfg.Model
 		}
 	}
 	return "", ""
-}
-
-func routeBaseProviderName(name string) string {
-	if before, _, ok := strings.Cut(name, ":"); ok {
-		return before
-	}
-	return name
 }

@@ -229,6 +229,61 @@ func TestBuildTextRequest_MergesProviderOptions(t *testing.T) {
 	}
 }
 
+func TestExtraBodyForModelOverlaysAndClones(t *testing.T) {
+	t.Parallel()
+	providerNested := map[string]any{"provider": true}
+	modelNested := map[string]any{"model": true}
+	cfg := Config{
+		Model: "exact-model",
+		ExtraBody: map[string]any{
+			"provider_only": providerNested,
+			"replaced":      map[string]any{"provider": true},
+		},
+		ExtraBodyByModel: map[string]map[string]any{
+			"exact-model": {
+				"model_only": modelNested,
+				"replaced":   map[string]any{"model": true},
+			},
+		},
+	}
+
+	got := ExtraBodyForModel(cfg)
+	if got["replaced"].(map[string]any)["model"] != true || got["model_only"].(map[string]any)["model"] != true {
+		t.Fatalf("model overlay = %#v", got)
+	}
+	got["provider_only"].(map[string]any)["provider"] = false
+	got["model_only"].(map[string]any)["model"] = false
+	if providerNested["provider"] != true || modelNested["model"] != true {
+		t.Fatalf("result mutation changed config: provider=%#v model=%#v", providerNested, modelNested)
+	}
+	if got := ExtraBodyForModel(Config{}); got != nil {
+		t.Fatalf("empty extra body = %#v, want nil", got)
+	}
+	if got := ExtraBodyForModel(Config{Model: "exact-model", ExtraBodyByModel: map[string]map[string]any{"exact-model": {}}}); got != nil {
+		t.Fatalf("empty model extra body = %#v, want nil", got)
+	}
+}
+
+func TestExtraBodyForModelClonesTypedJSONContainers(t *testing.T) {
+	t.Parallel()
+	typedSlice := []string{"provider"}
+	typedMap := map[string]string{"provider": "value"}
+	typedArray := [1]map[string][]string{{"items": {"provider"}}}
+	cfg := Config{ExtraBody: map[string]any{
+		"slice": typedSlice,
+		"map":   typedMap,
+		"array": typedArray,
+	}}
+
+	got := ExtraBodyForModel(cfg)
+	got["slice"].([]string)[0] = "changed"
+	got["map"].(map[string]string)["provider"] = "changed"
+	got["array"].([1]map[string][]string)[0]["items"][0] = "changed"
+	if typedSlice[0] != "provider" || typedMap["provider"] != "value" || typedArray[0]["items"][0] != "provider" {
+		t.Fatalf("result mutation changed typed config containers: slice=%#v map=%#v array=%#v", typedSlice, typedMap, typedArray)
+	}
+}
+
 func TestBuildTextRequest_ForwardsGeminiJSONGenerationConfig(t *testing.T) {
 	t.Parallel()
 	ctx := WithJSONOverrides(context.Background(), map[string]any{
@@ -272,6 +327,36 @@ type staticErr string
 func (e staticErr) Error() string { return string(e) }
 
 func assertErr(s string) error { return staticErr(s) }
+
+func TestDecideChatRetry(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name            string
+		err             error
+		attempt         int
+		maxRetries      int
+		usedNativeStops bool
+		emitted         bool
+		wantAction      chatRetryAction
+		wantErr         bool
+	}{
+		{name: "retry transient transport error", err: assertErr("connection reset by peer"), maxRetries: 2, wantAction: chatRetryAfterBackoff, wantErr: true},
+		{name: "drop unsupported native stops", err: assertErr("stop is not supported"), usedNativeStops: true, wantAction: chatRetryWithoutNativeStops},
+		{name: "stop after retry exhaustion", err: assertErr("connection reset by peer"), attempt: 2, maxRetries: 2, wantAction: chatRetryStop, wantErr: true},
+		{name: "stop on permanent error", err: assertErr("invalid API key"), maxRetries: 2, wantAction: chatRetryStop, wantErr: true},
+		{name: "stop after stream emission", err: assertErr("connection reset by peer"), maxRetries: 2, emitted: true, wantAction: chatRetryStop, wantErr: true},
+		{name: "emission fences native stop fallback", err: assertErr("stop is not supported"), maxRetries: 2, usedNativeStops: true, emitted: true, wantAction: chatRetryStop, wantErr: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			action, err := decideChatRetry(test.err, Config{ProviderType: "openai", Model: "test-model"}, test.attempt, test.maxRetries, test.usedNativeStops, test.emitted)
+			if action != test.wantAction || (err != nil) != test.wantErr {
+				t.Fatalf("decideChatRetry() = (%v, %v), want (%v, error=%t)", action, err, test.wantAction, test.wantErr)
+			}
+		})
+	}
+}
 
 func TestExecuteChatRequest_EmitsStructuredEntryExitLogs(t *testing.T) {
 	// Mutates the global slog default logger; must not run in parallel.

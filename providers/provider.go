@@ -197,18 +197,14 @@ func (c Config) NeedsBaseURL() bool {
 	}
 }
 
-// GetAPIKey retrieves API key from env or config
+// GetAPIKey returns the primary immediately usable key for a provider.
+// It is the first key returned by GetAPIKeys.
 func GetAPIKey(name string, cfg Config) string {
-	if cfg.APIKey != "" {
-		return cfg.APIKey
+	keys := GetAPIKeys(name, cfg)
+	if len(keys) == 0 {
+		return ""
 	}
-
-	// Use config's env_var if specified, otherwise default to NAME_API_KEY
-	envVar := cfg.EnvVar
-	if envVar == "" {
-		envVar = strings.ToUpper(name) + "_API_KEY"
-	}
-	return os.Getenv(envVar)
+	return keys[0]
 }
 
 // GetAPIKeys returns all available API keys for a provider.

@@ -65,17 +65,13 @@ func routingProviderConfigs(configs map[string]providers.Config, routing provide
 			cfg := base
 			cfg.Model = model
 			applyCatalogModelEvidence(&cfg, cat.Providers[providerName].Models[model])
-			expanded[catalogBackendName(providerName, model)] = cfg
+			expanded[providers.ModelBackendName(providerName, model)] = cfg
 		}
 	}
 	if len(expanded) == 0 {
 		return nil, fmt.Errorf("routing.catalog_models is pinned but no pinned catalog models match enabled providers")
 	}
 	return expanded, nil
-}
-
-func catalogBackendName(providerName, model string) string {
-	return providerName + ":" + model
 }
 
 func applyCatalogModelEvidence(cfg *providers.Config, entry *catalog.ModelEntry) {

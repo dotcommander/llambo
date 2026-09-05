@@ -3,6 +3,8 @@ package providers
 import (
 	"os"
 	"path/filepath"
+	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -122,6 +124,61 @@ func TestLoadRawGlobalConfigDoesNotPersistEnvFallback(t *testing.T) {
 	}
 }
 
+func TestEffectiveConfigHydratesPrimaryArrayKeyWithoutChangingRawConfig(t *testing.T) {
+	setTestConfigPath(t)
+	t.Setenv("LLAMBO_TEST_MIXED_PRIMARY_KEY", "environment-key")
+
+	writeTestConfig(t, `{
+		"default_provider": "mixed",
+		"providers": {
+			"mixed": {
+				"api_key": "configured-single-key",
+				"api_keys": ["array-primary-key", "array-secondary-key"],
+				"env_var": "LLAMBO_TEST_MIXED_PRIMARY_KEY",
+				"enabled": false
+			}
+		}
+	}`)
+
+	raw, err := LoadRawGlobalConfig()
+	if err != nil {
+		t.Fatalf("LoadRawGlobalConfig: %v", err)
+	}
+	if got := raw.Providers["mixed"].APIKey; got != "configured-single-key" {
+		t.Fatalf("raw APIKey = %q, want configured single key", got)
+	}
+
+	effective, err := LoadGlobalConfig()
+	if err != nil {
+		t.Fatalf("LoadGlobalConfig: %v", err)
+	}
+	if got := effective.Providers["mixed"].APIKey; got != "configured-single-key" {
+		t.Fatalf("effective APIKey = %q, want configured single key", got)
+	}
+	if got := GetAPIKey("mixed", effective.Providers["mixed"]); got != "array-primary-key" {
+		t.Fatalf("GetAPIKey() = %q, want primary array key", got)
+	}
+	if got, want := GetAPIKeys("mixed", effective.Providers["mixed"]), []string{"array-primary-key", "array-secondary-key", "configured-single-key", "environment-key"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("GetAPIKeys() = %q, want %q", got, want)
+	}
+
+	selected, err := GetProviderConfig("mixed")
+	if err != nil {
+		t.Fatalf("GetProviderConfig: %v", err)
+	}
+	if got := selected.APIKey; got != "configured-single-key" {
+		t.Fatalf("selected APIKey = %q, want configured single key", got)
+	}
+
+	raw, err = LoadRawGlobalConfig()
+	if err != nil {
+		t.Fatalf("LoadRawGlobalConfig after hydration: %v", err)
+	}
+	if got := raw.Providers["mixed"].APIKey; got != "configured-single-key" {
+		t.Fatalf("raw APIKey after hydration = %q, want configured single key", got)
+	}
+}
+
 func TestInitDefaultConfigUsesCurrentZAIModel(t *testing.T) {
 	setTestConfigPath(t)
 
@@ -135,6 +192,121 @@ func TestInitDefaultConfigUsesCurrentZAIModel(t *testing.T) {
 	}
 	if got := cfg.Providers["zai"].Model; got != "GLM-5.2" {
 		t.Fatalf("zai model = %q, want %q", got, "GLM-5.2")
+	}
+}
+
+func TestSaveGlobalConfigUsesCanonicalPrivateWriter(t *testing.T) {
+	setTestConfigPath(t)
+	want := &GlobalConfig{
+		DefaultProvider: "local",
+		Providers: map[string]Config{
+			"local": {ProviderType: "openai", BaseURL: "http://127.0.0.1:8000", Model: "test-model", Enabled: true, RequiresKey: false},
+		},
+	}
+
+	if err := SaveGlobalConfig(want); err != nil {
+		t.Fatalf("SaveGlobalConfig: %v", err)
+	}
+	info, err := os.Stat(configFile)
+	if err != nil {
+		t.Fatalf("stat config: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("config mode = %o, want 600", got)
+	}
+	got, err := LoadRawGlobalConfig()
+	if err != nil {
+		t.Fatalf("LoadRawGlobalConfig: %v", err)
+	}
+	if got.DefaultProvider != want.DefaultProvider || got.Providers["local"].Model != want.Providers["local"].Model {
+		t.Fatalf("saved config = %#v, want %#v", got, want)
+	}
+}
+
+func TestLoadGlobalConfigRejectsInvalidProviderNames(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		key  string
+	}{
+		{name: "empty", key: ""},
+		{name: "whitespace", key: "  "},
+		{name: "colon", key: "edge:primary"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			setTestConfigPath(t)
+			writeTestConfig(t, `{
+				"default_provider": "valid",
+				"providers": {`+strconv.Quote(test.key)+`: {"enabled": false}}
+			}`)
+
+			for _, load := range []struct {
+				name string
+				fn   func() (*GlobalConfig, error)
+			}{
+				{name: "raw", fn: LoadRawGlobalConfig},
+				{name: "global", fn: LoadGlobalConfig},
+			} {
+				t.Run(load.name, func(t *testing.T) {
+					if _, err := load.fn(); err == nil || !strings.Contains(err.Error(), "invalid provider name") {
+						t.Fatalf("expected invalid provider-name error, got %v", err)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestSaveGlobalConfigRejectsInvalidProviderNameWithoutReplacingExistingFile(t *testing.T) {
+	setTestConfigPath(t)
+	existing := `{"default_provider":"local","providers":{"local":{"enabled":false}}}`
+	writeTestConfig(t, existing)
+
+	err := SaveGlobalConfig(&GlobalConfig{
+		DefaultProvider: "local",
+		Providers: map[string]Config{
+			"edge:primary": {Enabled: false},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "invalid provider name") {
+		t.Fatalf("expected invalid provider-name error, got %v", err)
+	}
+	got, err := os.ReadFile(configFile)
+	if err != nil {
+		t.Fatalf("read existing config: %v", err)
+	}
+	if string(got) != existing {
+		t.Fatalf("config was replaced: got %q, want %q", got, existing)
+	}
+}
+
+func TestGlobalConfigAllowsHyphenatedProviderAndColonModel(t *testing.T) {
+	setTestConfigPath(t)
+	want := &GlobalConfig{
+		DefaultProvider: "edge-primary",
+		Providers: map[string]Config{
+			"edge-primary": {Model: "vendor:model", Enabled: false},
+		},
+	}
+
+	if err := SaveGlobalConfig(want); err != nil {
+		t.Fatalf("SaveGlobalConfig: %v", err)
+	}
+	for _, load := range []struct {
+		name string
+		fn   func() (*GlobalConfig, error)
+	}{
+		{name: "raw", fn: LoadRawGlobalConfig},
+		{name: "global", fn: LoadGlobalConfig},
+	} {
+		t.Run(load.name, func(t *testing.T) {
+			got, err := load.fn()
+			if err != nil {
+				t.Fatalf("load config: %v", err)
+			}
+			if got.DefaultProvider != "edge-primary" || got.Providers["edge-primary"].Model != "vendor:model" {
+				t.Fatalf("loaded config = %#v", got)
+			}
+		})
 	}
 }
 

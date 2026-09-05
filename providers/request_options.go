@@ -3,6 +3,7 @@ package providers
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 )
 
 type requestOptionsKey string
@@ -224,6 +225,22 @@ func JSONOverridesFromContext(ctx context.Context) map[string]any {
 	return cloneJSONMap(o)
 }
 
+// ExtraBodyForModel returns a mutation-isolated request body for cfg's exact
+// model. Per-model values replace provider-level values at matching top-level
+// keys.
+func ExtraBodyForModel(cfg Config) map[string]any {
+	extraBody := cloneJSONMap(cfg.ExtraBody)
+	if byModel, ok := cfg.ExtraBodyByModel[cfg.Model]; ok && len(byModel) > 0 {
+		if extraBody == nil {
+			extraBody = make(map[string]any, len(byModel))
+		}
+		for key, value := range byModel {
+			extraBody[key] = cloneJSONValue(value)
+		}
+	}
+	return extraBody
+}
+
 func cloneJSONMap(in map[string]any) map[string]any {
 	if len(in) == 0 {
 		return nil
@@ -236,18 +253,50 @@ func cloneJSONMap(in map[string]any) map[string]any {
 }
 
 func cloneJSONValue(v any) any {
-	switch v := v.(type) {
-	case map[string]any:
-		return cloneJSONMap(v)
-	case []any:
-		out := make([]any, len(v))
-		for i, item := range v {
-			out[i] = cloneJSONValue(item)
+	if raw, ok := v.(json.RawMessage); ok {
+		return append(json.RawMessage(nil), raw...)
+	}
+	if v == nil {
+		return nil
+	}
+	return cloneJSONContainer(reflect.ValueOf(v)).Interface()
+}
+
+func cloneJSONContainer(value reflect.Value) reflect.Value {
+	switch value.Kind() {
+	case reflect.Interface:
+		if value.IsNil() {
+			return reflect.Zero(value.Type())
+		}
+		out := reflect.New(value.Type()).Elem()
+		out.Set(cloneJSONContainer(value.Elem()))
+		return out
+	case reflect.Map:
+		if value.IsNil() {
+			return reflect.Zero(value.Type())
+		}
+		out := reflect.MakeMapWithSize(value.Type(), value.Len())
+		iter := value.MapRange()
+		for iter.Next() {
+			out.SetMapIndex(iter.Key(), cloneJSONContainer(iter.Value()))
 		}
 		return out
-	case json.RawMessage:
-		return append(json.RawMessage(nil), v...)
+	case reflect.Slice:
+		if value.IsNil() {
+			return reflect.Zero(value.Type())
+		}
+		out := reflect.MakeSlice(value.Type(), value.Len(), value.Len())
+		for i := range value.Len() {
+			out.Index(i).Set(cloneJSONContainer(value.Index(i)))
+		}
+		return out
+	case reflect.Array:
+		out := reflect.New(value.Type()).Elem()
+		for i := range value.Len() {
+			out.Index(i).Set(cloneJSONContainer(value.Index(i)))
+		}
+		return out
 	default:
-		return v
+		return value
 	}
 }

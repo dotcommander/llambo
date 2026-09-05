@@ -116,7 +116,7 @@ func NewOpenAIEmbeddingWithConfig(embedCfg EmbedConfig, providerConfigs map[stri
 
 	provider := whopenai.New(types.ProviderConfig{
 		APIKey:     apiKey,
-		BaseURL:    normalizeBaseURL(selectedConfig.BaseURL),
+		BaseURL:    NormalizeOpenAIBaseURL(selectedConfig.BaseURL),
 		Headers:    selectedConfig.ExtraHeaders,
 		MaxRetries: noWormholeRetries(),
 	})

@@ -36,7 +36,7 @@ func newPingOpenAIClientForConfig(name string, cfg providers.Config) (*pingOpenA
 
 	provider := whopenai.New(whtypes.ProviderConfig{
 		APIKey:          apiKey,
-		BaseURL:         normalizePingOpenAIBaseURL(cfg.BaseURL),
+		BaseURL:         providers.NormalizeOpenAIBaseURL(cfg.BaseURL),
 		Headers:         cfg.ExtraHeaders,
 		MaxRetries:      noPingWormholeRetries(),
 		UseResponsesAPI: isResponsesAPIProvider(cfg),
@@ -111,36 +111,16 @@ func (c *pingOpenAIClient) textRequest(systemPrompt, userContent string, maxToke
 }
 
 func (c *pingOpenAIClient) providerOptions() map[string]any {
-	if len(c.extraBody) == 0 && len(c.extraBodyByModel[c.model]) == 0 {
-		return nil
-	}
-
-	opts := make(map[string]any, len(c.extraBody)+len(c.extraBodyByModel[c.model]))
-	for key, value := range c.extraBody {
-		opts[key] = value
-	}
-	if perModel, ok := c.extraBodyByModel[c.model]; ok {
-		for key, value := range perModel {
-			opts[key] = value
-		}
-	}
-	return opts
+	return providers.ExtraBodyForModel(providers.Config{
+		Model:            c.model,
+		ExtraBody:        c.extraBody,
+		ExtraBodyByModel: c.extraBodyByModel,
+	})
 }
 
 func noPingWormholeRetries() *int {
 	noRetries := 0
 	return &noRetries
-}
-
-func normalizePingOpenAIBaseURL(url string) string {
-	if url == "" {
-		return ""
-	}
-	url = strings.TrimSuffix(url, "/")
-	if !strings.HasSuffix(url, "/v1") && !strings.HasSuffix(url, "/v4") {
-		url += "/v1"
-	}
-	return url
 }
 
 func isResponsesAPIProvider(cfg providers.Config) bool {

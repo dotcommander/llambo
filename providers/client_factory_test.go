@@ -198,6 +198,29 @@ type baseURLProvider interface {
 	GetBaseURL() string
 }
 
+func TestNormalizeOpenAIBaseURL(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "empty", in: "", want: ""},
+		{name: "plain base", in: "https://example.test/api", want: "https://example.test/api/v1"},
+		{name: "trailing slash", in: "https://example.test/api/", want: "https://example.test/api/v1"},
+		{name: "v1", in: "https://example.test/api/v1", want: "https://example.test/api/v1"},
+		{name: "v4", in: "https://example.test/api/v4/", want: "https://example.test/api/v4"},
+		{name: "one trailing slash only", in: "https://example.test/api//", want: "https://example.test/api//v1"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			if got := NormalizeOpenAIBaseURL(test.in); got != test.want {
+				t.Fatalf("NormalizeOpenAIBaseURL(%q) = %q, want %q", test.in, got, test.want)
+			}
+		})
+	}
+}
+
 func TestCreateProviderForConfigWithKeyUsesEffectiveBaseURL(t *testing.T) {
 	t.Parallel()
 

@@ -37,34 +37,13 @@ func performCanaryAutoPromote(canaryCfg *CanaryConfig, eventsPath string, config
 		return
 	}
 
-	canaryName := canaryCfg.Provider
-	baselineName := canaryCfg.Baseline
-
 	cfg, err := LoadRawGlobalConfig()
 	if err != nil {
 		slog.Error("canary auto-promote: load config failed", "error", err)
 		return
 	}
 
-	// Determine target priority: match baseline or take top priority
-	targetPriority := 1
-	if baselineName != "" {
-		if bcfg, ok := cfg.Providers[baselineName]; ok {
-			targetPriority = bcfg.Priority
-		}
-	} else {
-		for _, pcfg := range cfg.Providers {
-			if pcfg.Enabled && pcfg.Priority > 0 && pcfg.Priority < targetPriority {
-				targetPriority = pcfg.Priority
-			}
-		}
-	}
-
-	if pcfg, ok := cfg.Providers[canaryName]; ok {
-		pcfg.Priority = targetPriority
-		cfg.Providers[canaryName] = pcfg
-	}
-	cfg.Routing.Canary = nil
+	canaryName, targetPriority := PromoteCanaryConfig(cfg, *canaryCfg)
 
 	if err := SaveGlobalConfig(cfg); err != nil {
 		slog.Error("canary auto-promote: save config failed", "error", err)

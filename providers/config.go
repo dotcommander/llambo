@@ -61,7 +61,7 @@ func LoadGlobalConfig() (*GlobalConfig, error) {
 		return nil, err
 	}
 
-	// Apply defaults and merge env vars for API keys
+	// Apply defaults and merge env vars for API keys.
 	for name, pcfg := range cfg.Providers {
 		if pcfg.APIKey == "" {
 			pcfg.APIKey = GetAPIKey(name, pcfg)
@@ -113,6 +113,9 @@ func loadGlobalConfig() (*GlobalConfig, error) {
 	if err := json.Unmarshal(data, cfg); err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
+	if err := validateProviderNames(cfg.Providers); err != nil {
+		return nil, err
+	}
 
 	if cfg.DefaultProvider == "" {
 		return nil, fmt.Errorf("config missing required field: default_provider")
@@ -142,6 +145,15 @@ func LoadRawGlobalConfig() (*GlobalConfig, error) {
 
 // SaveGlobalConfig saves config to ~/.config/llambo/config.json
 func SaveGlobalConfig(cfg *GlobalConfig) error {
+	return writeGlobalConfig(cfg)
+}
+
+func writeGlobalConfig(cfg *GlobalConfig) error {
+	if cfg != nil {
+		if err := validateProviderNames(cfg.Providers); err != nil {
+			return err
+		}
+	}
 	if err := os.MkdirAll(configDir, 0755); err != nil {
 		return err
 	}
@@ -156,6 +168,15 @@ func SaveGlobalConfig(cfg *GlobalConfig) error {
 		return err
 	}
 	return os.Rename(tmp, configFile)
+}
+
+func validateProviderNames(configs map[string]Config) error {
+	for name := range configs {
+		if strings.TrimSpace(name) == "" || strings.Contains(name, ":") {
+			return fmt.Errorf("invalid provider name: names must be non-empty and contain no ':'")
+		}
+	}
+	return nil
 }
 
 // InitDefaultConfig creates a skeleton config file with example providers
@@ -233,18 +254,5 @@ func InitDefaultConfig() error {
 		},
 	}
 
-	if err := os.MkdirAll(configDir, 0755); err != nil {
-		return err
-	}
-
-	data, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	tmp := configFile + ".tmp"
-	if err := os.WriteFile(tmp, data, 0600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, configFile)
+	return writeGlobalConfig(cfg)
 }

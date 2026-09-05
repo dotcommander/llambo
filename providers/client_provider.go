@@ -79,7 +79,7 @@ func providerConfigBaseURL(cfg Config) string {
 		if cfg.BaseURL == "" {
 			return defaultOpenAIBaseURL
 		}
-		return normalizeBaseURL(cfg.BaseURL)
+		return NormalizeOpenAIBaseURL(cfg.BaseURL)
 	}
 }
 
@@ -93,9 +93,9 @@ func providerHTTPTimeout(cfg whtypes.ProviderConfig) time.Duration {
 	return whconfig.GetDefaultHTTPTimeout()
 }
 
-// normalizeBaseURL ensures OpenAI-compatible wormhole providers receive a base URL
-// that already includes the API version before they append /chat/completions.
-func normalizeBaseURL(url string) string {
+// NormalizeOpenAIBaseURL ensures OpenAI-compatible consumers receive a base URL
+// that already includes the API version before they append endpoint paths.
+func NormalizeOpenAIBaseURL(url string) string {
 	if url == "" {
 		return "" // default OpenAI URL
 	}

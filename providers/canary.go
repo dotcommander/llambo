@@ -15,6 +15,35 @@ type CanaryConfig struct {
 	StartedAt    string  `json:"started_at,omitempty"`    // RFC3339 timestamp when canary started
 }
 
+// PromoteCanaryConfig applies the existing in-memory config transition for a
+// canary promotion. The supplied value identifies the provider and baseline
+// captured by the caller; clearing the currently loaded route is part of the
+// compatibility contract shared by manual and automatic promotion.
+//
+// Loading, saving, evaluation, and promotion policy remain with callers.
+func PromoteCanaryConfig(cfg *GlobalConfig, canary CanaryConfig) (string, int) {
+	targetPriority := 1
+	if canary.Baseline != "" {
+		if baseline, ok := cfg.Providers[canary.Baseline]; ok {
+			targetPriority = baseline.Priority
+		}
+	} else {
+		for _, provider := range cfg.Providers {
+			if provider.Enabled && provider.Priority > 0 && provider.Priority < targetPriority {
+				targetPriority = provider.Priority
+			}
+		}
+	}
+
+	if provider, ok := cfg.Providers[canary.Provider]; ok {
+		provider.Priority = targetPriority
+		cfg.Providers[canary.Provider] = provider
+	}
+	cfg.Routing.Canary = nil
+
+	return canary.Provider, targetPriority
+}
+
 // shouldRouteToCanary returns true if this request should go to the canary provider.
 // Uses FNV hash of request content for deterministic per-request routing.
 func shouldRouteToCanary(canary *CanaryConfig, systemPrompt, userContent string) bool {

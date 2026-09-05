@@ -64,19 +64,18 @@ func buildTextRequest(ctx context.Context, cfg Config, systemPrompt, userContent
 }
 
 func buildProviderOptions(cfg Config, ctx context.Context) map[string]any {
-	opts := make(map[string]any, len(cfg.ExtraBody)+len(JSONOverridesFromContext(ctx))+2)
-	for k, v := range cfg.ExtraBody {
-		opts[k] = cloneJSONValue(v)
-	}
-	if byModel, ok := cfg.ExtraBodyByModel[cfg.Model]; ok {
-		for k, v := range byModel {
-			opts[k] = cloneJSONValue(v)
-		}
-	}
+	opts := ExtraBodyForModel(cfg)
+	overrides := JSONOverridesFromContext(ctx)
 	if metadata := RequestMetadataFromContext(ctx); len(metadata) > 0 {
+		if opts == nil {
+			opts = make(map[string]any, len(metadata)+len(overrides))
+		}
 		opts["metadata"] = metadata
 	}
-	for k, v := range JSONOverridesFromContext(ctx) {
+	for k, v := range overrides {
+		if opts == nil {
+			opts = make(map[string]any, len(overrides))
+		}
 		if k == "generationConfig" {
 			if incoming, ok := v.(map[string]any); ok {
 				merged := map[string]any{}

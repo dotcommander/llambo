@@ -145,6 +145,36 @@ func TestRouteQueryFallsBackToQualityRouter(t *testing.T) {
 	}
 }
 
+func TestRouteQueryProjectsColonBearingModelBackend(t *testing.T) {
+	configs := map[string]providers.Config{
+		"edge-primary:vendor:model": {
+			Model:        "vendor:model",
+			Enabled:      true,
+			Capabilities: []string{"chat"},
+			Quality:      0.90,
+		},
+	}
+
+	got, err := routeQuery("choose a model", configs, providers.RoutingConfig{}, nil, routePreferenceSet{})
+	if err != nil {
+		t.Fatalf("routeQuery returned error: %v", err)
+	}
+	if got.Provider != "edge-primary" || got.Model != "vendor:model" {
+		t.Fatalf("expected edge-primary/vendor:model, got %s/%s", got.Provider, got.Model)
+	}
+}
+
+func TestFindConfiguredRouteModelProjectsColonBearingModelBackend(t *testing.T) {
+	configs := map[string]providers.Config{
+		"edge-primary:vendor:model": {Model: "vendor:model"},
+	}
+
+	provider, model := findConfiguredRouteModel(configs, "edge-primary", "vendor:model")
+	if provider != "edge-primary" || model != "vendor:model" {
+		t.Fatalf("expected edge-primary/vendor:model, got %s/%s", provider, model)
+	}
+}
+
 func TestRouteQueryUsesGeminiLiteAsFallbackDecider(t *testing.T) {
 	configs := map[string]providers.Config{
 		"openai": {

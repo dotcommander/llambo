@@ -88,28 +88,7 @@ func runCanaryPromote(cmd *commandIO, _ []string) error {
 		return fmt.Errorf("no canary configured")
 	}
 
-	canaryName := cfg.Routing.Canary.Provider
-	baselineName := cfg.Routing.Canary.Baseline
-
-	targetPriority := 1
-	if baselineName != "" {
-		if bcfg, ok := cfg.Providers[baselineName]; ok {
-			targetPriority = bcfg.Priority
-		}
-	} else {
-		for _, pcfg := range cfg.Providers {
-			if pcfg.Enabled && pcfg.Priority > 0 && pcfg.Priority < targetPriority {
-				targetPriority = pcfg.Priority
-			}
-		}
-	}
-
-	if pcfg, ok := cfg.Providers[canaryName]; ok {
-		pcfg.Priority = targetPriority
-		cfg.Providers[canaryName] = pcfg
-	}
-
-	cfg.Routing.Canary = nil
+	canaryName, targetPriority := providers.PromoteCanaryConfig(cfg, *cfg.Routing.Canary)
 
 	if err := providers.SaveGlobalConfig(cfg); err != nil {
 		return fmt.Errorf("save config: %w", err)

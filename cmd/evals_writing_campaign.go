@@ -92,7 +92,7 @@ func (c *evalsWritingCampaignCommand) Run(_ *evalsCommand, io *commandIO) error 
 			return err
 		}
 		client.BaseURL = cfg.BaseURL
-		client.APIKey = cfg.APIKey
+		client.APIKey = providers.GetAPIKey("openrouter", cfg)
 		client.Headers = cfg.ExtraHeaders
 		client.HTTPClient = &http.Client{Timeout: c.Timeout}
 	}
