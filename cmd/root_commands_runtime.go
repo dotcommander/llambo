@@ -1,6 +1,11 @@
 package cmd
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+
+	"github.com/dotcommander/llambo/internal/catalog"
+)
 
 type pingCommand struct {
 	Prompt               string   `short:"p" default:"Write three short sentences about the sky. Output only the sentences." help:"Prompt to send to all providers"`
@@ -55,11 +60,13 @@ type providersListCommand struct {
 func (*providersListCommand) Run(io *commandIO) error { return runProviders(io, nil) }
 
 type providersRefreshCommand struct {
-	Providers []string `arg:"" optional:""`
+	Force     bool          `short:"f" help:"Force refresh from upstream APIs, bypassing the 4-hour cache"`
+	TTL       time.Duration `help:"Minimum cache duration before re-fetching upstream (default: 4h)" default:"4h"`
+	Providers []string      `arg:"" optional:""`
 }
 
 func (c *providersRefreshCommand) Run(io *commandIO) error {
-	return runProvidersRefresh(io, c.Providers)
+	return runProvidersRefresh(io, c.Providers, catalog.RefreshOptions{TTL: c.TTL, Force: c.Force})
 }
 
 type routeCommand struct {

@@ -19,12 +19,15 @@ func (c *evalsSourcesRefreshCommand) Run(parent *evalsCommand, io *commandIO) er
 	if err != nil {
 		return err
 	}
-	statuses, backups, err := evals.RefreshEvaluationSources(io.Context(), evals.Options{
+	statuses, backups, err := evals.RefreshEvaluationSourcesWithOptions(io.Context(), evals.Options{
 		CacheDir:       cacheDir,
 		LLMStatsAPIKey: os.Getenv("LLM_STATS_KEY"),
 		Client:         &http.Client{Timeout: 45 * time.Second},
 		Now:            time.Now,
-	}, c.Names)
+	}, c.Names, evals.RefreshSourceOptions{
+		TTL:   c.TTL,
+		Force: c.Force,
+	})
 	if err != nil {
 		return err
 	}
@@ -32,6 +35,15 @@ func (c *evalsSourcesRefreshCommand) Run(parent *evalsCommand, io *commandIO) er
 		fmt.Fprintf(io.ErrOrStderr(), "Preserved previous source cache: %s\n", backup)
 	}
 	for _, status := range statuses {
+		if status.Cache == "cached" {
+			refreshedAgo := "never"
+			if !status.FetchedAt.IsZero() {
+				refreshedAgo = humanDuration(time.Since(status.FetchedAt)) + " ago"
+			}
+			fmt.Fprintf(io.OutOrStdout(), "%-32s ✓ %d models, %d observations (cached, refreshed %s, TTL %s), revision %s, sha %s\n",
+				status.Name, status.Models, status.Observations, refreshedAgo, humanDuration(c.TTL), status.Version, status.ContentSHA)
+			continue
+		}
 		fmt.Fprintf(io.OutOrStdout(), "%-32s ✓ %d models, %d observations, revision %s, sha %s\n", status.Name, status.Models, status.Observations, status.Version, status.ContentSHA)
 	}
 	return nil

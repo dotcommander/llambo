@@ -89,6 +89,7 @@ func DecodeOpenAICompatibleModels(body []byte) ([]UpstreamModel, error) {
 			ID                  string          `json:"id"`
 			CanonicalSlug       string          `json:"canonical_slug"`
 			Name                string          `json:"name"`
+			Description         string          `json:"description"`
 			Created             int64           `json:"created"`
 			OwnedBy             string          `json:"owned_by"`
 			ContextLength       int             `json:"context_length"`
@@ -113,6 +114,7 @@ func DecodeOpenAICompatibleModels(body []byte) ([]UpstreamModel, error) {
 		m.Metadata = ModelMetadata{
 			Name:                d.Name,
 			CanonicalSlug:       d.CanonicalSlug,
+			Description:         d.Description,
 			ContextLength:       d.ContextLength,
 			SupportedParameters: append([]string(nil), d.SupportedParameters...),
 			DefaultParameters:   d.DefaultParameters,

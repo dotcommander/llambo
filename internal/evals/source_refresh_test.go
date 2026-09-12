@@ -168,6 +168,13 @@ func TestRefreshLLMStatsStatsV1SourceReplacesCacheAfterValidation(t *testing.T) 
 	if status.Models != 5 || status.Observations != 5 || status.Cache != "fetched" || status.RegistryVersion != SourceRegistryVersion || status.ContentSHA == "" {
 		t.Fatalf("unexpected Stats v1 status: %#v", status)
 	}
+	// Cache reuse must read the same filename as the publisher, without credentials.
+	statuses, backups, err := RefreshEvaluationSourcesWithOptions(context.Background(), Options{
+		CacheDir: dir, Now: func() time.Time { return now.Add(time.Hour) },
+	}, []string{"llm-stats-stats-v1"}, RefreshSourceOptions{TTL: 4 * time.Hour})
+	if err != nil || len(statuses) != 1 || statuses[0].Cache != "cached" || statuses[0].Models != 5 || len(backups) != 0 {
+		t.Fatalf("Stats v1 cache reuse failed: %#v %v %v", statuses, backups, err)
+	}
 	if backup == "" {
 		t.Fatal("predecessor cache was not preserved")
 	}
@@ -192,5 +199,87 @@ func TestRefreshLLMStatsStatsV1SourceReplacesCacheAfterValidation(t *testing.T) 
 		if err != nil || len(matches) != want {
 			t.Fatalf("unexpected sealed Stats v1 artifact %s: %#v %v", pattern, matches, err)
 		}
+	}
+}
+
+func TestRefreshEvaluationSources_CachingAndIdempotency(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	now := time.Now().UTC().Truncate(time.Second)
+
+	// Seed writingbench snapshot fetched 1 hour ago
+	wbPath := filepath.Join(dir, "writingbench.json")
+	seeded := sourceSnapshot{
+		FetchedAt:    now.Add(-1 * time.Hour),
+		Models:       []Model{{Key: "seeded-model"}},
+		Observations: 1,
+		Version:      "rev-1",
+		ContentSHA:   "sha256-abc",
+		Method:       "test-method",
+	}
+	if err := writeSnapshot(wbPath, seeded); err != nil {
+		t.Fatal(err)
+	}
+
+	opts := Options{
+		CacheDir: dir,
+		Now:      func() time.Time { return now },
+	}
+
+	// 1. Within 4-hour TTL: served from cache, no backups, no network
+	statuses, backups, err := RefreshEvaluationSourcesWithOptions(context.Background(), opts, []string{"writingbench"}, RefreshSourceOptions{
+		TTL: 4 * time.Hour,
+	})
+	if err != nil {
+		t.Fatalf("RefreshEvaluationSourcesWithOptions failed: %v", err)
+	}
+	if len(statuses) != 1 || statuses[0].Cache != "cached" {
+		t.Fatalf("expected cached status, got: %#v", statuses)
+	}
+	if statuses[0].Models != 1 || statuses[0].Observations != 1 {
+		t.Fatalf("unexpected model/obs counts: %#v", statuses[0])
+	}
+	if len(backups) != 0 {
+		t.Fatalf("expected no backups for cached run, got: %v", backups)
+	}
+
+	// 2. Second call: fully idempotent
+	statuses2, backups2, err := RefreshEvaluationSourcesWithOptions(context.Background(), opts, []string{"writingbench"}, RefreshSourceOptions{
+		TTL: 4 * time.Hour,
+	})
+	if err != nil {
+		t.Fatalf("second call failed: %v", err)
+	}
+	if len(statuses2) != 1 || statuses2[0].Cache != "cached" {
+		t.Fatalf("second call must remain cached: %#v", statuses2)
+	}
+	if len(backups2) != 0 {
+		t.Fatalf("second call must have no backups: %v", backups2)
+	}
+}
+
+func TestSourceRefreshRejectsInvalidCache(t *testing.T) {
+	now := time.Now().UTC()
+	for _, tc := range []struct {
+		name    string
+		fetched time.Time
+		sha     string
+	}{
+		{"future", now.Add(time.Hour), "sha"},
+		{"incomplete", now.Add(-time.Hour), ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := writeSnapshot(filepath.Join(dir, "writingbench.json"), sourceSnapshot{FetchedAt: tc.fetched, ContentSHA: tc.sha, Method: "test", Models: []Model{{Key: "model"}}}); err != nil {
+				t.Fatal(err)
+			}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Error(w, "expected fetch", http.StatusBadGateway) }))
+			defer server.Close()
+			statuses, _, err := RefreshEvaluationSourcesWithOptions(context.Background(), Options{CacheDir: dir, Now: func() time.Time { return now }, WritingBenchURL: server.URL}, []string{"writingbench"}, RefreshSourceOptions{TTL: 4 * time.Hour})
+			if err == nil {
+				t.Fatalf("invalid cache accepted: %#v", statuses)
+			}
+		})
 	}
 }

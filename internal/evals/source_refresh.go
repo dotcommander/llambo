@@ -45,11 +45,22 @@ func defaultWritingEvidenceSourceNames() []string {
 	return names
 }
 
+// RefreshSourceOptions configures caching behavior for evaluation source refreshes.
+type RefreshSourceOptions struct {
+	TTL   time.Duration // Minimum duration to retain cached source snapshots. If > 0, skips sources refreshed within TTL.
+	Force bool          // If true, bypasses the TTL cache and forces upstream fetch.
+}
+
 // RefreshEvaluationSources is the single source-ingestion entry point. It owns
 // source selection, validation, predecessor preservation, and cache publication
 // so CLI callers do not need source-specific branches. Each cache replacement is
 // atomic; a multi-source refresh validates every snapshot before publishing any.
 func RefreshEvaluationSources(ctx context.Context, opts Options, names []string) ([]SourceStatus, []string, error) {
+	return RefreshEvaluationSourcesWithOptions(ctx, opts, names, RefreshSourceOptions{})
+}
+
+// RefreshEvaluationSourcesWithOptions fetches or returns cached evaluation sources according to RefreshSourceOptions.
+func RefreshEvaluationSourcesWithOptions(ctx context.Context, opts Options, names []string, refreshOpts RefreshSourceOptions) ([]SourceStatus, []string, error) {
 	opts.applyDefaults()
 	if len(names) == 0 {
 		names = defaultWritingEvidenceSourceNames()
@@ -65,6 +76,14 @@ func RefreshEvaluationSources(ctx context.Context, opts Options, names []string)
 		}
 	}
 	if len(normalized) == 1 && normalized[0] == "llm-stats-stats-v1" {
+		if !refreshOpts.Force && refreshOpts.TTL > 0 {
+			path := filepath.Join(opts.CacheDir, "llm-stats.json")
+			if snapshot, err := readSnapshot(path); err == nil && strings.HasPrefix(snapshot.Method, "LLM Stats Stats v1 models") && snapshot.RegistryVersion == SourceRegistryVersion {
+				if age := opts.Now().Sub(snapshot.FetchedAt); age >= 0 && age < refreshOpts.TTL && validateWritingEvidenceSnapshot("llm-stats-stats-v1", snapshot) == nil {
+					return []SourceStatus{statusFor("LLM Stats", opts.LLMStatsStatsV1ModelsURL, snapshot, "cached", nil)}, nil, nil
+				}
+			}
+		}
 		status, backup, err := RefreshLLMStatsStatsV1Source(ctx, opts)
 		if err != nil {
 			return nil, nil, err
@@ -83,13 +102,48 @@ func RefreshEvaluationSources(ctx context.Context, opts Options, names []string)
 	if err := validateWritingEvidenceSourceNames(normalized); err != nil {
 		return nil, nil, err
 	}
-	backups, err := preserveEvaluationSourceCaches(opts.CacheDir, normalized, opts.Now())
+
+	cachedStatuses := make(map[string]SourceStatus)
+	var toFetch []string
+
+	for _, name := range normalized {
+		if !refreshOpts.Force && refreshOpts.TTL > 0 {
+			path := filepath.Join(opts.CacheDir, name+".json")
+			if snapshot, err := readSnapshot(path); err == nil {
+				if age := opts.Now().Sub(snapshot.FetchedAt); age >= 0 && age < refreshOpts.TTL && validateWritingEvidenceSnapshot(name, snapshot) == nil {
+					sourceDef, _ := writingEvidenceSourceFor(name)
+					cachedStatuses[name] = statusFor(sourceDef.name, sourceDef.url(opts), snapshot, "cached", nil)
+					continue
+				}
+			}
+		}
+		toFetch = append(toFetch, name)
+	}
+
+	if len(toFetch) == 0 {
+		statuses := make([]SourceStatus, 0, len(normalized))
+		for _, name := range normalized {
+			statuses = append(statuses, cachedStatuses[name])
+		}
+		return statuses, nil, nil
+	}
+
+	backups, err := preserveEvaluationSourceCaches(opts.CacheDir, toFetch, opts.Now())
 	if err != nil {
 		return nil, nil, err
 	}
-	statuses, err := refreshWritingEvidenceSources(ctx, opts, normalized)
+	fetchedStatuses, err := refreshWritingEvidenceSources(ctx, opts, toFetch)
 	if err != nil {
 		return nil, nil, err
+	}
+
+	for i, name := range toFetch {
+		cachedStatuses[name] = fetchedStatuses[i]
+	}
+
+	statuses := make([]SourceStatus, 0, len(normalized))
+	for _, name := range normalized {
+		statuses = append(statuses, cachedStatuses[name])
 	}
 	return statuses, backups, nil
 }

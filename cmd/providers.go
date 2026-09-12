@@ -65,7 +65,7 @@ func runProviders(cmd *commandIO, args []string) error {
 	return nil
 }
 
-func runProvidersRefresh(cmd *commandIO, args []string) error {
+func runProvidersRefresh(cmd *commandIO, args []string, opts catalog.RefreshOptions) error {
 	out := cmd.OutOrStdout()
 	cfg, err := providers.LoadGlobalConfig()
 	if err != nil {
@@ -77,7 +77,7 @@ func runProvidersRefresh(cmd *commandIO, args []string) error {
 		return err
 	}
 
-	results, err := catalog.Refresh(cmd.Context(), args, cfg.Providers, catPath)
+	results, err := catalog.RefreshWithOptions(cmd.Context(), args, cfg.Providers, catPath, opts)
 	if err != nil {
 		return fmt.Errorf("save catalog: %w", err)
 	}
@@ -87,8 +87,19 @@ func runProvidersRefresh(cmd *commandIO, args []string) error {
 			fmt.Fprintf(out, "%-14s ✗ failed: %s\n", r.Provider, r.Err)
 			continue
 		}
-		fmt.Fprintf(out, "%-14s ✓ %d models (+%d new, -%d stale, ~%d unchanged) from %s\n",
-			r.Provider, r.Total, len(r.NewIDs), len(r.StaleIDs), r.UnchangedN, r.Endpoint)
+		if r.Cached {
+			refreshedAgo := "never"
+			if !r.LastRefresh.IsZero() {
+				refreshedAgo = humanDuration(time.Since(r.LastRefresh)) + " ago"
+			}
+			fmt.Fprintf(out, "%-14s ✓ %d models (cached, refreshed %s, TTL %s) from %s\n",
+				r.Provider, r.Total, refreshedAgo, humanDuration(opts.TTL), r.Endpoint)
+			continue
+		}
+		summary := fmt.Sprintf("+%d new, %d updated, -%d stale, ~%d unchanged",
+			len(r.NewIDs), r.UpdatedN, len(r.StaleIDs), r.UnchangedN)
+		fmt.Fprintf(out, "%-14s ✓ %d models (%s) from %s\n",
+			r.Provider, r.Total, summary, r.Endpoint)
 	}
 	return nil
 }

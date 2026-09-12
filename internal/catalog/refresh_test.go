@@ -491,3 +491,174 @@ func TestApply_StaleDetection(t *testing.T) {
 
 	_ = fmt.Sprintf // keep import
 }
+
+func TestRefreshWithOptions_CachingAndIdempotency(t *testing.T) {
+	t.Parallel()
+
+	hitCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hitCount++
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"data": [{"id": "model-v1", "owned_by": "test"}]}`)
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	catalogPath := filepath.Join(dir, "catalog.json")
+
+	seed := &Catalog{Version: 1, Providers: make(map[string]*ProviderCatalog)}
+	require.NoError(t, Save(catalogPath, seed))
+
+	cfgs := map[string]providers.Config{
+		"testprov": {
+			BaseURL:      srv.URL,
+			ProviderType: "openai",
+			RequiresKey:  false,
+			Enabled:      true,
+			Model:        "model-v1",
+		},
+	}
+
+	// 1. Initial refresh with TTL 4 hours: hits server
+	res1, err := RefreshWithOptions(context.Background(), nil, cfgs, catalogPath, RefreshOptions{TTL: 4 * time.Hour})
+	require.NoError(t, err)
+	require.Len(t, res1, 1)
+	require.False(t, res1[0].Cached)
+	require.Equal(t, 1, hitCount)
+	require.Equal(t, 1, res1[0].Total)
+	require.Contains(t, res1[0].NewIDs, "model-v1")
+	require.NoError(t, Update(context.Background(), catalogPath, func(cat *Catalog) error {
+		cat.Providers["testprov"].Models["stale"] = &ModelEntry{LastSeen: time.Unix(1, 0)}
+		return nil
+	}))
+
+	// 2. Second refresh within 4 hours: idempotent, served from cache, does NOT hit server
+	res2, err := RefreshWithOptions(context.Background(), nil, cfgs, catalogPath, RefreshOptions{TTL: 4 * time.Hour})
+	require.NoError(t, err)
+	require.Len(t, res2, 1)
+	require.True(t, res2[0].Cached)
+	require.Equal(t, 1, hitCount, "must not make network call when cached within 4h")
+	require.Equal(t, 1, res2[0].Total)
+
+	// 3. Forced refresh: bypasses cache and hits server
+	res3, err := RefreshWithOptions(context.Background(), nil, cfgs, catalogPath, RefreshOptions{TTL: 4 * time.Hour, Force: true})
+	require.NoError(t, err)
+	require.Len(t, res3, 1)
+	require.False(t, res3[0].Cached)
+	require.Equal(t, 2, hitCount, "must hit server when Force is true")
+}
+
+func TestRefresh_UpdatesVersionAndMetadataOfTrackedAndScoredModel(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{
+			"data": [
+				{
+					"id": "model-tracked",
+					"owned_by": "openai",
+					"created": 1750000000,
+					"context_length": 1048576,
+					"description": "Updated model version"
+				},
+				{
+					"id": "model-brand-new",
+					"owned_by": "openai",
+					"created": 1750000100,
+					"context_length": 262144
+				}
+			]
+		}`)
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	catalogPath := filepath.Join(dir, "catalog.json")
+
+	oldTime := now.Add(-5 * time.Hour)
+	seed := &Catalog{
+		Version: 1,
+		Providers: map[string]*ProviderCatalog{
+			"openai": {
+				LastRefresh: oldTime,
+				Models: map[string]*ModelEntry{
+					"model-tracked": {
+						FirstSeen: oldTime,
+						LastSeen:  oldTime,
+						OwnedBy:   "old-owner",
+						Metadata: ModelMetadata{
+							ContextLength: 128000,
+							Description:   "Old version",
+						},
+						Quality: map[string]QualityEvidence{
+							"overall": {Score: 0.88, Source: "artificial_analysis"},
+						},
+						Benchmarks: map[string]BenchmarkEvidence{
+							"speed": {SpeedTokensPerSecond: 120.5},
+						},
+						Pinned: true,
+						Tags:   []string{"smart"},
+					},
+				},
+			},
+		},
+	}
+	require.NoError(t, Save(catalogPath, seed))
+
+	cfgs := map[string]providers.Config{
+		"openai": {
+			BaseURL:      srv.URL,
+			ProviderType: "openai",
+			RequiresKey:  false,
+			Enabled:      true,
+			Model:        "model-tracked",
+		},
+	}
+
+	results, err := RefreshWithOptions(context.Background(), nil, cfgs, catalogPath, RefreshOptions{TTL: 4 * time.Hour})
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	require.Equal(t, 1, results[0].UpdatedN, "tracked model must be counted as updated")
+	require.Equal(t, []string{"model-brand-new"}, results[0].NewIDs, "brand new model must be identified")
+
+	cat, err := Load(catalogPath)
+	require.NoError(t, err)
+
+	// 1. Verify tracked & scored model updated its version/metadata while preserving scores/policy
+	tracked := cat.Providers["openai"].Models["model-tracked"]
+	require.NotNil(t, tracked)
+	require.Equal(t, 1048576, tracked.Metadata.ContextLength, "context length must update")
+	require.Equal(t, "Updated model version", tracked.Metadata.Description, "description must update")
+	require.Equal(t, "openai", tracked.OwnedBy, "owner must update")
+	require.True(t, tracked.Pinned, "pinned state must be preserved")
+	require.Equal(t, []string{"smart"}, tracked.Tags, "tags must be preserved")
+	require.NotNil(t, tracked.Quality["overall"], "quality score must be preserved")
+	require.Equal(t, 0.88, tracked.Quality["overall"].Score, "quality score value must be preserved")
+	require.Equal(t, 120.5, tracked.Benchmarks["speed"].SpeedTokensPerSecond, "benchmark metrics must be preserved")
+
+	// 2. Verify new model is tracked
+	newModel := cat.Providers["openai"].Models["model-brand-new"]
+	require.NotNil(t, newModel)
+	require.Equal(t, 262144, newModel.Metadata.ContextLength)
+}
+
+func TestRefreshMetadataChangeDetection(t *testing.T) {
+	now := time.Now().UTC()
+	cat := &Catalog{Providers: map[string]*ProviderCatalog{}}
+	fetch := refreshFetch{result: RefreshResult{Provider: "test"}, upstream: []UpstreamModel{{ID: "model", Metadata: ModelMetadata{
+		Description: "original", SupportedParameters: []string{"temperature"},
+		DefaultParameters: map[string]any{"temperature": 0.5},
+		Architecture:      ModelArchitecture{InputModalities: []string{"text"}},
+	}}}}
+	mergeRefresh(cat, fetch, now)
+	got := mergeRefresh(cat, fetch, now.Add(time.Minute))
+	require.Equal(t, 0, got.UpdatedN)
+	require.Equal(t, 1, got.UnchangedN)
+	fetch.upstream[0].Metadata = ModelMetadata{Description: "changed"}
+	got = mergeRefresh(cat, fetch, now.Add(2*time.Minute))
+	require.Equal(t, 1, got.UpdatedN)
+	require.Equal(t, []string{"temperature"}, cat.Providers["test"].Models["model"].Metadata.SupportedParameters)
+	require.Equal(t, "changed", cat.Providers["test"].Models["model"].Metadata.Description)
+}

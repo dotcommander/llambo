@@ -105,7 +105,9 @@ type evalsSourcesCommand struct {
 }
 
 type evalsSourcesRefreshCommand struct {
-	Names []string `arg:"" optional:"" sep:"," help:"writingbench, eqbench-creative-v3, lechmazur-writing, arena-creative-writing, or llm-stats-stats-v1; writing sources default together"`
+	Force bool          `short:"f" help:"Force refresh from upstream sources, bypassing the 4-hour cache"`
+	TTL   time.Duration `help:"Minimum cache duration before re-fetching sources (default: 4h)" default:"4h"`
+	Names []string      `arg:"" optional:"" sep:"," help:"writingbench, eqbench-creative-v3, lechmazur-writing, arena-creative-writing, or llm-stats-stats-v1; writing sources default together"`
 }
 
 type evalsLocalCommand struct {
