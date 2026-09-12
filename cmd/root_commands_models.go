@@ -201,7 +201,7 @@ type modelsCatalogCommand struct {
 	AvoidModel    catalogAvoidCommand      `cmd:"" name:"avoid" help:"Mark a catalog model as avoided"`
 	Unavoid       catalogPairCommand       `cmd:"" help:"Clear avoid flag from a catalog model"`
 	TagModel      catalogTagCommand        `cmd:"" name:"tag" help:"Add a tag to a catalog model"`
-	Untag         catalogTagCommand        `cmd:"" help:"Remove a tag from a catalog model"`
+	Untag         catalogUntagCommand      `cmd:"" help:"Remove a tag from a catalog model"`
 	ImportQuality catalogImportCommand     `cmd:"" name:"import-quality" help:"Import task-specific model quality evidence"`
 }
 
@@ -257,11 +257,18 @@ type catalogTagCommand struct {
 	Tag      string `arg:""`
 }
 
-func (c *catalogTagCommand) Run(k *kong.Context, io *commandIO) error {
-	if strings.HasSuffix(k.Command(), " untag") {
-		return runModelsCatalogUntag(io, []string{c.Provider, c.Model, c.Tag})
-	}
+func (c *catalogTagCommand) Run(io *commandIO) error {
 	return runModelsCatalogTag(io, []string{c.Provider, c.Model, c.Tag})
+}
+
+type catalogUntagCommand struct {
+	Provider string `arg:""`
+	Model    string `arg:""`
+	Tag      string `arg:""`
+}
+
+func (c *catalogUntagCommand) Run(io *commandIO) error {
+	return runModelsCatalogUntag(io, []string{c.Provider, c.Model, c.Tag})
 }
 
 type catalogImportCommand struct {

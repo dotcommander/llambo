@@ -25,7 +25,7 @@ func TestCatalogCommandUpdatesPreserveEachOther(t *testing.T) {
 	prior := time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
 	require.NoError(t, catalog.Save(path, &catalog.Catalog{Version: 1, Providers: map[string]*catalog.ProviderCatalog{
 		"p": {Models: map[string]*catalog.ModelEntry{
-			"m": {Pinned: true}, "prompt": {QuarantineUntil: prior},
+			"m": {Pinned: true}, "mtagged": {Tags: []string{"temp"}}, "prompt": {QuarantineUntil: prior},
 		}},
 	}}))
 	quality, err := json.Marshal([]catalog.QualityImportRecord{
@@ -41,7 +41,7 @@ func TestCatalogCommandUpdatesPreserveEachOther(t *testing.T) {
 		out *bytes.Buffer
 	}
 	children := make([]child, 0, 4)
-	for _, mode := range []string{"tag", "quality", "ping", "prompt"} {
+	for _, mode := range []string{"tag", "untag", "quality", "ping", "prompt"} {
 		command := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestCatalogCommandUpdateProcess$")
 		command.Env = catalogCommandTestEnv(home, mode)
 		output := &bytes.Buffer{}
@@ -63,6 +63,8 @@ func TestCatalogCommandUpdatesPreserveEachOther(t *testing.T) {
 	models := cat.Providers["p"].Models
 	require.True(t, models["m"].Pinned)
 	require.True(t, catalog.HasTag(models["m"], "retained"))
+	require.NotNil(t, models["mtagged"])
+	require.False(t, catalog.HasTag(models["mtagged"], "temp"))
 	require.Equal(t, 0.8, models["m"].Quality["chat"].Score)
 	require.False(t, models["ping"].QuarantineUntil.IsZero())
 	require.Equal(t, 7, models["ping"].LastPing.TokensOut)
@@ -83,6 +85,8 @@ func TestCatalogCommandUpdateProcess(t *testing.T) {
 	switch mode {
 	case "tag":
 		err = Execute(ctx, []string{"models", "catalog", "tag", "p", "m", "retained"}, os.Stdout, os.Stderr)
+	case "untag":
+		err = Execute(ctx, []string{"models", "catalog", "untag", "p", "mtagged", "temp"}, os.Stdout, os.Stderr)
 	case "quality":
 		err = Execute(ctx, []string{"models", "catalog", "import-quality", filepath.Join(os.Getenv("HOME"), "quality.json")}, os.Stdout, os.Stderr)
 	case "ping":
