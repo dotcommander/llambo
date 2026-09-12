@@ -17,8 +17,8 @@ route_preferences:
         - write
     choose:
       provider: deepseek
-      model: deepseek-v4-pro
-    reason: draft writing prefers DeepSeek V4 Pro
+      model: deepseek-v4.1-flash
+    reason: draft writing prefers DeepSeek V4.1 Flash
 
 fallback_decider:
   provider: gemini

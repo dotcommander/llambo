@@ -57,7 +57,7 @@ func TestDefaultWritingCatalogIncludesSourcesAndOpenModels(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		"deepseek-ai/DeepSeek-V4-Flash-0731",
+		"deepseek-ai/DeepSeek-V4.1-Flash",
 		"moonshotai/Kimi-K3",
 		"zai-org/GLM-5.2",
 		"MiniMaxAI/MiniMax-M3",
@@ -77,7 +77,7 @@ func TestBuildWritingModelCoverageDistinguishesExactAndVariantMatches(t *testing
 	models := []WritingOpenModel{
 		{ID: "exact", Name: "Kimi K3", LeaderboardAliases: []string{"Kimi K3"}},
 		{ID: "variant", Name: "Gemma 4 31B it", LeaderboardAliases: []string{"Gemma 4 31B"}},
-		{ID: "missing", Name: "DeepSeek V4 Flash-0731", LeaderboardAliases: []string{"DeepSeek V4 Flash-0731"}},
+		{ID: "missing", Name: "DeepSeek V4.1 Flash", LeaderboardAliases: []string{"DeepSeek V4.1 Flash"}},
 	}
 	rows := []WritingLeaderboardRow{
 		{Rank: 1, Model: "Kimi K3", Score: 2.9, WinChance: 87},
@@ -208,7 +208,7 @@ func TestFetchWritingCatalogValidatesSourcesAndModels(t *testing.T) {
 	if fetched.PromptRecords[2].BenchmarkID != "eqbench-creative-v3" || fetched.PromptRecords[2].ID != "1" || fetched.PromptRecords[2].Prompt != "creative one" {
 		t.Fatalf("unexpected EQ-Bench normalized prompt: %#v", fetched.PromptRecords[2])
 	}
-	if check := writingModelCheckByID(fetched.OpenModelChecks, "deepseek-ai/DeepSeek-V4-Flash-0731"); check.Status != "available" || check.RemoteLicense != "mit" || !check.LicenseMatch || check.Downloads != 42 {
+	if check := writingModelCheckByID(fetched.OpenModelChecks, "deepseek-ai/DeepSeek-V4.1-Flash"); check.Status != "available" || check.RemoteLicense != "mit" || !check.LicenseMatch || check.Downloads != 42 {
 		t.Fatalf("unexpected DeepSeek metadata check: %#v", check)
 	}
 }
@@ -220,7 +220,7 @@ func TestFetchWritingCatalogDiscoversFreshPublicModels(t *testing.T) {
 			_, _ = w.Write([]byte(writingLeaderboardFixture))
 		case "/models":
 			_, _ = w.Write([]byte(`[
-				{"id":"deepseek-ai/DeepSeek-V4-Flash-0731","pipeline_tag":"text-generation","private":false,"gated":false,"downloads":100,"tags":["license:mit"]},
+				{"id":"deepseek-ai/DeepSeek-V4.1-Flash","pipeline_tag":"text-generation","private":false,"gated":false,"downloads":100,"tags":["license:mit"]},
 				{"id":"fresh/CreativeWriter-7B","pipeline_tag":"text-generation","createdAt":"2026-08-04T00:00:00.000Z","lastModified":"2026-08-05T03:00:00.000Z","downloads":12,"likes":4,"private":false,"gated":false,"tags":["transformers","license:apache-2.0"]},
 				{"id":"private/model","pipeline_tag":"text-generation","private":true,"gated":false},
 				{"id":"gated/model","pipeline_tag":"text-generation","private":false,"gated":true},

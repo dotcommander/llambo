@@ -18,7 +18,7 @@ func TestEncodeWritingCatalog(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(markdown)
-	for _, want := range []string{"# Writing Benchmark Catalog", "WritingBench", "DeepSeek V4 Flash-0731", "## Run plan", "No live source checks", "No fresh model discovery", "No live coverage match", "No live snapshot"} {
+	for _, want := range []string{"# Writing Benchmark Catalog", "WritingBench", "DeepSeek V4.1 Flash", "## Run plan", "No live source checks", "No fresh model discovery", "No live coverage match", "No live snapshot"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("markdown missing %q:\n%s", want, text)
 		}
@@ -67,7 +67,7 @@ func TestExecuteWritingCatalog(t *testing.T) {
 	if err := execute(context.Background(), []string{"evals", "writing", "--format", "json"}, &out, &errOut); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), `"benchmarks"`) || !strings.Contains(out.String(), "DeepSeek-V4-Flash-0731") {
+	if !strings.Contains(out.String(), `"benchmarks"`) || !strings.Contains(out.String(), "DeepSeek-V4.1-Flash") {
 		t.Fatalf("unexpected writing catalog output: %s", out.String())
 	}
 	if errOut.Len() != 0 {

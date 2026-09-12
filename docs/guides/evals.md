@@ -213,7 +213,7 @@ or creating the output directory:
 llambo evals writing run \
   --input /tmp/writingbench.jsonl \
   --benchmark writingbench \
-  --model deepseek/deepseek-v4-pro \
+  --model deepseek/deepseek-v4.1-flash \
   --judge-model openrouter/anthropic/claude-sonnet-5 \
   --output-dir /tmp/writing-run
 ```
@@ -224,7 +224,7 @@ Execute only after reviewing that JSON plan:
 llambo evals writing run \
   --input /tmp/writingbench.jsonl \
   --benchmark writingbench \
-  --model deepseek/deepseek-v4-pro \
+  --model deepseek/deepseek-v4.1-flash \
   --judge-model openrouter/anthropic/claude-sonnet-5 \
   --output-dir /tmp/writing-run \
   --campaign-ledger /tmp/writing-campaign.json \
@@ -316,7 +316,7 @@ artifacts locally and does not bundle them in this repository.
 
 The model queue includes the latest reviewed public-weight candidates and marks
 whether each one is already covered by a public leaderboard or still needs a
-writing rerun. It currently includes DeepSeek V4 Flash-0731, Kimi K3, GLM-5.2,
+writing rerun. It currently includes DeepSeek V4.1 Flash, Kimi K3, GLM-5.2,
 MiniMax-M3, Qwen3.6 27B and 35B A3B, Gemma 4 31B, Mistral Large 3, Xiaomi MiMo
 V2.5 Pro, GPT-OSS 20B and 120B, and Qwen3 235B A22B Instruct 2507. The JSON
 catalog exposes canonical Hugging Face IDs and license labels. “Public weights”

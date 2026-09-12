@@ -101,7 +101,7 @@ func TestRouteQueryPrefersDeepSeekForDraftWriting(t *testing.T) {
 			Quality:      0.99,
 		},
 		"deepseek": {
-			Model:        "deepseek-v4-pro",
+			Model:        "deepseek-v4.1-flash",
 			Enabled:      true,
 			Capabilities: []string{"chat"},
 			Quality:      0.70,
@@ -112,8 +112,8 @@ func TestRouteQueryPrefersDeepSeekForDraftWriting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("routeQuery returned error: %v", err)
 	}
-	if got.Provider != "deepseek" || got.Model != "deepseek-v4-pro" {
-		t.Fatalf("expected deepseek/deepseek-v4-pro, got %s/%s", got.Provider, got.Model)
+	if got.Provider != "deepseek" || got.Model != "deepseek-v4.1-flash" {
+		t.Fatalf("expected deepseek/deepseek-v4.1-flash, got %s/%s", got.Provider, got.Model)
 	}
 }
 

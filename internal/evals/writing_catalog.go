@@ -233,10 +233,10 @@ func DefaultWritingCatalog(now time.Time) WritingCatalog {
 		},
 		OpenModels: []WritingOpenModel{
 			{
-				ID:             "deepseek-ai/DeepSeek-V4-Flash-0731",
-				Name:           "DeepSeek V4 Flash-0731",
+				ID:             "deepseek-ai/DeepSeek-V4.1-Flash",
+				Name:           "DeepSeek V4.1 Flash",
 				Provider:       "DeepSeek",
-				HuggingFaceURL: "https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash-0731",
+				HuggingFaceURL: "https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash",
 				License:        "MIT",
 				Coverage:       "new candidate",
 				Priority:       "high",
