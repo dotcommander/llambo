@@ -1,0 +1,4 @@
+# Model artifact identifiers misclassified by gitleaks generic-api-key rule.
+1e525e911e1bcb92cf26714baeee24f656d09321:internal/evals/projections.json:generic-api-key:117
+1e525e911e1bcb92cf26714baeee24f656d09321:internal/evals/projections.json:generic-api-key:124
+1e525e911e1bcb92cf26714baeee24f656d09321:internal/evals/projections.json:generic-api-key:131
