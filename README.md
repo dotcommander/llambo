@@ -36,6 +36,10 @@ llambo serve
 
 ### 🎯 Instant CLI Magic
 
+`llambo models --metrics` marks OMLX decode speed estimates with `~`. These use
+an M2 Max 96 GiB hardware profile and model-name size/quantization hints; they
+are estimates, not fresh measurements of the configured server.
+
 ```bash
 # Discover & pin zero-cost models automatically
 llambo models discover-free -P openrouter --pin

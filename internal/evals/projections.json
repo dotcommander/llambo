@@ -112,6 +112,27 @@
       "confidence": "low",
       "basis": "Reviewed Gemma 4 31B instruction base identity; uncensored Heretic fine-tuning and 4-bit quantization may change capability.",
       "reviewed_at": "2026-08-21T00:00:00Z"
+    },
+    {
+      "artifact_key": "Qwen3.8-27B-oQ4e-fp16-mtp",
+      "source_key": "qwen3.8-27b",
+      "confidence": "low",
+      "basis": "Reviewed Qwen3.8 27B base identity; oQ4e quantization, fp16 activations, and MTP packaging may change capability.",
+      "reviewed_at": "2026-08-21T00:00:00Z"
+    },
+    {
+      "artifact_key": "LFM2.5-2.6B-mxfp4",
+      "source_key": "lfm-2.5-2.6b",
+      "confidence": "medium",
+      "basis": "Reviewed LFM2.5 2.6B base identity; MXFP4 quantization may change capability.",
+      "reviewed_at": "2026-08-21T00:00:00Z"
+    },
+    {
+      "artifact_key": "Qwen3.5-9B-MLX-4bit",
+      "source_key": "qwen3.5-9b",
+      "confidence": "medium",
+      "basis": "Reviewed Qwen3.5 9B reasoning base identity; MLX 4-bit packaging variance.",
+      "reviewed_at": "2026-07-10T00:00:00Z"
     }
   ]
 }

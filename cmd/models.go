@@ -265,6 +265,11 @@ func modelMetricLabels(cat *catalog.Catalog, snapshot *evals.OMLXScoreSnapshot, 
 			speed = fmt.Sprintf("%.1f tok/s", entry.LastPing.SpeedTokensPerSecond)
 		}
 	}
+	if provider == "omlx" {
+		if estimate, ok := catalog.EstimateOMLXSpeedTokensPerSecond(model); ok {
+			speed = fmt.Sprintf("~%.1f tok/s", estimate)
+		}
+	}
 	return llamboScore, llamboProvenance, taskScore, speed, latency
 }
 

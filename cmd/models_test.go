@@ -406,6 +406,37 @@ func TestModelMetricLabelsDoesNotInferSpeedFromTotalLatency(t *testing.T) {
 	}
 }
 
+func TestModelMetricLabelsUsesOMLXSpeedEstimate(t *testing.T) {
+	cat := &catalog.Catalog{Providers: map[string]*catalog.ProviderCatalog{
+		"omlx": {Models: map[string]*catalog.ModelEntry{
+			"Qwen3.8-27B-4bit": {
+				LastPing: catalog.PingState{
+					Success:              true,
+					SpeedTokensPerSecond: 12.5,
+					CheckedAt:            time.Now().UTC(),
+				},
+			},
+			"local": {
+				LastPing: catalog.PingState{
+					Success:              true,
+					SpeedTokensPerSecond: 12.5,
+					CheckedAt:            time.Now().UTC(),
+				},
+			},
+		}},
+	}}
+
+	_, _, _, speed, _ := modelMetricLabels(cat, nil, "omlx", "Qwen3.8-27B-4bit")
+	if speed != "~20.3 tok/s" {
+		t.Fatalf("estimated speed = %q, want estimate instead of cached measurement", speed)
+	}
+
+	_, _, _, speed, _ = modelMetricLabels(cat, nil, "omlx", "local")
+	if speed != "12.5 tok/s" {
+		t.Fatalf("unestimatable speed = %q, want cached measurement to remain fallback", speed)
+	}
+}
+
 func TestModelMetricLabelsPrefersFreshLiveTiming(t *testing.T) {
 	benchmarkAt := time.Now().UTC().Add(-time.Hour)
 	liveAt := benchmarkAt.Add(time.Minute)
