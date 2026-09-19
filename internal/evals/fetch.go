@@ -2,6 +2,7 @@ package evals
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"path/filepath"
@@ -137,28 +138,37 @@ func officialCardFetcherForSpec(spec officialCardSpec) officialCardFetcher {
 
 // refreshOfficialModelCards is intentionally a source-scoped network path.
 // It forces only the six reviewed card adapters to refresh, then leaves the
-// remaining result assembly to the cache-only path.
+// remaining result assembly to the cache-only path. A failing card never
+// strands the remaining cards: each card refreshes independently, successful
+// cards publish atomically, and every failure is aggregated into the returned
+// error with its underlying cause.
 func refreshOfficialModelCards(ctx context.Context, opts Options) ([]SourceStatus, error) {
 	refresh := opts
 	refresh.Refresh = true
 	statuses := make([]SourceStatus, 0, len(officialCardDescriptors))
+	var cardErrs []error
 	for _, descriptor := range officialCardDescriptors {
 		fetcher := descriptor.resolveFetcher(opts)
 		snapshot, status, err := loadSource(ctx, refresh, descriptor.cacheName, func(ctx context.Context) (sourceSnapshot, error) {
 			return fetcher(ctx, refresh)
 		})
-		if err != nil {
-			return nil, fmt.Errorf("refresh official model card %q: %w", descriptor.cacheName, err)
+		if err == nil && status.Cache != "fetched" {
+			err = fmt.Errorf("cache status %q", status.Cache)
+			if status.Error != "" {
+				err = fmt.Errorf("cache status %q: %s", status.Cache, status.Error)
+			}
 		}
-		if status.Cache != "fetched" {
-			return nil, fmt.Errorf("refresh official model card %q did not fetch", descriptor.cacheName)
+		if err != nil {
+			cardErrs = append(cardErrs, fmt.Errorf("refresh official model card %q: %w", descriptor.cacheName, err))
+			continue
 		}
 		if err := validateOfficialCardSnapshot(descriptor.cacheName, snapshot); err != nil {
-			return nil, fmt.Errorf("refresh official model card %q: %w", descriptor.cacheName, err)
+			cardErrs = append(cardErrs, fmt.Errorf("refresh official model card %q: %w", descriptor.cacheName, err))
+			continue
 		}
 		statuses = append(statuses, status)
 	}
-	return statuses, nil
+	return statuses, errors.Join(cardErrs...)
 }
 
 func fetchCachedOnly(opts Options, ifeval sourceSnapshot) (Result, error) {

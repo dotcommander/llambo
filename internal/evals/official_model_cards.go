@@ -16,7 +16,7 @@ const (
 	qwen38Revision      = "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0"
 	qwen38ContentSHA    = "57e4bdb258ee1a7d2635c5174ebd4e56abe392505cdb5f8bbb356b0dc4293641"
 	gptOSSRevision      = "2508.10925v1"
-	gptOSSContentSHA    = "689d78673abc5ab9d9033e4ea88d8e4dd4379e811a8f279b45d0a0041b001b91"
+	gptOSSContentSHA    = "902010af198553e37c044835a64e195e4fb683eea87ff977d69c44ddbc35346f"
 	lfm25VLRevision     = "5a414ead75d45db003906d06fb62bd5b6846cec0"
 	lfm25VLContentSHA   = "2ad0e4f36a755e3c70b338f0118e6a603a4cb7b65c034263dc10a4d3d9ce7a03"
 	gemma4Revision      = "5bbc2fb1c1b2c611d06e3d9f23c170ba21659d89"

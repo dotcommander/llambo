@@ -258,16 +258,79 @@ func TestFetchRefreshOfficialCardsRequestsOnlyPinnedCards(t *testing.T) {
 	}
 }
 
-func TestFetchRefreshOfficialCardsFailsClosed(t *testing.T) {
+func TestFetchRefreshOfficialCardsContinuePastFailure(t *testing.T) {
 	previousLFM, previousQwen, previousGPT, previousLFMVL, previousGemma := fetchOfficialLFM25Source, fetchOfficialQwen38Source, fetchOfficialGPTOSSSource, fetchOfficialLFMVLSource, fetchOfficialGemmaSource
 	t.Cleanup(func() {
 		fetchOfficialLFM25Source, fetchOfficialQwen38Source, fetchOfficialGPTOSSSource, fetchOfficialLFMVLSource, fetchOfficialGemmaSource = previousLFM, previousQwen, previousGPT, previousLFMVL, previousGemma
 	})
+	now := time.Date(2026, 9, 19, 6, 0, 0, 0, time.UTC)
 	fetchOfficialLFM25Source = func(context.Context, Options) (sourceSnapshot, error) {
 		return sourceSnapshot{}, fmt.Errorf("card unavailable")
 	}
-	if _, err := Fetch(context.Background(), Options{CacheDir: t.TempDir(), RefreshOfficialCards: true}); err == nil || !strings.Contains(err.Error(), "refresh official model card") {
-		t.Fatalf("card refresh failure did not terminate fetch: %v", err)
+	fetchOfficialQwen38Source = func(_ context.Context, opts Options) (sourceSnapshot, error) {
+		return validOfficialSnapshot(t, "official-qwen3.8-27b"), nil
+	}
+	fetchOfficialGPTOSSSource = func(_ context.Context, opts Options) (sourceSnapshot, error) {
+		return validOfficialSnapshot(t, "official-gpt-oss-20b"), nil
+	}
+	fetchOfficialLFMVLSource = func(_ context.Context, opts Options) (sourceSnapshot, error) {
+		return validOfficialSnapshot(t, "official-lfm25-vl-3b"), nil
+	}
+	fetchOfficialGemmaSource = func(_ context.Context, opts Options) (sourceSnapshot, error) {
+		return validOfficialSnapshot(t, "official-gemma4"), nil
+	}
+	dir := t.TempDir()
+	_, err := Fetch(context.Background(), Options{CacheDir: dir, RefreshOfficialCards: true, Now: func() time.Time { return now }, officialLFM8Fetcher: func(_ context.Context, opts Options) (sourceSnapshot, error) {
+		return validOfficialSnapshot(t, officialLFM25A1BCacheName), nil
+	}})
+	if err == nil || !strings.Contains(err.Error(), "official-lfm25-2.6b") || !strings.Contains(err.Error(), "card unavailable") {
+		t.Fatalf("aggregated card failure did not name the failed card and its cause: %v", err)
+	}
+	for _, cacheName := range []string{"official-qwen3.8-27b", "official-gpt-oss-20b", "official-lfm25-vl-3b", "official-gemma4", officialLFM25A1BCacheName} {
+		snapshot, readErr := readSnapshot(filepath.Join(dir, cacheName+".json"))
+		if readErr != nil {
+			t.Fatalf("successful card %s was not refreshed past the failure: %v", cacheName, readErr)
+		}
+		if !snapshot.FetchedAt.Equal(now) {
+			t.Fatalf("card %s snapshot was not written by the refresh: %#v", cacheName, snapshot.FetchedAt)
+		}
+	}
+}
+
+func TestRefreshOfficialModelCardsReturnsSuccessfulStatuses(t *testing.T) {
+	previousLFM, previousQwen, previousGPT, previousLFMVL, previousGemma := fetchOfficialLFM25Source, fetchOfficialQwen38Source, fetchOfficialGPTOSSSource, fetchOfficialLFMVLSource, fetchOfficialGemmaSource
+	t.Cleanup(func() {
+		fetchOfficialLFM25Source, fetchOfficialQwen38Source, fetchOfficialGPTOSSSource, fetchOfficialLFMVLSource, fetchOfficialGemmaSource = previousLFM, previousQwen, previousGPT, previousLFMVL, previousGemma
+	})
+	now := time.Date(2026, 9, 19, 6, 0, 0, 0, time.UTC)
+	fetchOfficialLFM25Source = func(context.Context, Options) (sourceSnapshot, error) {
+		return sourceSnapshot{}, fmt.Errorf("card unavailable")
+	}
+	fetchOfficialQwen38Source = func(_ context.Context, opts Options) (sourceSnapshot, error) {
+		return validOfficialSnapshot(t, "official-qwen3.8-27b"), nil
+	}
+	fetchOfficialGPTOSSSource = func(_ context.Context, opts Options) (sourceSnapshot, error) {
+		return validOfficialSnapshot(t, "official-gpt-oss-20b"), nil
+	}
+	fetchOfficialLFMVLSource = func(_ context.Context, opts Options) (sourceSnapshot, error) {
+		return validOfficialSnapshot(t, "official-lfm25-vl-3b"), nil
+	}
+	fetchOfficialGemmaSource = func(_ context.Context, opts Options) (sourceSnapshot, error) {
+		return validOfficialSnapshot(t, "official-gemma4"), nil
+	}
+	statuses, err := refreshOfficialModelCards(context.Background(), Options{CacheDir: t.TempDir(), Now: func() time.Time { return now }, officialLFM8Fetcher: func(_ context.Context, opts Options) (sourceSnapshot, error) {
+		return validOfficialSnapshot(t, officialLFM25A1BCacheName), nil
+	}})
+	if err == nil || !strings.Contains(err.Error(), "official-lfm25-2.6b") {
+		t.Fatalf("expected aggregated error naming the failed card: %v", err)
+	}
+	if len(statuses) != 5 {
+		t.Fatalf("expected 5 successful card statuses, got %d: %#v", len(statuses), statuses)
+	}
+	for _, status := range statuses {
+		if status.Cache != "fetched" {
+			t.Fatalf("successful card status was not fetched: %#v", status)
+		}
 	}
 }
 

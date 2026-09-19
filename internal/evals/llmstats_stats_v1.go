@@ -392,7 +392,11 @@ func fetchLLMStatsStatsV1BenchmarkScores(ctx context.Context, opts Options, root
 		return nil, fmt.Errorf("Stats v1 benchmark %s returned no unique score rows", benchmark.ID)
 	}
 	if len(observations) != benchmark.ModelCount {
-		return nil, fmt.Errorf("Stats v1 benchmark %s returned %d unique models, catalog declared %d", benchmark.ID, len(observations), benchmark.ModelCount)
+		observed := make([]string, 0, len(observations))
+		for _, observation := range observations {
+			observed = append(observed, observation.ModelID)
+		}
+		return nil, fmt.Errorf("Stats v1 benchmark %s returned %d unique models, catalog declared %d (observed: %s)", benchmark.ID, len(observations), benchmark.ModelCount, strings.Join(observed, ", "))
 	}
 	return observations, nil
 }
