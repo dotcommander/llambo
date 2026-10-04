@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dotcommander/llambo/internal/filetxn"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -37,6 +37,7 @@ type ProviderRuntimeMetrics struct {
 // RoutingMetricsStore persists provider metrics to disk.
 type RoutingMetricsStore struct {
 	mu        sync.RWMutex
+	saveMu    sync.Mutex
 	path      string
 	lastSaved time.Time
 	interval  time.Duration
@@ -104,6 +105,8 @@ func (s *RoutingMetricsStore) quarantineCorruptFile() error {
 }
 
 func (s *RoutingMetricsStore) Save() error {
+	s.saveMu.Lock()
+	defer s.saveMu.Unlock()
 	if s.path == "" {
 		return nil
 	}
@@ -127,10 +130,6 @@ func saveRoutingMetricsSnapshot(path string, providers map[string]*ProviderRunti
 		return nil
 	}
 
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		return err
-	}
-
 	data, err := json.MarshalIndent(struct {
 		Providers map[string]*ProviderRuntimeMetrics `json:"providers"`
 	}{Providers: providers}, "", "  ")
@@ -138,11 +137,7 @@ func saveRoutingMetricsSnapshot(path string, providers map[string]*ProviderRunti
 		return err
 	}
 
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return filetxn.WriteAtomic(path, data, 0o600)
 }
 
 func (s *RoutingMetricsStore) Record(provider string, latency time.Duration, usage *LLMUsage, err error) {

@@ -148,28 +148,6 @@ func SaveGlobalConfig(cfg *GlobalConfig) error {
 	return writeGlobalConfig(cfg)
 }
 
-func writeGlobalConfig(cfg *GlobalConfig) error {
-	if cfg != nil {
-		if err := validateProviderNames(cfg.Providers); err != nil {
-			return err
-		}
-	}
-	if err := os.MkdirAll(configDir, 0755); err != nil {
-		return err
-	}
-
-	data, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	tmp := configFile + ".tmp"
-	if err := os.WriteFile(tmp, data, 0600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, configFile)
-}
-
 func validateProviderNames(configs map[string]Config) error {
 	for name := range configs {
 		if strings.TrimSpace(name) == "" || strings.Contains(name, ":") {

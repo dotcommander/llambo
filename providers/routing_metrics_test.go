@@ -285,3 +285,33 @@ func TestExecutionCoordinatorWarnsWhenRouteEventWriteFails(t *testing.T) {
 
 	assertWarningRecord(t, logs.Bytes(), "write route event failed", path)
 }
+
+func TestConcurrentMetricsSavesPublishCompleteSnapshots(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "metrics.json")
+	store, err := NewRoutingMetricsStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.Providers["fixture"] = &ProviderRuntimeMetrics{Requests: 7, Successes: 7}
+	done := make(chan error, 12)
+	for range 12 {
+		go func() { done <- store.Save() }()
+	}
+	for range 12 {
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	}
+	reloaded, err := NewRoutingMetricsStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := reloaded.Providers["fixture"]; got == nil || got.Requests != 7 || got.Successes != 7 {
+		t.Fatalf("incomplete snapshot: %+v", got)
+	}
+	temps, err := filepath.Glob(filepath.Join(filepath.Dir(path), ".metrics.json.tmp-*"))
+	if err != nil || len(temps) != 0 {
+		t.Fatalf("temporary files=%v err=%v", temps, err)
+	}
+}
