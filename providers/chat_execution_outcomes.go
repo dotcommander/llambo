@@ -14,7 +14,7 @@ func (c executionCoordinator) execute(ctx context.Context, plan chatExecutionPla
 	outcome := chatExecutionOutcome{provider: plan.selected, result: result, decision: plan.decision}
 	if err == nil {
 		c.recordSuccessfulAttempt(plan, plan.selected, systemPrompt, userContent, result)
-		c.checkCanaryAutoPromote(ctx, plan)
+		c.checkCanaryAutoPromote(ctx)
 		return outcome, nil
 	}
 
@@ -43,7 +43,7 @@ func (c executionCoordinator) execute(ctx context.Context, plan chatExecutionPla
 		outcome = chatExecutionOutcome{provider: info, result: result, decision: plan.decision}
 		if err == nil {
 			c.recordSuccessfulAttempt(plan, info, systemPrompt, userContent, result)
-			c.checkCanaryAutoPromote(ctx, plan)
+			c.checkCanaryAutoPromote(ctx)
 			return outcome, nil
 		}
 		c.recordAttemptFailure(info.name, result.usage, result.duration, err)
@@ -66,7 +66,7 @@ func (c executionCoordinator) executeStream(ctx context.Context, plan chatExecut
 		}
 		c.recordSuccessfulAttempt(plan, plan.selected, systemPrompt, userContent, result)
 		if result.finishReason != "" {
-			c.checkCanaryAutoPromote(ctx, plan)
+			c.checkCanaryAutoPromote(ctx)
 		}
 		return outcome, nil
 	}
@@ -103,7 +103,7 @@ func (c executionCoordinator) executeStream(ctx context.Context, plan chatExecut
 			}
 			c.recordSuccessfulAttempt(plan, info, systemPrompt, userContent, result)
 			if result.finishReason != "" {
-				c.checkCanaryAutoPromote(ctx, plan)
+				c.checkCanaryAutoPromote(ctx)
 			}
 			return outcome, nil
 		}

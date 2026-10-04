@@ -233,7 +233,7 @@ func TestCanaryPromotionKeepsFullSnapshotForExactRequest(t *testing.T) {
 	narrowed := coordinator.configs["canary"]
 	narrowed.Model = "Exact/RequestedModel"
 	coordinator.configs = map[string]Config{"canary": narrowed}
-	coordinator.checkCanaryAutoPromote(context.Background(), chatExecutionPlan{isCanary: true})
+	coordinator.checkCanaryAutoPromote(context.Background())
 	waitCanaryEvaluation(oc)
 	published, routing := oc.routingSnapshot(nil)
 	if len(published) != 2 || published["canary"].Model != "Canary" || published["baseline"].Model != "Base" || routing.Canary != nil {

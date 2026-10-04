@@ -83,28 +83,11 @@ func structuredRequest(req ChatCompletionRequest) (providers.StructuredChatReque
 		}
 	}
 	if !isRawNull(req.ToolChoice) {
-		var choice string
-		if json.Unmarshal(req.ToolChoice, &choice) == nil {
-			switch choice {
-			case "auto", "none":
-				out.ToolChoice = &whtypes.ToolChoice{Type: whtypes.ToolChoiceType(choice)}
-			case "required", "any":
-				out.ToolChoice = &whtypes.ToolChoice{Type: whtypes.ToolChoiceTypeAny}
-			default:
-				return out, fmt.Errorf("unsupported tool_choice")
-			}
-		} else {
-			var choice struct {
-				Type     string `json:"type"`
-				Function struct {
-					Name string `json:"name"`
-				} `json:"function"`
-			}
-			if json.Unmarshal(req.ToolChoice, &choice) != nil || choice.Type != "function" || choice.Function.Name == "" {
-				return out, fmt.Errorf("unsupported tool_choice")
-			}
-			out.ToolChoice = &whtypes.ToolChoice{Type: whtypes.ToolChoiceTypeSpecific, ToolName: choice.Function.Name}
+		choice, err := parseToolChoice(req.ToolChoice)
+		if err != nil {
+			return out, err
 		}
+		out.ToolChoice = choice
 	}
 	if req.ResponseFormat != nil {
 		switch strings.ToLower(req.ResponseFormat.Type) {
@@ -158,4 +141,30 @@ func openAIResultToolCalls(calls []providers.ToolCall) []OpenAIToolCall {
 		out = append(out, OpenAIToolCall{ID: call.ID, Type: "function", Function: &whtypes.ToolCallFunction{Name: call.Name, Arguments: call.Arguments}})
 	}
 	return out
+}
+
+// parseToolChoice accepts the OpenAI string form (auto/none/required) plus the
+// Anthropic-compatible "any" alias and the named {type:function} object form.
+func parseToolChoice(raw json.RawMessage) (*whtypes.ToolChoice, error) {
+	var choice string
+	if json.Unmarshal(raw, &choice) == nil {
+		switch choice {
+		case "auto", "none":
+			return &whtypes.ToolChoice{Type: whtypes.ToolChoiceType(choice)}, nil
+		case "required", "any":
+			return &whtypes.ToolChoice{Type: whtypes.ToolChoiceTypeAny}, nil
+		default:
+			return nil, fmt.Errorf("unsupported tool_choice")
+		}
+	}
+	var named struct {
+		Type     string `json:"type"`
+		Function struct {
+			Name string `json:"name"`
+		} `json:"function"`
+	}
+	if json.Unmarshal(raw, &named) != nil || named.Type != "function" || named.Function.Name == "" {
+		return nil, fmt.Errorf("unsupported tool_choice")
+	}
+	return &whtypes.ToolChoice{Type: whtypes.ToolChoiceTypeSpecific, ToolName: named.Function.Name}, nil
 }

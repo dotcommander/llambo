@@ -56,10 +56,6 @@ func (j *Job) ToResponse() JobResponse {
 	}
 }
 
-// convertToQueueJobs converts JobRequests to a channel of provider Jobs
-func convertToQueueJobs(requests []JobRequest, systemPrompt string) chan providers.Job {
-	return convertToTargetQueueJobs(requests, systemPrompt, providers.ResolvedTarget{})
-}
 func convertToTargetQueueJobs(requests []JobRequest, systemPrompt string, target providers.ResolvedTarget) chan providers.Job {
 	queueJobs := make(chan providers.Job, len(requests))
 	for _, req := range requests {
@@ -200,15 +196,6 @@ func (m *JobManager) processJob(job *Job, requests []JobRequest, systemPrompt st
 	// still unwinding. Wait for the goroutine to exit so the slot is released
 	// only when the worker pool is truly idle.
 	<-streamDone
-}
-
-func (m *JobManager) decrementActiveJobs() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.activeJobs > 0 {
-		m.activeJobs--
-	}
-	m.closeDrainIfIdleLocked()
 }
 
 func (j *Job) retainedBytesLocked() int64 {

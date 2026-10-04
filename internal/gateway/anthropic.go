@@ -7,8 +7,6 @@ import (
 	"github.com/dotcommander/llambo/providers"
 )
 
-const anthropicPrefillContinuationPrompt = "Continue the assistant response from where it ended. Do not repeat prior text."
-
 const (
 	maxAnthropicMessages       = 10000
 	maxAnthropicContentBlocks  = 5000

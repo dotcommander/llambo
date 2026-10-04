@@ -17,7 +17,7 @@ type canaryEvaluator struct {
 	cancel  context.CancelFunc
 }
 
-func (c executionCoordinator) checkCanaryAutoPromote(ctx context.Context, plan chatExecutionPlan) {
+func (c executionCoordinator) checkCanaryAutoPromote(ctx context.Context) {
 	if ctx.Err() != nil || c.routing.Canary == nil || c.routing.Canary.PromoteAfter <= 0 {
 		return
 	}
@@ -64,7 +64,7 @@ func (oc *OpenAIClients) runCanaryEvaluator(ctx context.Context, e *canaryEvalua
 		}
 		oc.canaryMu.Unlock()
 		if err := oc.evaluateAndPublishCanary(ctx, snapshot); err != nil && !errors.Is(err, errStaleCanary) && !errors.Is(err, context.Canceled) {
-			oc.loggerOrDefault().Warn("canary auto-promotion failed", "error", err)
+			oc.loggerOrDefault().WarnContext(ctx, "canary auto-promotion failed", "error", err)
 		}
 	}
 }
@@ -133,6 +133,6 @@ func (oc *OpenAIClients) evaluateAndPublishCanary(ctx context.Context, snapshot 
 		return errStaleCanary
 	}
 	oc.routingState = prepared
-	oc.loggerOrDefault().Info("canary auto-promotion triggered", "canary", canary.Provider, "requests", status.CanaryRequests, "reason", status.PromoteReason)
+	oc.loggerOrDefault().InfoContext(ctx, "canary auto-promotion triggered", "canary", canary.Provider, "requests", status.CanaryRequests, "reason", status.PromoteReason)
 	return nil
 }
