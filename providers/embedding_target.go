@@ -54,7 +54,13 @@ func (e *OpenAIEmbedding) EmbedResolved(ctx context.Context, texts []string, tar
 	if key == "" && cfg.GetRequiresKey() {
 		return EmbeddingResult{}, fmt.Errorf("embedding client init for %s: no API key", name)
 	}
-	provider := whopenai.New(types.ProviderConfig{APIKey: key, BaseURL: NormalizeOpenAIBaseURL(cfg.BaseURL), Headers: cfg.ExtraHeaders, MaxRetries: noWormholeRetries()})
+	providerConfig := types.ProviderConfig{APIKey: key, BaseURL: NormalizeOpenAIBaseURL(cfg.BaseURL), Headers: cfg.ExtraHeaders, MaxRetries: noWormholeRetries()}
+	if key == "" {
+		// Keyless endpoints (requires_key=false): Bearer refuses empty keys
+		// pre-flight, so select the local-endpoint no-auth strategy.
+		providerConfig = providerConfig.WithNoAuth()
+	}
+	provider := whopenai.New(providerConfig)
 	selected := &OpenAIEmbedding{provider: provider, model: target.Model(), dimensions: e.dimensions, batchSize: e.batchSize}
 	vectors, err := selected.Embed(ctx, texts)
 	return EmbeddingResult{Vectors: vectors, Provider: name, Model: target.Model()}, err

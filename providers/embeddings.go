@@ -116,12 +116,18 @@ func NewOpenAIEmbeddingWithConfig(embedCfg EmbedConfig, providerConfigs map[stri
 		return nil, fmt.Errorf("embedding client init for %s: no API key", selectedName)
 	}
 
-	provider := whopenai.New(types.ProviderConfig{
+	providerConfig := types.ProviderConfig{
 		APIKey:     apiKey,
 		BaseURL:    NormalizeOpenAIBaseURL(selectedConfig.BaseURL),
 		Headers:    selectedConfig.ExtraHeaders,
 		MaxRetries: noWormholeRetries(),
-	})
+	}
+	if apiKey == "" {
+		// Keyless endpoints (requires_key=false): Bearer refuses empty keys
+		// pre-flight, so select the local-endpoint no-auth strategy.
+		providerConfig = providerConfig.WithNoAuth()
+	}
+	provider := whopenai.New(providerConfig)
 
 	return &OpenAIEmbedding{
 		provider:     provider,

@@ -33,6 +33,13 @@ func createProviderForConfigWithKey(name string, cfg Config, apiKey string) (wht
 		Headers:    cfg.ExtraHeaders,
 		MaxRetries: noWormholeRetries(),
 	}
+	if apiKey == "" {
+		// Keyless endpoints (requires_key=false, e.g. local LM Studio):
+		// wormhole's Bearer strategy refuses empty keys before sending, so
+		// select the no-auth strategy intended for local OpenAI-compatible
+		// servers instead of failing client-side with AUTH_ERROR.
+		providerConfig = providerConfig.WithNoAuth()
+	}
 
 	switch cfg.GetProviderType() {
 	case "anthropic":

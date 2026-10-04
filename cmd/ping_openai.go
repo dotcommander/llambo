@@ -34,13 +34,20 @@ func newPingOpenAIClientForConfig(name string, cfg providers.Config) (*pingOpenA
 		return nil, fmt.Errorf("no API key for %s", name)
 	}
 
-	provider := whopenai.New(whtypes.ProviderConfig{
+	providerConfig := whtypes.ProviderConfig{
 		APIKey:          apiKey,
 		BaseURL:         providers.NormalizeOpenAIBaseURL(cfg.BaseURL),
 		Headers:         cfg.ExtraHeaders,
 		MaxRetries:      noPingWormholeRetries(),
 		UseResponsesAPI: isResponsesAPIProvider(cfg),
-	})
+	}
+	if apiKey == "" {
+		// Keyless endpoints (requires_key=false, e.g. local LM Studio):
+		// wormhole's Bearer strategy refuses empty keys before sending; use
+		// the no-auth strategy intended for local OpenAI-compatible servers.
+		providerConfig = providerConfig.WithNoAuth()
+	}
+	provider := whopenai.New(providerConfig)
 	return &pingOpenAIClient{
 		provider:         provider,
 		model:            cfg.Model,
