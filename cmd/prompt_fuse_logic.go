@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/dotcommander/llambo/internal/catalog"
@@ -96,14 +97,14 @@ func tokenSet(text string) map[string]struct{} {
 	return set
 }
 
-func promptTextForModel(promptText, systemPrompt string, index, total int, provider, model string) string {
-	if !promptFuse {
+func (cliOpts *invocationOptions) promptTextForModel(promptText, systemPrompt string, index, total int, provider, model string) string {
+	if !cliOpts.promptFuse {
 		return promptText
 	}
 	return buildFusionDraftPrompt(promptText, systemPrompt, index, total, provider, model)
 }
 
-func resolveFirstFusionTarget(selector string) (catalog.ModelTarget, error) {
+func (cliOpts *invocationOptions) resolveFirstFusionTarget(selector string) (catalog.ModelTarget, error) {
 	selector = normalizedFusionSelector(selector)
 	globalCfg, err := providers.LoadGlobalConfig()
 	if err != nil {
@@ -123,13 +124,19 @@ func resolveFirstFusionTarget(selector string) (catalog.ModelTarget, error) {
 	}
 	targets, err := catalog.ResolveModels(cat, globalCfg.Providers, costMap, catalog.SelectorOptions{
 		Selector:           selector,
-		IncludeQuarantine:  promptIncludeQuarantine,
+		IncludeQuarantine:  cliOpts.promptIncludeQuarantine,
 		Blocklist:          providers.NewBlocklist(globalCfg.Blocklist),
 		MaxOutputCost:      globalCfg.MaxOutputCost,
 		IncludeUnknownCost: true,
 	})
 	if err != nil {
 		return catalog.ModelTarget{}, fmt.Errorf("resolve fusion model %q: %w", selector, err)
+	}
+	targets, _ = filterTextChatTargets(io.Discard, cat, targets, func(target catalog.ModelTarget) (string, string) {
+		return target.Provider, target.Model
+	})
+	if len(targets) == 0 {
+		return catalog.ModelTarget{}, fmt.Errorf("no text chat-capable fusion targets match %q", selector)
 	}
 	return targets[0], nil
 }
@@ -205,4 +212,13 @@ func lensIndex(index int) int {
 		index = -index
 	}
 	return index % len(fusionDraftLenses)
+}
+
+// Scalar helpers retain their signatures with independent default options.
+func resolveFirstFusionTarget(selector string) (catalog.ModelTarget, error) {
+	return defaultInvocationOptions().resolveFirstFusionTarget(selector)
+}
+
+func promptTextForModel(promptText, systemPrompt string, index, total int, provider, model string) string {
+	return defaultInvocationOptions().promptTextForModel(promptText, systemPrompt, index, total, provider, model)
 }

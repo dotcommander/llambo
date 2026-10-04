@@ -22,16 +22,11 @@ func TestPingProviderUsesParentCancellation(t *testing.T) {
 	}
 }
 
-func restorePingFlags() func() {
-	prevTimeout := pingTimeout
-	return func() { pingTimeout = prevTimeout }
-}
-
 func TestValidatePingFlags(t *testing.T) {
-	defer restorePingFlags()()
-	pingTimeout = 0
+	legacyTestOptions := invocationOptions{modelsGrouped: true, timeoutSeconds: 60, promptFuseModels: defaultPromptFuseModels}
+	legacyTestOptions.pingTimeout = 0
 
-	err := validatePingFlags()
+	err := legacyTestOptions.validatePingFlags()
 	if err == nil || !strings.Contains(err.Error(), "--timeout-seconds") {
 		t.Fatalf("expected invalid timeout error, got %v", err)
 	}

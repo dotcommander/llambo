@@ -9,20 +9,15 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/dotcommander/llambo/internal/gateway"
 	"github.com/dotcommander/llambo/internal/styles"
 	"github.com/dotcommander/llambo/providers"
 )
 
-var (
-	servePort        string
-	serveHost        string
-	serveAllowRemote bool
-)
-
-func runServe(cmd *commandIO, args []string) error {
-	if err := validateServeBind(serveHost, serveAllowRemote); err != nil {
+func (cliOpts *invocationOptions) runServe(cmd *commandIO, args []string) error {
+	if err := validateServeBind(cliOpts.serveHost, cliOpts.serveAllowRemote); err != nil {
 		return err
 	}
 
@@ -30,6 +25,11 @@ func runServe(cmd *commandIO, args []string) error {
 	cfg, err := providers.LoadGlobalConfig()
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
+	}
+
+	cfg.Gateway, err = cfg.Gateway.Normalize()
+	if err != nil {
+		return fmt.Errorf("gateway settings: %w", err)
 	}
 
 	// Filter to enabled providers, optionally expanding pinned catalog models.
@@ -48,7 +48,7 @@ func runServe(cmd *commandIO, args []string) error {
 		return fmt.Errorf("init gateway: %w", err)
 	}
 
-	addr := fmt.Sprintf("%s:%s", serveHost, servePort)
+	addr := fmt.Sprintf("%s:%s", cliOpts.serveHost, cliOpts.servePort)
 
 	// Print startup banner
 	printBannerTo(cmd.OutOrStdout(), addr, server.BackendNames())
@@ -56,13 +56,21 @@ func runServe(cmd *commandIO, args []string) error {
 	// Setup graceful shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(sigChan)
+	serveDone := make(chan struct{})
+	defer close(serveDone)
 
 	go func() {
-		<-sigChan
+		select {
+		case <-serveDone:
+			return
+		case <-sigChan:
+		case <-cmd.Context().Done():
+		}
 		fmt.Fprintln(cmd.OutOrStdout())
 		fmt.Fprintln(cmd.OutOrStdout(), styles.Dim.Render("Shutting down..."))
 
-		ctx, cancel := context.WithTimeout(context.Background(), gateway.ShutdownTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.Gateway.ShutdownTimeoutSeconds)*time.Second)
 		defer cancel()
 
 		if err := server.Shutdown(ctx); err != nil {
@@ -122,4 +130,9 @@ func printBannerTo(out io.Writer, addr string, backends []string) {
 
 	fmt.Fprintln(out, styles.Dim.Render("  Press Ctrl+C to stop"))
 	fmt.Fprintln(out)
+}
+
+// Scalar helpers retain their signatures with independent default options.
+func runServe(cmd *commandIO, args []string) error {
+	return defaultInvocationOptions().runServe(cmd, args)
 }

@@ -44,8 +44,8 @@ type PromptFusionControl struct {
 	Result         PromptResult
 }
 
-func executePromptFusionControlCore(ctx context.Context, promptText, systemPrompt string, timeoutSecs int, selector string, run *promptRun) (*PromptFusionControl, error) {
-	target, err := resolveFirstFusionTarget(selector)
+func (cliOpts *invocationOptions) executePromptFusionControlCore(ctx context.Context, promptText, systemPrompt string, timeoutSecs int, selector string, run *promptRun) (*PromptFusionControl, error) {
+	target, err := cliOpts.resolveFirstFusionTarget(selector)
 	if err != nil {
 		return nil, err
 	}
@@ -80,27 +80,27 @@ func defaultExecutePromptFusionControl(promptText, systemPrompt string, timeoutS
 
 var executePromptFusionControl = defaultExecutePromptFusionControl
 
-func executePromptFusionControlContext(ctx context.Context, promptText, systemPrompt string, timeoutSecs int, selector string) (*PromptFusionControl, error) {
+func (cliOpts *invocationOptions) executePromptFusionControlContext(ctx context.Context, promptText, systemPrompt string, timeoutSecs int, selector string) (*PromptFusionControl, error) {
 	if reflect.ValueOf(executePromptFusionControl).Pointer() != reflect.ValueOf(defaultExecutePromptFusionControl).Pointer() {
 		return executePromptFusionControl(promptText, systemPrompt, timeoutSecs, selector)
 	}
-	return executePromptFusionControlCore(ctx, promptText, systemPrompt, timeoutSecs, selector, nil)
+	return cliOpts.executePromptFusionControlCore(ctx, promptText, systemPrompt, timeoutSecs, selector, nil)
 }
 
-func executePromptFusionControlWithRun(ctx context.Context, promptText, systemPrompt string, timeoutSecs int, selector string, run *promptRun) (*PromptFusionControl, error) {
+func (cliOpts *invocationOptions) executePromptFusionControlWithRun(ctx context.Context, promptText, systemPrompt string, timeoutSecs int, selector string, run *promptRun) (*PromptFusionControl, error) {
 	if reflect.ValueOf(executePromptFusionControl).Pointer() != reflect.ValueOf(defaultExecutePromptFusionControl).Pointer() {
 		return executePromptFusionControl(promptText, systemPrompt, timeoutSecs, selector)
 	}
-	return executePromptFusionControlCore(ctx, promptText, systemPrompt, timeoutSecs, selector, run)
+	return cliOpts.executePromptFusionControlCore(ctx, promptText, systemPrompt, timeoutSecs, selector, run)
 }
 
-func executePromptFusionResponseCore(ctx context.Context, promptText, systemPrompt string, results []PromptResult, timeoutSecs int, selector string, run *promptRun) (*PromptFusion, error) {
+func (cliOpts *invocationOptions) executePromptFusionResponseCore(ctx context.Context, promptText, systemPrompt string, results []PromptResult, timeoutSecs int, selector string, run *promptRun) (*PromptFusion, error) {
 	successful := successfulPromptResults(results)
 	if len(successful) == 0 {
 		return nil, fmt.Errorf("cannot fuse responses: no successful model responses")
 	}
 
-	target, err := resolveFirstFusionTarget(selector)
+	target, err := cliOpts.resolveFirstFusionTarget(selector)
 	if err != nil {
 		return nil, err
 	}
@@ -139,18 +139,18 @@ func defaultExecutePromptFusionResponse(promptText, systemPrompt string, results
 
 var executePromptFusionResponse = defaultExecutePromptFusionResponse
 
-func executePromptFusionResponseContext(ctx context.Context, promptText, systemPrompt string, results []PromptResult, timeoutSecs int, selector string) (*PromptFusion, error) {
+func (cliOpts *invocationOptions) executePromptFusionResponseContext(ctx context.Context, promptText, systemPrompt string, results []PromptResult, timeoutSecs int, selector string) (*PromptFusion, error) {
 	if reflect.ValueOf(executePromptFusionResponse).Pointer() != reflect.ValueOf(defaultExecutePromptFusionResponse).Pointer() {
 		return executePromptFusionResponse(promptText, systemPrompt, results, timeoutSecs, selector)
 	}
-	return executePromptFusionResponseCore(ctx, promptText, systemPrompt, results, timeoutSecs, selector, nil)
+	return cliOpts.executePromptFusionResponseCore(ctx, promptText, systemPrompt, results, timeoutSecs, selector, nil)
 }
 
-func executePromptFusionResponseWithRun(ctx context.Context, promptText, systemPrompt string, results []PromptResult, timeoutSecs int, selector string, run *promptRun) (*PromptFusion, error) {
+func (cliOpts *invocationOptions) executePromptFusionResponseWithRun(ctx context.Context, promptText, systemPrompt string, results []PromptResult, timeoutSecs int, selector string, run *promptRun) (*PromptFusion, error) {
 	if reflect.ValueOf(executePromptFusionResponse).Pointer() != reflect.ValueOf(defaultExecutePromptFusionResponse).Pointer() {
 		return executePromptFusionResponse(promptText, systemPrompt, results, timeoutSecs, selector)
 	}
-	return executePromptFusionResponseCore(ctx, promptText, systemPrompt, results, timeoutSecs, selector, run)
+	return cliOpts.executePromptFusionResponseCore(ctx, promptText, systemPrompt, results, timeoutSecs, selector, run)
 }
 
 func outputPromptFusionControl(cmd *commandIO, control *PromptFusionControl) {
@@ -229,4 +229,29 @@ func outputPromptFusion(cmd *commandIO, fusion *PromptFusion) {
 	}
 	fmt.Fprintln(out, "")
 	fmt.Fprintf(out, "%s\n", fusion.Result.Response)
+}
+
+// Scalar helpers retain their signatures with independent default options.
+func executePromptFusionResponseWithRun(ctx context.Context, promptText, systemPrompt string, results []PromptResult, timeoutSecs int, selector string, run *promptRun) (*PromptFusion, error) {
+	return defaultInvocationOptions().executePromptFusionResponseWithRun(ctx, promptText, systemPrompt, results, timeoutSecs, selector, run)
+}
+
+func executePromptFusionResponseContext(ctx context.Context, promptText, systemPrompt string, results []PromptResult, timeoutSecs int, selector string) (*PromptFusion, error) {
+	return defaultInvocationOptions().executePromptFusionResponseContext(ctx, promptText, systemPrompt, results, timeoutSecs, selector)
+}
+
+func executePromptFusionResponseCore(ctx context.Context, promptText, systemPrompt string, results []PromptResult, timeoutSecs int, selector string, run *promptRun) (*PromptFusion, error) {
+	return defaultInvocationOptions().executePromptFusionResponseCore(ctx, promptText, systemPrompt, results, timeoutSecs, selector, run)
+}
+
+func executePromptFusionControlWithRun(ctx context.Context, promptText, systemPrompt string, timeoutSecs int, selector string, run *promptRun) (*PromptFusionControl, error) {
+	return defaultInvocationOptions().executePromptFusionControlWithRun(ctx, promptText, systemPrompt, timeoutSecs, selector, run)
+}
+
+func executePromptFusionControlContext(ctx context.Context, promptText, systemPrompt string, timeoutSecs int, selector string) (*PromptFusionControl, error) {
+	return defaultInvocationOptions().executePromptFusionControlContext(ctx, promptText, systemPrompt, timeoutSecs, selector)
+}
+
+func executePromptFusionControlCore(ctx context.Context, promptText, systemPrompt string, timeoutSecs int, selector string, run *promptRun) (*PromptFusionControl, error) {
+	return defaultInvocationOptions().executePromptFusionControlCore(ctx, promptText, systemPrompt, timeoutSecs, selector, run)
 }

@@ -10,13 +10,6 @@ import (
 	"github.com/dotcommander/llambo/providers"
 )
 
-var (
-	routeEventsPath string
-	routeModes      string
-	routeLimit      int
-	routeReportPath string
-)
-
 func runRouteQuery(cmd *commandIO, args []string) error {
 	cfg, err := providers.LoadGlobalConfig()
 	if err != nil {
@@ -56,7 +49,7 @@ func runRouteQuery(cmd *commandIO, args []string) error {
 	return nil
 }
 
-func runRouteSimulate(cmd *commandIO, args []string) error {
+func (cliOpts *invocationOptions) runRouteSimulate(cmd *commandIO, args []string) error {
 	out := cmd.OutOrStdout()
 	cfg, err := providers.LoadGlobalConfig()
 	if err != nil {
@@ -68,7 +61,7 @@ func runRouteSimulate(cmd *commandIO, args []string) error {
 	if err != nil {
 		return fmt.Errorf("prepare routing providers: %w", err)
 	}
-	eventsPath := routeEventsPath
+	eventsPath := cliOpts.routeEventsPath
 	if strings.TrimSpace(eventsPath) == "" {
 		eventsPath = cfg.Routing.EventsPath
 	}
@@ -81,8 +74,8 @@ func runRouteSimulate(cmd *commandIO, args []string) error {
 		return fmt.Errorf("no route events found in %s", eventsPath)
 	}
 
-	if routeLimit > 0 && routeLimit < len(events) {
-		events = events[len(events)-routeLimit:]
+	if cliOpts.routeLimit > 0 && cliOpts.routeLimit < len(events) {
+		events = events[len(events)-cliOpts.routeLimit:]
 	}
 
 	metricsStore, err := providers.NewRoutingMetricsStore(cfg.Routing.MetricsPath)
@@ -91,7 +84,7 @@ func runRouteSimulate(cmd *commandIO, args []string) error {
 	}
 	metrics := metricsStore.Snapshot()
 
-	modes := splitCSV(routeModes)
+	modes := splitCSV(cliOpts.routeModes)
 	if len(modes) == 0 {
 		return fmt.Errorf("no --modes provided")
 	}
@@ -125,13 +118,13 @@ func runRouteSimulate(cmd *commandIO, args []string) error {
 		reports = append(reports, modeReport{Mode: mode, Stats: stats})
 	}
 
-	if strings.TrimSpace(routeReportPath) != "" {
+	if strings.TrimSpace(cliOpts.routeReportPath) != "" {
 		baseline := calculateActualBaseline(events)
-		content := buildRouteSimulationReport(routeReportPath, eventsPath, len(events), baseline, reports)
-		if err := os.WriteFile(routeReportPath, []byte(content), 0644); err != nil {
+		content := buildRouteSimulationReport(cliOpts.routeReportPath, eventsPath, len(events), baseline, reports)
+		if err := os.WriteFile(cliOpts.routeReportPath, []byte(content), 0644); err != nil {
 			return fmt.Errorf("write report: %w", err)
 		}
-		fmt.Fprintf(out, "Report written to %s\n", routeReportPath)
+		fmt.Fprintf(out, "Report written to %s\n", cliOpts.routeReportPath)
 	}
 
 	return nil
@@ -256,4 +249,9 @@ func buildRouteSimulationReport(reportPath, sourcePath string, events int, basel
 	}
 
 	return b.String()
+}
+
+// Scalar helpers retain their signatures with independent default options.
+func runRouteSimulate(cmd *commandIO, args []string) error {
+	return defaultInvocationOptions().runRouteSimulate(cmd, args)
 }

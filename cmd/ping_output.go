@@ -12,8 +12,8 @@ import (
 	"github.com/dotcommander/llambo/providers"
 )
 
-func pingTimeoutForProvider(_ string) time.Duration {
-	return time.Duration(pingTimeout) * time.Second
+func (cliOpts *invocationOptions) pingTimeoutForProvider(_ string) time.Duration {
+	return time.Duration(cliOpts.pingTimeout) * time.Second
 }
 
 func pingProvider(name string, cfg providers.Config, prompt string, timeout time.Duration) PingResult {
@@ -40,13 +40,11 @@ func pingProviderContext(parent context.Context, name string, cfg providers.Conf
 			return result
 		}
 		client := newPingGeminiClient(apiKey, cfg.BaseURL, cfg.Model)
-		start := time.Now()
 		resp, err := client.ChatStream(ctx, "", prompt, pingMaxTokens(cfg.MaxTokens))
 		result.Latency = time.Since(start)
 		if pingShouldFallbackToNonStreaming(err) {
-			fallbackStart := time.Now()
 			resp, err = client.Chat(ctx, "", prompt, pingMaxTokens(cfg.MaxTokens))
-			result.Latency = time.Since(fallbackStart)
+			result.Latency = time.Since(start)
 		}
 
 		if err != nil {
@@ -75,9 +73,8 @@ func pingProviderContext(parent context.Context, name string, cfg providers.Conf
 	resp, err := client.ChatStream(ctx, "", prompt, maxTok)
 	result.Latency = time.Since(start)
 	if pingShouldFallbackToNonStreaming(err) {
-		fallbackStart := time.Now()
 		resp, err = client.Chat(ctx, "", prompt, maxTok)
-		result.Latency = time.Since(fallbackStart)
+		result.Latency = time.Since(start)
 	}
 
 	if err != nil {
@@ -228,4 +225,9 @@ func printSummary(out io.Writer, results []PingResult) {
 			fmt.Fprintf(out, "⚠ %s: %s\n", r.Provider, strings.Join(issues, ", "))
 		}
 	}
+}
+
+// Scalar helpers retain their signatures with independent default options.
+func pingTimeoutForProvider(ignored0 string) time.Duration {
+	return defaultInvocationOptions().pingTimeoutForProvider(ignored0)
 }

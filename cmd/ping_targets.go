@@ -53,9 +53,15 @@ func buildPingTargetsWithWriter(errOut io.Writer, configs map[string]providers.C
 		return target.Name, target.Config.Model
 	})
 	targets := candidates[:0]
+	filteredCount, unknownCount := 0, 0
 	for _, target := range candidates {
 		if catalog.CostWithinCap(target.CostStatus, target.OutputCost, maxOutputCost, includeUnknown) {
 			targets = append(targets, target)
+		} else {
+			filteredCount++
+			if target.CostStatus == catalog.CostUnknown {
+				unknownCount++
+			}
 		}
 	}
 
@@ -70,32 +76,8 @@ func buildPingTargetsWithWriter(errOut io.Writer, configs map[string]providers.C
 		return targets[i].Config.Model < targets[j].Config.Model
 	})
 
-	// Filter by output cost cap if set.
-	filteredCount := 0
-	unknownCount := 0
-	if pingMaxOutputCost > 0 {
-		if len(costMap) > 0 {
-			kept := targets[:0]
-			for _, t := range targets {
-				if t.CostStatus == catalog.CostUnknown {
-					unknownCount++
-					if pingIncludeUnknownCost {
-						kept = append(kept, t)
-					}
-					continue
-				}
-				if t.CostStatus == catalog.CostPaid && t.OutputCost > pingMaxOutputCost {
-					filteredCount++
-					continue
-				}
-				kept = append(kept, t)
-			}
-			targets = kept
-		}
-	}
 	if filteredCount > 0 {
-		fmt.Fprintf(errOut, "Cost filter: skipped %d, unknown pricing %d (cap $%.2f/1M output)\n",
-			filteredCount, unknownCount, pingMaxOutputCost)
+		fmt.Fprintf(errOut, "Cost filter: skipped %d, unknown pricing %d (cap $%.2f/1M output)\n", filteredCount, unknownCount, maxOutputCost)
 	}
 	writeTextChatSkippedSummary(errOut, skippedNonChat)
 	return targets

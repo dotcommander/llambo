@@ -22,8 +22,9 @@ type pingCommand struct {
 }
 
 func (c *pingCommand) Run(io *commandIO) error {
-	pingPrompt, pingOutput, pingTimeout, pingProviders, pingModels, pingIncludeQuarantine, pingFreeOnly, pingIncludeUnknownCost, pingMaxOutputCost, pingRecordMetrics = c.Prompt, c.Output, c.TimeoutSeconds, c.Provider, c.Models, c.IncludeQuarantined, c.FreeOnly, c.IncludeUnknownCost, c.MaxOutputCost, c.RecordRoutingMetrics
-	return runPing(io, nil)
+	cliOpts := &invocationOptions{}
+	cliOpts.pingPrompt, cliOpts.pingOutput, cliOpts.pingTimeout, cliOpts.pingProviders, cliOpts.pingModels, cliOpts.pingIncludeQuarantine, cliOpts.pingFreeOnly, cliOpts.pingIncludeUnknownCost, cliOpts.pingMaxOutputCost, cliOpts.pingRecordMetrics = c.Prompt, c.Output, c.TimeoutSeconds, c.Provider, c.Models, c.IncludeQuarantined, c.FreeOnly, c.IncludeUnknownCost, c.MaxOutputCost, c.RecordRoutingMetrics
+	return cliOpts.runPing(io, nil)
 }
 
 type promptCommand struct {
@@ -44,8 +45,9 @@ type promptCommand struct {
 }
 
 func (c *promptCommand) Run(io *commandIO) error {
-	systemPrompt, outputFile, timeoutSeconds, promptModels, promptProviders, promptIncludeQuarantine, promptMaxOutputCost, promptFreeOnly, promptIncludeUnknownCost, promptSmart, promptFuse, promptFuseModels, promptFuseControl = c.System, c.Output, c.Timeout, c.Models, c.Provider, c.IncludeQuarantined, c.MaxOutputCost, c.FreeOnly, c.IncludeUnknownCost, c.Smart, c.Fuse, c.FuseModels, c.FuseControl
-	return runPromptCommand(io, c.Text)
+	cliOpts := &invocationOptions{}
+	cliOpts.systemPrompt, cliOpts.outputFile, cliOpts.timeoutSeconds, cliOpts.promptModels, cliOpts.promptProviders, cliOpts.promptIncludeQuarantine, cliOpts.promptMaxOutputCost, cliOpts.promptFreeOnly, cliOpts.promptIncludeUnknownCost, cliOpts.promptSmart, cliOpts.promptFuse, cliOpts.promptFuseModels, cliOpts.promptFuseControl = c.System, c.Output, c.Timeout, c.Models, c.Provider, c.IncludeQuarantined, c.MaxOutputCost, c.FreeOnly, c.IncludeUnknownCost, c.Smart, c.Fuse, c.FuseModels, c.FuseControl
+	return cliOpts.runPromptCommand(io, c.Text)
 }
 
 type providersCommand struct {
@@ -95,8 +97,9 @@ type routeSimulateCommand struct {
 }
 
 func (c *routeSimulateCommand) Run(io *commandIO) error {
-	routeEventsPath, routeModes, routeLimit, routeReportPath = c.From, c.Modes, c.Limit, c.Report
-	return runRouteSimulate(io, nil)
+	cliOpts := &invocationOptions{}
+	cliOpts.routeEventsPath, cliOpts.routeModes, cliOpts.routeLimit, cliOpts.routeReportPath = c.From, c.Modes, c.Limit, c.Report
+	return cliOpts.runRouteSimulate(io, nil)
 }
 
 type canaryCommand struct {
@@ -114,8 +117,9 @@ type canaryStartCommand struct {
 }
 
 func (c *canaryStartCommand) Run(io *commandIO) error {
-	canaryStartProvider, canaryStartTrafficPct, canaryStartPromoteAfter, canaryStartBaseline = c.Provider, c.Traffic, c.PromoteAfter, c.Baseline
-	return runCanaryStart(io, nil)
+	cliOpts := &invocationOptions{}
+	cliOpts.canaryStartProvider, cliOpts.canaryStartTrafficPct, cliOpts.canaryStartPromoteAfter, cliOpts.canaryStartBaseline = c.Provider, c.Traffic, c.PromoteAfter, c.Baseline
+	return cliOpts.runCanaryStart(io, nil)
 }
 
 type canaryStatusCommand struct {

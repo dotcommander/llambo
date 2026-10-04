@@ -18,18 +18,7 @@ import (
 	"github.com/dotcommander/llambo/internal/costs"
 )
 
-var (
-	catalogFilterPinned bool
-	catalogFilterAvoid  bool
-	catalogFilterNew    bool
-	catalogFilterFree   bool
-	catalogFilterTag    string
-	catalogShowMetadata bool
-	catalogOutputJSON   bool
-	avoidReason         string
-)
-
-func runModelsCatalog(cmd *commandIO, args []string) error {
+func (cliOpts *invocationOptions) runModelsCatalog(cmd *commandIO, args []string) error {
 	out := cmd.OutOrStdout()
 	catPath, err := catalog.CatalogPath()
 	if err != nil {
@@ -75,20 +64,20 @@ func runModelsCatalog(cmd *commandIO, args []string) error {
 		for _, mid := range sortedModelIDs(pc) {
 			m := pc.Models[mid]
 
-			if catalogFilterPinned && !m.Pinned {
+			if cliOpts.catalogFilterPinned && !m.Pinned {
 				continue
 			}
-			if catalogFilterAvoid && !m.Avoid {
+			if cliOpts.catalogFilterAvoid && !m.Avoid {
 				continue
 			}
-			if catalogFilterNew && !isNewModel(m, pc.LastRefresh) {
+			if cliOpts.catalogFilterNew && !isNewModel(m, pc.LastRefresh) {
 				continue
 			}
 			costStatus, inputCost, outputCost := catalog.CostForEntry(costMap, pname, mid, m)
-			if catalogFilterFree && costStatus != catalog.CostFree {
+			if cliOpts.catalogFilterFree && costStatus != catalog.CostFree {
 				continue
 			}
-			if catalogFilterTag != "" && !catalog.HasTag(m, catalogFilterTag) {
+			if cliOpts.catalogFilterTag != "" && !catalog.HasTag(m, cliOpts.catalogFilterTag) {
 				continue
 			}
 
@@ -133,7 +122,7 @@ func runModelsCatalog(cmd *commandIO, args []string) error {
 	}
 
 	if len(rows) == 0 {
-		if catalogOutputJSON {
+		if cliOpts.catalogOutputJSON {
 			fmt.Fprintln(out, "[]")
 			return nil
 		}
@@ -141,7 +130,7 @@ func runModelsCatalog(cmd *commandIO, args []string) error {
 		return nil
 	}
 
-	if catalogOutputJSON {
+	if cliOpts.catalogOutputJSON {
 		data, err := json.MarshalIndent(rows, "", "  ")
 		if err != nil {
 			return err
@@ -150,7 +139,7 @@ func runModelsCatalog(cmd *commandIO, args []string) error {
 		return nil
 	}
 
-	if catalogShowMetadata {
+	if cliOpts.catalogShowMetadata {
 		fmt.Fprintf(out, "%-14s %-36s %-10s %-8s %-12s %-10s %-18s %s\n",
 			"PROVIDER", "MODEL", "CTX", "PARAMS", "REASONING", "QUALITY", "TAGS", "STATUS")
 		fmt.Fprintln(out, strings.Repeat("-", 132))
@@ -183,10 +172,10 @@ func runModelsCatalogUnpin(cmd *commandIO, args []string) error {
 	})
 }
 
-func runModelsCatalogAvoid(cmd *commandIO, args []string) error {
+func (cliOpts *invocationOptions) runModelsCatalogAvoid(cmd *commandIO, args []string) error {
 	return mutateCatalogEntry(cmd, args[0], args[1], func(m *catalog.ModelEntry) {
 		m.Avoid = true
-		m.AvoidReason = avoidReason
+		m.AvoidReason = cliOpts.avoidReason
 		m.AvoidSince = time.Now().UTC()
 	})
 }
@@ -265,4 +254,13 @@ func mutateCatalogEntry(cmd *commandIO, providerName, modelID string, mutate fun
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "Updated %s/%s\n", providerName, modelID)
 	return nil
+}
+
+// Scalar helpers retain their signatures with independent default options.
+func runModelsCatalogAvoid(cmd *commandIO, args []string) error {
+	return defaultInvocationOptions().runModelsCatalogAvoid(cmd, args)
+}
+
+func runModelsCatalog(cmd *commandIO, args []string) error {
+	return defaultInvocationOptions().runModelsCatalog(cmd, args)
 }

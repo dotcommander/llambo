@@ -88,29 +88,16 @@ type pingRunContext struct {
 	RecordRouteMetrics bool
 }
 
-var (
-	pingPrompt             string
-	pingOutput             string
-	pingProviders          string
-	pingModels             string
-	pingIncludeQuarantine  bool
-	pingFreeOnly           bool
-	pingIncludeUnknownCost bool
-	pingTimeout            int
-	pingMaxOutputCost      float64
-	pingRecordMetrics      bool
-)
-
-func runPing(cmd *commandIO, args []string) error {
+func (cliOpts *invocationOptions) runPing(cmd *commandIO, args []string) error {
 	out := cmd.OutOrStdout()
-	runCtx, err := preparePingRunWithIO(cmd)
+	runCtx, err := cliOpts.preparePingRunWithIO(cmd)
 	if err != nil {
 		return err
 	}
 
 	printPingPlan(out, runCtx)
 
-	results := executePingTargetsContext(cmd.Context(), runCtx.Targets, runCtx.Prompt)
+	results := cliOpts.executePingTargetsContext(cmd.Context(), runCtx.Targets, runCtx.Prompt)
 	if err := cmd.Context().Err(); err != nil {
 		return err
 	}
@@ -139,51 +126,51 @@ func runPing(cmd *commandIO, args []string) error {
 	printSummary(out, results)
 
 	// Write output if requested
-	if pingOutput != "" {
-		if err := writePingOutput(pingOutput, results); err != nil {
+	if cliOpts.pingOutput != "" {
+		if err := writePingOutput(cliOpts.pingOutput, results); err != nil {
 			return err
 		}
-		fmt.Fprintf(out, "\nResults written to %s\n", pingOutput)
+		fmt.Fprintf(out, "\nResults written to %s\n", cliOpts.pingOutput)
 	}
 
 	return nil
 }
 
-func preparePingRun() (pingRunContext, error) {
-	return preparePingRunWithIO(&commandIO{ctx: context.Background(), stdout: io.Discard, stderr: io.Discard})
+func (cliOpts *invocationOptions) preparePingRun() (pingRunContext, error) {
+	return cliOpts.preparePingRunWithIO(&commandIO{ctx: context.Background(), stdout: io.Discard, stderr: io.Discard})
 }
 
-func preparePingRunWithIO(cmd *commandIO) (pingRunContext, error) {
-	if err := validatePingFlags(); err != nil {
+func (cliOpts *invocationOptions) preparePingRunWithIO(cmd *commandIO) (pingRunContext, error) {
+	if err := cliOpts.validatePingFlags(); err != nil {
 		return pingRunContext{}, err
 	}
 
-	runCtx := pingRunContext{Prompt: pingPrompt}
+	runCtx := pingRunContext{Prompt: cliOpts.pingPrompt}
 
-	targets, routing, err := loadPingTargetsWithIO(cmd)
+	targets, routing, err := cliOpts.loadPingTargetsWithIO(cmd)
 	if err != nil {
 		return pingRunContext{}, err
 	}
 	runCtx.Targets = targets
 	runCtx.Routing = routing
-	runCtx.RecordRouteMetrics = pingRecordMetrics
+	runCtx.RecordRouteMetrics = cliOpts.pingRecordMetrics
 
 	return runCtx, nil
 }
 
-func validatePingFlags() error {
-	if pingTimeout <= 0 {
-		return fmt.Errorf("invalid --timeout-seconds %d (must be > 0)", pingTimeout)
+func (cliOpts *invocationOptions) validatePingFlags() error {
+	if cliOpts.pingTimeout <= 0 {
+		return fmt.Errorf("invalid --timeout-seconds %d (must be > 0)", cliOpts.pingTimeout)
 	}
 
 	return nil
 }
 
-func loadPingTargets() ([]pingTarget, providers.RoutingConfig, error) {
-	return loadPingTargetsWithIO(&commandIO{ctx: context.Background(), stdout: io.Discard, stderr: io.Discard})
+func (cliOpts *invocationOptions) loadPingTargets() ([]pingTarget, providers.RoutingConfig, error) {
+	return cliOpts.loadPingTargetsWithIO(&commandIO{ctx: context.Background(), stdout: io.Discard, stderr: io.Discard})
 }
 
-func loadPingTargetsWithIO(cmd *commandIO) ([]pingTarget, providers.RoutingConfig, error) {
+func (cliOpts *invocationOptions) loadPingTargetsWithIO(cmd *commandIO) ([]pingTarget, providers.RoutingConfig, error) {
 	cfg, err := providers.LoadGlobalConfig()
 	if err != nil {
 		return nil, providers.RoutingConfig{}, fmt.Errorf("load config: %w", err)
@@ -191,8 +178,8 @@ func loadPingTargetsWithIO(cmd *commandIO) ([]pingTarget, providers.RoutingConfi
 	cfg.Routing.ApplyDefaults()
 
 	// Global cap from config applies when the per-call flag is unset (0).
-	effectiveMaxOutputCost := pingMaxOutputCost
-	effectiveIncludeUnknownCost := pingIncludeUnknownCost
+	effectiveMaxOutputCost := cliOpts.pingMaxOutputCost
+	effectiveIncludeUnknownCost := cliOpts.pingIncludeUnknownCost
 	if effectiveMaxOutputCost == 0 {
 		effectiveMaxOutputCost = cfg.MaxOutputCost
 		if cfg.MaxOutputCost > 0 {
@@ -205,9 +192,9 @@ func loadPingTargetsWithIO(cmd *commandIO) ([]pingTarget, providers.RoutingConfi
 		return nil, providers.RoutingConfig{}, fmt.Errorf("load model costs: %w", err)
 	}
 
-	if pingModels != "" || pingFreeOnly || pingMaxOutputCost > 0 {
-		selector := pingModels
-		if selector == "" && pingFreeOnly {
+	if cliOpts.pingModels != "" || cliOpts.pingFreeOnly || cliOpts.pingMaxOutputCost > 0 {
+		selector := cliOpts.pingModels
+		if selector == "" && cliOpts.pingFreeOnly {
 			selector = "free"
 		}
 		catPath, err := catalog.CatalogPath()
@@ -216,9 +203,9 @@ func loadPingTargetsWithIO(cmd *commandIO) ([]pingTarget, providers.RoutingConfi
 		}
 		selected, err := resolveTextChatSelection(cmd.ErrOrStderr(), catPath, cfg.Providers, costMap, catalog.SelectorOptions{
 			Selector:           selector,
-			ProviderFilter:     pingProviders,
-			IncludeQuarantine:  pingIncludeQuarantine,
-			FreeOnly:           pingFreeOnly,
+			ProviderFilter:     cliOpts.pingProviders,
+			IncludeQuarantine:  cliOpts.pingIncludeQuarantine,
+			FreeOnly:           cliOpts.pingFreeOnly,
 			IncludeUnknownCost: effectiveIncludeUnknownCost,
 			MaxOutputCost:      effectiveMaxOutputCost,
 			Blocklist:          providers.NewBlocklist(cfg.Blocklist),
@@ -248,10 +235,35 @@ func loadPingTargetsWithIO(cmd *commandIO) ([]pingTarget, providers.RoutingConfi
 		return nil, providers.RoutingConfig{}, fmt.Errorf("no enabled providers found")
 	}
 
-	targets = filterByProvider(targets, pingProviders)
-	if pingProviders != "" && len(targets) == 0 {
-		return nil, providers.RoutingConfig{}, fmt.Errorf("no targets match --provider %q", pingProviders)
+	targets = filterByProvider(targets, cliOpts.pingProviders)
+	if cliOpts.pingProviders != "" && len(targets) == 0 {
+		return nil, providers.RoutingConfig{}, fmt.Errorf("no targets match --provider %q", cliOpts.pingProviders)
 	}
 
 	return targets, cfg.Routing, nil
+}
+
+// Scalar helpers retain their signatures with independent default options.
+func loadPingTargetsWithIO(cmd *commandIO) ([]pingTarget, providers.RoutingConfig, error) {
+	return defaultInvocationOptions().loadPingTargetsWithIO(cmd)
+}
+
+func loadPingTargets() ([]pingTarget, providers.RoutingConfig, error) {
+	return defaultInvocationOptions().loadPingTargets()
+}
+
+func validatePingFlags() error {
+	return defaultInvocationOptions().validatePingFlags()
+}
+
+func preparePingRunWithIO(cmd *commandIO) (pingRunContext, error) {
+	return defaultInvocationOptions().preparePingRunWithIO(cmd)
+}
+
+func preparePingRun() (pingRunContext, error) {
+	return defaultInvocationOptions().preparePingRun()
+}
+
+func runPing(cmd *commandIO, args []string) error {
+	return defaultInvocationOptions().runPing(cmd, args)
 }

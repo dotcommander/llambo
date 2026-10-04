@@ -10,14 +10,9 @@ import (
 	"github.com/dotcommander/llambo/providers"
 )
 
-var (
-	discoverFreePin               bool
-	discoverFreeIncludeQuarantine bool
-	discoverFreeProviders         string
-	discoverFreeTimeout           int
-)
+const defaultDiscoverFreePrompt = "Write three short sentences about the sky. Output only the sentences."
 
-func runModelsDiscoverFree(cmd *commandIO, args []string) error {
+func (cliOpts *invocationOptions) runModelsDiscoverFree(cmd *commandIO, args []string) error {
 	out := cmd.OutOrStdout()
 	cfg, err := providers.LoadGlobalConfig()
 	if err != nil {
@@ -28,7 +23,7 @@ func runModelsDiscoverFree(cmd *commandIO, args []string) error {
 		return err
 	}
 
-	refreshProviders := providerArgs(discoverFreeProviders)
+	refreshProviders := providerArgs(cliOpts.discoverFreeProviders)
 	results, err := catalog.Refresh(cmd.Context(), refreshProviders, cfg.Providers, catPath)
 	if err != nil {
 		return fmt.Errorf("refresh catalog: %w", err)
@@ -49,8 +44,8 @@ func runModelsDiscoverFree(cmd *commandIO, args []string) error {
 	}
 	selected, err := catalog.ResolveModels(cat, cfg.Providers, costMap, catalog.SelectorOptions{
 		Selector:           "free",
-		ProviderFilter:     discoverFreeProviders,
-		IncludeQuarantine:  discoverFreeIncludeQuarantine,
+		ProviderFilter:     cliOpts.discoverFreeProviders,
+		IncludeQuarantine:  cliOpts.discoverFreeIncludeQuarantine,
 		Blocklist:          providers.NewBlocklist(cfg.Blocklist),
 		MaxOutputCost:      cfg.MaxOutputCost,
 		IncludeUnknownCost: true,
@@ -69,15 +64,18 @@ func runModelsDiscoverFree(cmd *commandIO, args []string) error {
 			OutputCost: target.OutputPer1M,
 		})
 	}
-	timeout := time.Duration(discoverFreeTimeout) * time.Second
+	timeout := time.Duration(cliOpts.discoverFreeTimeout) * time.Second
 	resultsPing := runOrderedProviderGroups(targets, func(target pingTarget) string { return target.Name }, func(_ int, target pingTarget) PingResult {
-		result := pingProvider(target.Name, target.Config, pingPrompt, timeout)
+		result := pingProviderContext(cmd.Context(), target.Name, target.Config, defaultDiscoverFreePrompt, timeout)
 		result.CostStatus = string(target.CostStatus)
 		result.InputCostPer1M = target.InputCost
 		result.OutputCostPer1M = target.OutputCost
 		return result
 	})
 
+	if err := cmd.Context().Err(); err != nil {
+		return err
+	}
 	now := time.Now().UTC()
 	for _, result := range resultsPing {
 		printResult(out, result)
@@ -85,7 +83,7 @@ func runModelsDiscoverFree(cmd *commandIO, args []string) error {
 	if err := catalog.Update(cmd.Context(), catPath, func(cat *catalog.Catalog) error {
 		for _, result := range resultsPing {
 			catalog.RecordPingWithMetrics(cat, result.Provider, result.Model, result.Success, result.Latency, result.TTFB, result.Generation, result.SpeedTokensPS, result.TokensIn, result.TokensOut, result.Error, now)
-			if discoverFreePin && result.Success {
+			if cliOpts.discoverFreePin && result.Success {
 				if entry := findCatalogEntry(cat, result.Provider, result.Model); entry != nil {
 					entry.Pinned = true
 				}
@@ -118,4 +116,9 @@ func findCatalogEntry(cat *catalog.Catalog, providerName, modelID string) *catal
 		return nil
 	}
 	return pc.Models[modelID]
+}
+
+// Scalar helpers retain their signatures with independent default options.
+func runModelsDiscoverFree(cmd *commandIO, args []string) error {
+	return defaultInvocationOptions().runModelsDiscoverFree(cmd, args)
 }

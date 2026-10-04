@@ -136,31 +136,36 @@ func TestEncodeEvalsReport(t *testing.T) {
 }
 
 func TestRunEvalsRejectsOfflineRefreshCombination(t *testing.T) {
-	previousOffline, previousRefresh := evalsOffline, evalsRefresh
-	evalsOffline, evalsRefresh = true, true
-	t.Cleanup(func() { evalsOffline, evalsRefresh = previousOffline, previousRefresh })
-	if err := runEvals(&commandIO{}, nil); err == nil || !strings.Contains(err.Error(), "cannot be used together") {
+	legacyTestOptions := invocationOptions{modelsGrouped: true, timeoutSeconds: 60, promptFuseModels: defaultPromptFuseModels}
+	previousOffline, previousRefresh := legacyTestOptions.evalsOffline, legacyTestOptions.evalsRefresh
+	legacyTestOptions.evalsOffline, legacyTestOptions.evalsRefresh = true, true
+	t.Cleanup(func() {
+		legacyTestOptions.evalsOffline, legacyTestOptions.evalsRefresh = previousOffline, previousRefresh
+	})
+	if err := legacyTestOptions.runEvals(&commandIO{}, nil); err == nil || !strings.Contains(err.Error(), "cannot be used together") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
 func TestRunEvalsRejectsOfficialCardRefreshConflicts(t *testing.T) {
-	previousOffline, previousRefresh, previousCards := evalsOffline, evalsRefresh, evalsRefreshOfficialCards
+	legacyTestOptions := invocationOptions{modelsGrouped: true, timeoutSeconds: 60, promptFuseModels: defaultPromptFuseModels}
+	previousOffline, previousRefresh, previousCards := legacyTestOptions.evalsOffline, legacyTestOptions.evalsRefresh, legacyTestOptions.evalsRefreshOfficialCards
 	t.Cleanup(func() {
-		evalsOffline, evalsRefresh, evalsRefreshOfficialCards = previousOffline, previousRefresh, previousCards
+		legacyTestOptions.evalsOffline, legacyTestOptions.evalsRefresh, legacyTestOptions.evalsRefreshOfficialCards = previousOffline, previousRefresh, previousCards
 	})
 	for _, values := range []struct{ offline, refresh bool }{{refresh: true}, {offline: true}} {
-		evalsOffline, evalsRefresh, evalsRefreshOfficialCards = values.offline, values.refresh, true
-		if err := runEvals(&commandIO{}, nil); err == nil || !strings.Contains(err.Error(), "refresh-official-model-cards") {
+		legacyTestOptions.evalsOffline, legacyTestOptions.evalsRefresh, legacyTestOptions.evalsRefreshOfficialCards = values.offline, values.refresh, true
+		if err := legacyTestOptions.runEvals(&commandIO{}, nil); err == nil || !strings.Contains(err.Error(), "refresh-official-model-cards") {
 			t.Fatalf("official-card refresh conflict was accepted: %#v: %v", values, err)
 		}
 	}
 }
 
 func TestApplyLiveOMLXDiscoveryIsExplicitAndSelectsLiveInventory(t *testing.T) {
-	previousOffline, previousNoOMLX, previousURL, previousClient := evalsOffline, evalsNoOMLX, evalsOMLXURL, omlxDiscoveryHTTPClient
+	legacyTestOptions := invocationOptions{modelsGrouped: true, timeoutSeconds: 60, promptFuseModels: defaultPromptFuseModels}
+	previousOffline, previousNoOMLX, previousURL, previousClient := legacyTestOptions.evalsOffline, legacyTestOptions.evalsNoOMLX, legacyTestOptions.evalsOMLXURL, omlxDiscoveryHTTPClient
 	t.Cleanup(func() {
-		evalsOffline, evalsNoOMLX, evalsOMLXURL, omlxDiscoveryHTTPClient = previousOffline, previousNoOMLX, previousURL, previousClient
+		legacyTestOptions.evalsOffline, legacyTestOptions.evalsNoOMLX, legacyTestOptions.evalsOMLXURL, omlxDiscoveryHTTPClient = previousOffline, previousNoOMLX, previousURL, previousClient
 	})
 	var requests atomic.Int64
 	omlxDiscoveryHTTPClient = &http.Client{Transport: commandRoundTripFunc(func(request *http.Request) (*http.Response, error) {
@@ -170,13 +175,13 @@ func TestApplyLiveOMLXDiscoveryIsExplicitAndSelectsLiveInventory(t *testing.T) {
 		}
 		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"models":[{"id":"live","model_type":"llm"}]}`))}, nil
 	})}
-	evalsOffline, evalsNoOMLX, evalsOMLXURL = false, false, "http://127.0.0.1:8000"
+	legacyTestOptions.evalsOffline, legacyTestOptions.evalsNoOMLX, legacyTestOptions.evalsOMLXURL = false, false, "http://127.0.0.1:8000"
 	report := evals.Report{Models: []evals.ReportModel{
 		{Key: "canonical"},
 		{Key: "live", Projection: &evals.ProjectionInfo{SourceKey: "source"}},
 		{Key: "inactive", Projection: &evals.ProjectionInfo{SourceKey: "source"}},
 	}}
-	discovery, live, err := applyLiveOMLXDiscovery(&commandIO{ctx: context.Background()}, &report)
+	discovery, live, err := legacyTestOptions.applyLiveOMLXDiscovery(&commandIO{ctx: context.Background()}, &report)
 	if err != nil || !live || requests.Load() != 1 || strings.Join(discovery.Models, ",") != "live" || len(report.Models) != 2 || report.Models[1].Key != "live" {
 		t.Fatalf("live OMLX discovery did not make one selecting request: requests=%d discovery=%#v report=%#v", requests.Load(), discovery, report.Models)
 	}
@@ -185,20 +190,21 @@ func TestApplyLiveOMLXDiscoveryIsExplicitAndSelectsLiveInventory(t *testing.T) {
 		t.Fatalf("live discovery was not forwarded to snapshot selection: ids=%#v endpoint=%q", ids, endpoint)
 	}
 
-	evalsNoOMLX = true
+	legacyTestOptions.evalsNoOMLX = true
 	before := requests.Load()
 	untouched := evals.Report{Models: []evals.ReportModel{{Key: "inactive", Projection: &evals.ProjectionInfo{SourceKey: "source"}}}}
-	if _, enabled, err := applyLiveOMLXDiscovery(&commandIO{ctx: context.Background()}, &untouched); err != nil || enabled || requests.Load() != before || len(untouched.Models) != 1 {
+	if _, enabled, err := legacyTestOptions.applyLiveOMLXDiscovery(&commandIO{ctx: context.Background()}, &untouched); err != nil || enabled || requests.Load() != before || len(untouched.Models) != 1 {
 		t.Fatalf("ordinary or disabled run unexpectedly discovered OMLX: enabled=%t requests=%d report=%#v", enabled, requests.Load(), untouched.Models)
 	}
 }
 
 func TestRunEvalsStopsBeforePreparationWhenExplicitLiveDiscoveryFails(t *testing.T) {
-	previousRefresh, previousOffline, previousNoOMLX, previousRank := evalsRefresh, evalsOffline, evalsNoOMLX, evalsRankBy
-	previousMin, previousMax, previousFormat, previousFetch, previousPrepare, previousClient := evalsMinScore, evalsMaxOutputPrice, evalsFormat, fetchEvalsReport, prepareEvalsOMLXScores, omlxDiscoveryHTTPClient
+	legacyTestOptions := invocationOptions{modelsGrouped: true, timeoutSeconds: 60, promptFuseModels: defaultPromptFuseModels}
+	previousRefresh, previousOffline, previousNoOMLX, previousRank := legacyTestOptions.evalsRefresh, legacyTestOptions.evalsOffline, legacyTestOptions.evalsNoOMLX, legacyTestOptions.evalsRankBy
+	previousMin, previousMax, previousFormat, previousFetch, previousPrepare, previousClient := legacyTestOptions.evalsMinScore, legacyTestOptions.evalsMaxOutputPrice, legacyTestOptions.evalsFormat, fetchEvalsReport, prepareEvalsOMLXScores, omlxDiscoveryHTTPClient
 	t.Cleanup(func() {
-		evalsRefresh, evalsOffline, evalsNoOMLX, evalsRankBy = previousRefresh, previousOffline, previousNoOMLX, previousRank
-		evalsMinScore, evalsMaxOutputPrice, evalsFormat, fetchEvalsReport, prepareEvalsOMLXScores, omlxDiscoveryHTTPClient = previousMin, previousMax, previousFormat, previousFetch, previousPrepare, previousClient
+		legacyTestOptions.evalsRefresh, legacyTestOptions.evalsOffline, legacyTestOptions.evalsNoOMLX, legacyTestOptions.evalsRankBy = previousRefresh, previousOffline, previousNoOMLX, previousRank
+		legacyTestOptions.evalsMinScore, legacyTestOptions.evalsMaxOutputPrice, legacyTestOptions.evalsFormat, fetchEvalsReport, prepareEvalsOMLXScores, omlxDiscoveryHTTPClient = previousMin, previousMax, previousFormat, previousFetch, previousPrepare, previousClient
 	})
 	snapshotPath := filepath.Join(t.TempDir(), "prior-snapshot.json")
 	if err := os.WriteFile(snapshotPath, []byte("prior snapshot"), 0o600); err != nil {
@@ -214,8 +220,8 @@ func TestRunEvalsStopsBeforePreparationWhenExplicitLiveDiscoveryFails(t *testing
 	omlxDiscoveryHTTPClient = &http.Client{Transport: commandRoundTripFunc(func(*http.Request) (*http.Response, error) {
 		return nil, errors.New("unavailable")
 	})}
-	evalsRefresh, evalsOffline, evalsNoOMLX, evalsRankBy, evalsMinScore, evalsMaxOutputPrice, evalsFormat = false, false, false, "matrix", -1, -1, "json"
-	err := runEvals(&commandIO{ctx: context.Background(), stdout: io.Discard}, nil)
+	legacyTestOptions.evalsRefresh, legacyTestOptions.evalsOffline, legacyTestOptions.evalsNoOMLX, legacyTestOptions.evalsRankBy, legacyTestOptions.evalsMinScore, legacyTestOptions.evalsMaxOutputPrice, legacyTestOptions.evalsFormat = false, false, false, "matrix", -1, -1, "json"
+	err := legacyTestOptions.runEvals(&commandIO{ctx: context.Background(), stdout: io.Discard}, nil)
 	if err == nil || !strings.Contains(err.Error(), "discover live OMLX inventory") {
 		t.Fatalf("live discovery failure did not terminate command: %v", err)
 	}
@@ -229,9 +235,10 @@ func TestRunEvalsStopsBeforePreparationWhenExplicitLiveDiscoveryFails(t *testing
 }
 
 func TestRunEvalsStopsBeforePreparationWhenReportConstructionFails(t *testing.T) {
-	previousRank, previousMin, previousMax, previousFetch, previousPrepare, previousCacheDir := evalsRankBy, evalsMinScore, evalsMaxOutputPrice, fetchEvalsReport, prepareEvalsOMLXScores, evalsCacheDir
+	legacyTestOptions := invocationOptions{modelsGrouped: true, timeoutSeconds: 60, promptFuseModels: defaultPromptFuseModels}
+	previousRank, previousMin, previousMax, previousFetch, previousPrepare, previousCacheDir := legacyTestOptions.evalsRankBy, legacyTestOptions.evalsMinScore, legacyTestOptions.evalsMaxOutputPrice, fetchEvalsReport, prepareEvalsOMLXScores, legacyTestOptions.evalsCacheDir
 	t.Cleanup(func() {
-		evalsRankBy, evalsMinScore, evalsMaxOutputPrice, fetchEvalsReport, prepareEvalsOMLXScores, evalsCacheDir = previousRank, previousMin, previousMax, previousFetch, previousPrepare, previousCacheDir
+		legacyTestOptions.evalsRankBy, legacyTestOptions.evalsMinScore, legacyTestOptions.evalsMaxOutputPrice, fetchEvalsReport, prepareEvalsOMLXScores, legacyTestOptions.evalsCacheDir = previousRank, previousMin, previousMax, previousFetch, previousPrepare, previousCacheDir
 	})
 	fetchEvalsReport = func(context.Context, evals.Options) (evals.Result, error) { return evals.Result{}, nil }
 	prepared := false
@@ -239,9 +246,9 @@ func TestRunEvalsStopsBeforePreparationWhenReportConstructionFails(t *testing.T)
 		prepared = true
 		return pendingOMLXScores{}, nil
 	}
-	evalsRankBy, evalsMinScore, evalsMaxOutputPrice, evalsCacheDir = "not-a-ranking-profile", -1, -1, t.TempDir()
+	legacyTestOptions.evalsRankBy, legacyTestOptions.evalsMinScore, legacyTestOptions.evalsMaxOutputPrice, legacyTestOptions.evalsCacheDir = "not-a-ranking-profile", -1, -1, t.TempDir()
 
-	err := runEvals(&commandIO{ctx: context.Background(), stdout: io.Discard}, nil)
+	err := legacyTestOptions.runEvals(&commandIO{ctx: context.Background(), stdout: io.Discard}, nil)
 	if err == nil || !strings.Contains(err.Error(), "unsupported ranking profile") {
 		t.Fatalf("report construction failure did not terminate command: %v", err)
 	}
@@ -278,23 +285,26 @@ func TestWriteEvalsThenPublishPreservesPriorSnapshotWhenOutputFails(t *testing.T
 }
 
 func TestEvalFetchOptionsAreOfflineByDefault(t *testing.T) {
-	previousRefresh, previousCards := evalsRefresh, evalsRefreshOfficialCards
-	t.Cleanup(func() { evalsRefresh, evalsRefreshOfficialCards = previousRefresh, previousCards })
+	legacyTestOptions := invocationOptions{modelsGrouped: true, timeoutSeconds: 60, promptFuseModels: defaultPromptFuseModels}
+	previousRefresh, previousCards := legacyTestOptions.evalsRefresh, legacyTestOptions.evalsRefreshOfficialCards
+	t.Cleanup(func() {
+		legacyTestOptions.evalsRefresh, legacyTestOptions.evalsRefreshOfficialCards = previousRefresh, previousCards
+	})
 
-	evalsRefresh, evalsRefreshOfficialCards = false, false
-	defaultOptions := evalFetchOptions("/tmp/cache")
+	legacyTestOptions.evalsRefresh, legacyTestOptions.evalsRefreshOfficialCards = false, false
+	defaultOptions := legacyTestOptions.evalFetchOptions("/tmp/cache")
 	if !defaultOptions.Offline || defaultOptions.Refresh || defaultOptions.RefreshOfficialCards {
 		t.Fatalf("default eval mode may access the network: %#v", defaultOptions)
 	}
 
-	evalsRefresh = true
-	refreshOptions := evalFetchOptions("/tmp/cache")
+	legacyTestOptions.evalsRefresh = true
+	refreshOptions := legacyTestOptions.evalFetchOptions("/tmp/cache")
 	if refreshOptions.Offline || !refreshOptions.Refresh {
 		t.Fatalf("refresh mode did not enable source fetching: %#v", refreshOptions)
 	}
 
-	evalsRefresh, evalsRefreshOfficialCards = false, true
-	cardOptions := evalFetchOptions("/tmp/cache")
+	legacyTestOptions.evalsRefresh, legacyTestOptions.evalsRefreshOfficialCards = false, true
+	cardOptions := legacyTestOptions.evalFetchOptions("/tmp/cache")
 	if cardOptions.Offline || cardOptions.Refresh || !cardOptions.RefreshOfficialCards {
 		t.Fatalf("official-card refresh did not isolate source scope: %#v", cardOptions)
 	}
@@ -352,19 +362,23 @@ func TestValidateOMLXURL(t *testing.T) {
 }
 
 func TestRunEvalsRejectsInvalidMinimumScore(t *testing.T) {
-	previous, previousRank := evalsMinScore, evalsRankBy
-	evalsMinScore, evalsRankBy = 101, "coding"
-	t.Cleanup(func() { evalsMinScore, evalsRankBy = previous, previousRank })
-	if err := runEvals(&commandIO{}, nil); err == nil || !strings.Contains(err.Error(), "between -1 and 100") {
+	legacyTestOptions := invocationOptions{modelsGrouped: true, timeoutSeconds: 60, promptFuseModels: defaultPromptFuseModels}
+	previous, previousRank := legacyTestOptions.evalsMinScore, legacyTestOptions.evalsRankBy
+	legacyTestOptions.evalsMinScore, legacyTestOptions.evalsRankBy = 101, "coding"
+	t.Cleanup(func() { legacyTestOptions.evalsMinScore, legacyTestOptions.evalsRankBy = previous, previousRank })
+	if err := legacyTestOptions.runEvals(&commandIO{}, nil); err == nil || !strings.Contains(err.Error(), "between -1 and 100") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
 func TestRunEvalsRejectsInvalidMaximumOutputPrice(t *testing.T) {
-	previous, previousScore := evalsMaxOutputPrice, evalsMinScore
-	evalsMaxOutputPrice, evalsMinScore = -2, -1
-	t.Cleanup(func() { evalsMaxOutputPrice, evalsMinScore = previous, previousScore })
-	if err := runEvals(&commandIO{}, nil); err == nil || !strings.Contains(err.Error(), "-1 or greater") {
+	legacyTestOptions := invocationOptions{modelsGrouped: true, timeoutSeconds: 60, promptFuseModels: defaultPromptFuseModels}
+	previous, previousScore := legacyTestOptions.evalsMaxOutputPrice, legacyTestOptions.evalsMinScore
+	legacyTestOptions.evalsMaxOutputPrice, legacyTestOptions.evalsMinScore = -2, -1
+	t.Cleanup(func() {
+		legacyTestOptions.evalsMaxOutputPrice, legacyTestOptions.evalsMinScore = previous, previousScore
+	})
+	if err := legacyTestOptions.runEvals(&commandIO{}, nil); err == nil || !strings.Contains(err.Error(), "-1 or greater") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

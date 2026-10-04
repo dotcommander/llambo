@@ -45,8 +45,9 @@ type serveCommand struct {
 }
 
 func (c *serveCommand) Run(io *commandIO) error {
-	servePort, serveHost, serveAllowRemote = c.Port, c.Host, c.AllowRemote
-	return runServe(io, nil)
+	cliOpts := &invocationOptions{}
+	cliOpts.servePort, cliOpts.serveHost, cliOpts.serveAllowRemote = c.Port, c.Host, c.AllowRemote
+	return cliOpts.runServe(io, nil)
 }
 
 type evalsCommand struct {
@@ -117,13 +118,14 @@ type evalsLocalCommand struct {
 type evalsWritingCatalogCommand struct{}
 
 func (*evalsReportCommand) Run(c *evalsCommand, io *commandIO) error {
+	cliOpts := &invocationOptions{}
 	limit := c.Limit
 	if !io.FlagChanged("limit") {
 		limit = 50
 	}
-	evalsRefresh, evalsRefreshOfficialCards, evalsFormat, evalsOutput, evalsLimit, evalsPartial, evalsRankBy, evalsOffline, evalsProjections, evalsValidationReceipts, evalsMinScore, evalsMaxOutputPrice, evalsOMLXURL, evalsNoOMLX = c.Refresh, c.RefreshOfficialCards, c.Format, c.Output, limit, c.AllowPartial, c.RankBy, c.Offline, c.Projections, c.ValidationReceipts, c.MinScore, c.MaxOutputPrice, c.OMLXURL, c.NoOMLX || !c.LiveOMLX
-	evalsCacheDir = c.CacheDir
-	return runEvals(io, nil)
+	cliOpts.evalsRefresh, cliOpts.evalsRefreshOfficialCards, cliOpts.evalsFormat, cliOpts.evalsOutput, cliOpts.evalsLimit, cliOpts.evalsPartial, cliOpts.evalsRankBy, cliOpts.evalsOffline, cliOpts.evalsProjections, cliOpts.evalsValidationReceipts, cliOpts.evalsMinScore, cliOpts.evalsMaxOutputPrice, cliOpts.evalsOMLXURL, cliOpts.evalsNoOMLX = c.Refresh, c.RefreshOfficialCards, c.Format, c.Output, limit, c.AllowPartial, c.RankBy, c.Offline, c.Projections, c.ValidationReceipts, c.MinScore, c.MaxOutputPrice, c.OMLXURL, c.NoOMLX || !c.LiveOMLX
+	cliOpts.evalsCacheDir = c.CacheDir
+	return cliOpts.runEvals(io, nil)
 }
 
 func (*evalsWritingCatalogCommand) Run(c *evalsCommand, io *commandIO) error {
@@ -150,8 +152,9 @@ type jobsRunCommand struct {
 }
 
 func (c *jobsRunCommand) Run(io *commandIO) error {
-	runCount, runPrompt, runSystem, runServer, runWait, runPoll, runTimeout, runVerify = c.Count, c.Prompt, c.System, c.Server, c.Wait, c.Poll, c.Timeout, c.Verify
-	return runJobsRun(io, nil)
+	cliOpts := &invocationOptions{}
+	cliOpts.runCount, cliOpts.runPrompt, cliOpts.runSystem, cliOpts.runServer, cliOpts.runWait, cliOpts.runPoll, cliOpts.runTimeout, cliOpts.runVerify = c.Count, c.Prompt, c.System, c.Server, c.Wait, c.Poll, c.Timeout, c.Verify
+	return cliOpts.runJobsRun(io, nil)
 }
 
 type jobsStressCommand struct {
@@ -163,8 +166,9 @@ type jobsStressCommand struct {
 }
 
 func (c *jobsStressCommand) Run(io *commandIO) error {
-	stressJobs, stressRequestsPerJob, stressPrompt, stressServer = c.Jobs, c.RequestsPerJob, c.Prompt, c.Server
-	return runJobsStress(io, nil)
+	cliOpts := &invocationOptions{}
+	cliOpts.stressJobs, cliOpts.stressRequestsPerJob, cliOpts.stressPrompt, cliOpts.stressServer = c.Jobs, c.RequestsPerJob, c.Prompt, c.Server
+	return cliOpts.runJobsStress(io, nil)
 }
 
 type modelsCommand struct {
@@ -186,12 +190,13 @@ type modelsListCommand struct {
 }
 
 func (c *modelsListCommand) Run(io *commandIO) error {
-	modelsAll, modelsCSV, modelsAvailable, modelsTimeoutSec, modelsProviderFilter = c.All, c.CSV, c.Available, c.TimeoutSeconds, c.Provider
+	cliOpts := &invocationOptions{}
+	cliOpts.modelsAll, cliOpts.modelsCSV, cliOpts.modelsAvailable, cliOpts.modelsTimeoutSec, cliOpts.modelsProviderFilter = c.All, c.CSV, c.Available, c.TimeoutSeconds, c.Provider
 	// Metrics are the default listing contract. Keep --metrics accepted so
 	// existing scripts remain valid, but do not require callers to pass it.
-	modelsMetrics = true
-	modelsGrouped = false
-	return runModels(io, nil)
+	cliOpts.modelsMetrics = true
+	cliOpts.modelsGrouped = false
+	return cliOpts.runModels(io, nil)
 }
 
 type modelsCatalogCommand struct {
@@ -218,8 +223,9 @@ type modelsCatalogListCommand struct {
 }
 
 func (c *modelsCatalogListCommand) Run(io *commandIO) error {
-	catalogFilterPinned, catalogFilterAvoid, catalogFilterNew, catalogFilterFree, catalogFilterTag, catalogShowMetadata, catalogOutputJSON = c.Pinned, c.Avoid, c.New, c.Free, c.Tag, c.Metadata, c.JSON
-	return runModelsCatalog(io, optionalString(c.Provider))
+	cliOpts := &invocationOptions{}
+	cliOpts.catalogFilterPinned, cliOpts.catalogFilterAvoid, cliOpts.catalogFilterNew, cliOpts.catalogFilterFree, cliOpts.catalogFilterTag, cliOpts.catalogShowMetadata, cliOpts.catalogOutputJSON = c.Pinned, c.Avoid, c.New, c.Free, c.Tag, c.Metadata, c.JSON
+	return cliOpts.runModelsCatalog(io, optionalString(c.Provider))
 }
 
 type catalogPairCommand struct {
@@ -247,8 +253,9 @@ type catalogAvoidCommand struct {
 }
 
 func (c *catalogAvoidCommand) Run(io *commandIO) error {
-	avoidReason = c.Reason
-	return runModelsCatalogAvoid(io, []string{c.Provider, c.Model})
+	cliOpts := &invocationOptions{}
+	cliOpts.avoidReason = c.Reason
+	return cliOpts.runModelsCatalogAvoid(io, []string{c.Provider, c.Model})
 }
 
 type catalogTagCommand struct {
@@ -288,8 +295,9 @@ type modelsDiscoverFreeCommand struct {
 }
 
 func (c *modelsDiscoverFreeCommand) Run(io *commandIO) error {
-	discoverFreePin, discoverFreeIncludeQuarantine, discoverFreeProviders, discoverFreeTimeout = c.Pin, c.IncludeQuarantined, c.Provider, c.TimeoutSeconds
-	return runModelsDiscoverFree(io, nil)
+	cliOpts := &invocationOptions{}
+	cliOpts.discoverFreePin, cliOpts.discoverFreeIncludeQuarantine, cliOpts.discoverFreeProviders, cliOpts.discoverFreeTimeout = c.Pin, c.IncludeQuarantined, c.Provider, c.TimeoutSeconds
+	return cliOpts.runModelsDiscoverFree(io, nil)
 }
 
 type modelsSyncPricingCommand struct {
@@ -299,6 +307,7 @@ type modelsSyncPricingCommand struct {
 }
 
 func (c *modelsSyncPricingCommand) Run(io *commandIO) error {
-	modelsSyncPricingDryRun, modelsSyncPricingProviders = c.DryRun, c.Provider
-	return runModelsSyncPricing(io, nil)
+	cliOpts := &invocationOptions{}
+	cliOpts.modelsSyncPricingDryRun, cliOpts.modelsSyncPricingProviders = c.DryRun, c.Provider
+	return cliOpts.runModelsSyncPricing(io, nil)
 }

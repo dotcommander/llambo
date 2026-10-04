@@ -16,14 +16,6 @@ import (
 	"github.com/dotcommander/llambo/providers"
 )
 
-var modelsAll bool
-var modelsCSV bool
-var modelsAvailable bool
-var modelsTimeoutSec int
-var modelsGrouped = true
-var modelsProviderFilter string
-var modelsMetrics bool
-
 type modelRow struct {
 	Provider         string
 	Enabled          bool
@@ -37,7 +29,7 @@ type modelRow struct {
 	OutputCost       string
 }
 
-func runModels(cmd *commandIO, args []string) error {
+func (cliOpts *invocationOptions) runModels(cmd *commandIO, args []string) error {
 	out, errOut := cmd.OutOrStdout(), cmd.ErrOrStderr()
 	cfg, err := providers.LoadGlobalConfig()
 	if err != nil {
@@ -47,7 +39,7 @@ func runModels(cmd *commandIO, args []string) error {
 	var metricsCatalog *catalog.Catalog
 	var costMap map[string]costs.ModelCost
 	var scoreSnapshot *evals.OMLXScoreSnapshot
-	if modelsMetrics {
+	if cliOpts.modelsMetrics {
 		catPath, err := catalog.CatalogPath()
 		if err != nil {
 			return err
@@ -72,17 +64,17 @@ func runModels(cmd *commandIO, args []string) error {
 
 	rows := make([]modelRow, 0)
 	for _, name := range sortedProviderNames(cfg.Providers) {
-		if !modelProviderAllowed(name) {
+		if !cliOpts.modelProviderAllowed(name) {
 			continue
 		}
 		pcfg := cfg.Providers[name]
-		if !modelsAll && !pcfg.Enabled {
+		if !cliOpts.modelsAll && !pcfg.Enabled {
 			continue
 		}
 
 		models := modelVariants(pcfg)
-		if modelsAvailable {
-			if avail := fetchAvailableModelsContext(cmd.Context(), name, pcfg, modelsTimeoutSec); len(avail) > 0 {
+		if cliOpts.modelsAvailable {
+			if avail := fetchAvailableModelsContext(cmd.Context(), name, pcfg, cliOpts.modelsTimeoutSec); len(avail) > 0 {
 				models = avail
 			}
 		} else {
@@ -94,9 +86,9 @@ func runModels(cmd *commandIO, args []string) error {
 				Provider: name,
 				Enabled:  pcfg.Enabled,
 				Model:    model,
-				Primary:  i == 0 && !modelsAvailable,
+				Primary:  i == 0 && !cliOpts.modelsAvailable,
 			}
-			if modelsMetrics {
+			if cliOpts.modelsMetrics {
 				row.LlamboScore, row.LlamboProvenance, row.TaskScore, row.Speed, row.Latency = modelMetricLabels(metricsCatalog, scoreSnapshot, name, model)
 				row.OutputCost = modelOutputCostLabel(costMap, metricsCatalog, name, model)
 			}
@@ -104,7 +96,7 @@ func runModels(cmd *commandIO, args []string) error {
 		}
 	}
 
-	if modelsCSV && modelsGrouped && !modelsMetrics {
+	if cliOpts.modelsCSV && cliOpts.modelsGrouped && !cliOpts.modelsMetrics {
 		w := csv.NewWriter(out)
 		if err := w.Write([]string{"provider", "enabled", "models"}); err != nil {
 			return err
@@ -118,15 +110,15 @@ func runModels(cmd *commandIO, args []string) error {
 		if err := w.Error(); err != nil {
 			return err
 		}
-		if len(rows) == 0 && !modelsAll {
+		if len(rows) == 0 && !cliOpts.modelsAll {
 			fmt.Fprintln(errOut, "No enabled providers found. Use --all to list disabled providers.")
 		}
 		return nil
 	}
 
-	if modelsCSV {
+	if cliOpts.modelsCSV {
 		header := []string{"provider", "enabled", "model", "primary"}
-		if modelsMetrics {
+		if cliOpts.modelsMetrics {
 			header = append(header, "llambo_score", "llambo_provenance", "task_score", "speed", "latency", "output_cost_per_1m_usd")
 		}
 		w := csv.NewWriter(out)
@@ -135,7 +127,7 @@ func runModels(cmd *commandIO, args []string) error {
 		}
 		for _, row := range rows {
 			values := []string{row.Provider, fmt.Sprintf("%t", row.Enabled), row.Model, fmt.Sprintf("%t", row.Primary)}
-			if modelsMetrics {
+			if cliOpts.modelsMetrics {
 				values = append(values, row.LlamboScore, row.LlamboProvenance, row.TaskScore, row.Speed, row.Latency, row.OutputCost)
 			}
 			if err := w.Write(values); err != nil {
@@ -146,19 +138,19 @@ func runModels(cmd *commandIO, args []string) error {
 		if err := w.Error(); err != nil {
 			return err
 		}
-		if len(rows) == 0 && !modelsAll {
+		if len(rows) == 0 && !cliOpts.modelsAll {
 			fmt.Fprintln(errOut, "No enabled providers found. Use --all to list disabled providers.")
 		}
 		return nil
 	}
 
-	if modelsGrouped && !modelsMetrics {
+	if cliOpts.modelsGrouped && !cliOpts.modelsMetrics {
 		fmt.Fprintf(out, "%-12s %-8s %s\n", "PROVIDER", "ENABLED", "MODELS")
 		fmt.Fprintln(out, "--------------------------------------------------------------------------------")
 		for _, grouped := range groupRows(rows) {
 			fmt.Fprintf(out, "%-12s %-8t %s\n", grouped.Provider, grouped.Enabled, strings.Join(grouped.Models, ", "))
 		}
-	} else if modelsMetrics {
+	} else if cliOpts.modelsMetrics {
 		fmt.Fprintf(out, "%-12s %-8s %-18s %-30s %-22s %-14s %-12s %-14s %s\n", "PROVIDER", "ENABLED", "LLAMBO SCORE", "LLAMBO PROVENANCE", "TASK SCORE", "SPEED", "LATENCY", "OUTPUT $/1M", "MODEL")
 		fmt.Fprintln(out, strings.Repeat("-", 236))
 		for _, row := range rows {
@@ -173,7 +165,7 @@ func runModels(cmd *commandIO, args []string) error {
 	}
 
 	if len(rows) == 0 {
-		if modelsAll {
+		if cliOpts.modelsAll {
 			fmt.Fprintln(out, "No providers found in config.")
 		} else {
 			fmt.Fprintln(out, "No enabled providers found. Use --all to list disabled providers.")
@@ -202,8 +194,8 @@ func modelOutputCostLabel(costMap map[string]costs.ModelCost, cat *catalog.Catal
 	}
 }
 
-func modelProviderAllowed(name string) bool {
-	filter := strings.TrimSpace(modelsProviderFilter)
+func (cliOpts *invocationOptions) modelProviderAllowed(name string) bool {
+	filter := strings.TrimSpace(cliOpts.modelsProviderFilter)
 	if filter == "" {
 		return true
 	}
@@ -469,4 +461,13 @@ func fetchModelListContext(ctx context.Context, endpoint string, headers map[str
 	out = append(out, models...)
 	sort.Strings(out)
 	return out
+}
+
+// Scalar helpers retain their signatures with independent default options.
+func modelProviderAllowed(name string) bool {
+	return defaultInvocationOptions().modelProviderAllowed(name)
+}
+
+func runModels(cmd *commandIO, args []string) error {
+	return defaultInvocationOptions().runModels(cmd, args)
 }

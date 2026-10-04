@@ -19,46 +19,31 @@ import (
 )
 
 var (
-	evalsRefresh              bool
-	evalsRefreshOfficialCards bool
-	evalsFormat               string
-	evalsOutput               string
-	evalsLimit                int
-	evalsPartial              bool
-	evalsRankBy               string
-	evalsOffline              bool
-	evalsProjections          string
-	evalsValidationReceipts   string
-	evalsMinScore             float64
-	evalsMaxOutputPrice       float64
-	evalsOMLXURL              string
-	evalsNoOMLX               bool
-	evalsCacheDir             string
-	omlxDiscoveryHTTPClient   = &http.Client{Timeout: 5 * time.Second}
-	fetchEvalsReport          = evals.Fetch
-	prepareEvalsOMLXScores    = prepareOMLXScores
+	omlxDiscoveryHTTPClient = &http.Client{Timeout: 5 * time.Second}
+	fetchEvalsReport        = evals.Fetch
+	prepareEvalsOMLXScores  = prepareOMLXScores
 )
 
-func runEvals(cmd *commandIO, _ []string) error {
-	if evalsOffline && evalsRefresh {
+func (cliOpts *invocationOptions) runEvals(cmd *commandIO, _ []string) error {
+	if cliOpts.evalsOffline && cliOpts.evalsRefresh {
 		return fmt.Errorf("--offline and --refresh cannot be used together")
 	}
-	if evalsRefresh && evalsRefreshOfficialCards {
+	if cliOpts.evalsRefresh && cliOpts.evalsRefreshOfficialCards {
 		return fmt.Errorf("--refresh and --refresh-official-model-cards cannot be used together")
 	}
-	if evalsOffline && evalsRefreshOfficialCards {
+	if cliOpts.evalsOffline && cliOpts.evalsRefreshOfficialCards {
 		return fmt.Errorf("--offline and --refresh-official-model-cards cannot be used together")
 	}
-	if math.IsNaN(evalsMinScore) || math.IsInf(evalsMinScore, 0) || evalsMinScore < -1 || evalsMinScore > 100 {
+	if math.IsNaN(cliOpts.evalsMinScore) || math.IsInf(cliOpts.evalsMinScore, 0) || cliOpts.evalsMinScore < -1 || cliOpts.evalsMinScore > 100 {
 		return fmt.Errorf("--min-score must be between -1 and 100")
 	}
-	if evalsMinScore >= 0 && !evals.IsCapabilityCategory(strings.ToLower(strings.TrimSpace(evalsRankBy))) {
+	if cliOpts.evalsMinScore >= 0 && !evals.IsCapabilityCategory(strings.ToLower(strings.TrimSpace(cliOpts.evalsRankBy))) {
 		return fmt.Errorf("--min-score requires a capability --rank-by category")
 	}
-	if math.IsNaN(evalsMaxOutputPrice) || math.IsInf(evalsMaxOutputPrice, 0) || evalsMaxOutputPrice < -1 {
+	if math.IsNaN(cliOpts.evalsMaxOutputPrice) || math.IsInf(cliOpts.evalsMaxOutputPrice, 0) || cliOpts.evalsMaxOutputPrice < -1 {
 		return fmt.Errorf("--max-output-price must be -1 or greater")
 	}
-	cacheDir := strings.TrimSpace(evalsCacheDir)
+	cacheDir := strings.TrimSpace(cliOpts.evalsCacheDir)
 	if cacheDir == "" {
 		cacheRoot, err := os.UserCacheDir()
 		if err != nil {
@@ -66,22 +51,22 @@ func runEvals(cmd *commandIO, _ []string) error {
 		}
 		cacheDir = filepath.Join(cacheRoot, "llambo", "evals")
 	}
-	result, err := fetchEvalsReport(cmd.Context(), evalFetchOptions(cacheDir))
+	result, err := fetchEvalsReport(cmd.Context(), cliOpts.evalFetchOptions(cacheDir))
 	if err != nil {
 		return err
 	}
-	report, err := evals.BuildReportWithProjectionFile(result, strings.ToLower(strings.TrimSpace(evalsRankBy)), strings.TrimSpace(evalsProjections))
+	report, err := evals.BuildReportWithProjectionFile(result, strings.ToLower(strings.TrimSpace(cliOpts.evalsRankBy)), strings.TrimSpace(cliOpts.evalsProjections))
 	if err != nil {
 		return err
 	}
-	if strings.TrimSpace(evalsValidationReceipts) != "" {
-		if err := evals.ApplyValidationReceipts(&report, strings.TrimSpace(evalsValidationReceipts)); err != nil {
+	if strings.TrimSpace(cliOpts.evalsValidationReceipts) != "" {
+		if err := evals.ApplyValidationReceipts(&report, strings.TrimSpace(cliOpts.evalsValidationReceipts)); err != nil {
 			return err
 		}
 	}
 	// Live OMLX discovery is an explicit inventory boundary, never an
 	// evaluation. Ordinary cache-only runs keep the configured/snapshot set.
-	discovery, liveInventory, err := applyLiveOMLXDiscovery(cmd, &report)
+	discovery, liveInventory, err := cliOpts.applyLiveOMLXDiscovery(cmd, &report)
 	if err != nil {
 		return err
 	}
@@ -89,19 +74,19 @@ func runEvals(cmd *commandIO, _ []string) error {
 	if err != nil {
 		return err
 	}
-	evals.ApplyCategoryEligibility(&report, strings.ToLower(strings.TrimSpace(evalsRankBy)), evalsMinScore, evalsMaxOutputPrice)
-	data, err := encodeEvalsReport(report, evalsFormat, evalsLimit)
+	evals.ApplyCategoryEligibility(&report, strings.ToLower(strings.TrimSpace(cliOpts.evalsRankBy)), cliOpts.evalsMinScore, cliOpts.evalsMaxOutputPrice)
+	data, err := encodeEvalsReport(report, cliOpts.evalsFormat, cliOpts.evalsLimit)
 	if err != nil {
 		return err
 	}
-	if evalsOutput == "" {
+	if cliOpts.evalsOutput == "" {
 		_, err = cmd.OutOrStdout().Write(data)
 		if err != nil {
 			return err
 		}
 		return publishOMLXScores(pending)
 	}
-	return writeEvalsThenPublish(cmd.ErrOrStderr(), evalsOutput, data, pending)
+	return writeEvalsThenPublish(cmd.ErrOrStderr(), cliOpts.evalsOutput, data, pending)
 }
 
 type pendingOMLXScores struct {
@@ -245,11 +230,11 @@ func sortedUniqueStrings(values []string) []string {
 	return result
 }
 
-func applyLiveOMLXDiscovery(cmd *commandIO, report *evals.Report) (evals.OMLXDiscovery, bool, error) {
-	if evalsOffline || evalsNoOMLX {
+func (cliOpts *invocationOptions) applyLiveOMLXDiscovery(cmd *commandIO, report *evals.Report) (evals.OMLXDiscovery, bool, error) {
+	if cliOpts.evalsOffline || cliOpts.evalsNoOMLX {
 		return evals.OMLXDiscovery{}, false, nil
 	}
-	discovery, err := evals.DiscoverOMLXModels(cmd.Context(), evalsOMLXURL, os.Getenv("OMLX_API_KEY"), omlxDiscoveryHTTPClient)
+	discovery, err := evals.DiscoverOMLXModels(cmd.Context(), cliOpts.evalsOMLXURL, os.Getenv("OMLX_API_KEY"), omlxDiscoveryHTTPClient)
 	if err != nil {
 		return discovery, false, fmt.Errorf("discover live OMLX inventory: %w", err)
 	}
@@ -264,14 +249,14 @@ func validateOMLXURL(value string) error {
 	return nil
 }
 
-func evalFetchOptions(cacheDir string) evals.Options {
+func (cliOpts *invocationOptions) evalFetchOptions(cacheDir string) evals.Options {
 	return evals.Options{
 		CacheDir:             cacheDir,
-		Refresh:              evalsRefresh,
-		RefreshOfficialCards: evalsRefreshOfficialCards,
-		Offline:              !evalsRefresh && !evalsRefreshOfficialCards,
-		AllowPartial:         evalsPartial,
-		IngestLLMBenchmarks:  evalsRefresh,
+		Refresh:              cliOpts.evalsRefresh,
+		RefreshOfficialCards: cliOpts.evalsRefreshOfficialCards,
+		Offline:              !cliOpts.evalsRefresh && !cliOpts.evalsRefreshOfficialCards,
+		AllowPartial:         cliOpts.evalsPartial,
+		IngestLLMBenchmarks:  cliOpts.evalsRefresh,
 		AAAPIKey:             os.Getenv("AA_API_KEY"),
 		LLMStatsAPIKey:       os.Getenv("LLM_STATS_KEY"),
 	}
@@ -346,4 +331,17 @@ func writeAtomicOutput(path string, data []byte) error {
 		return err
 	}
 	return nil
+}
+
+// Scalar helpers retain their signatures with independent default options.
+func evalFetchOptions(cacheDir string) evals.Options {
+	return defaultInvocationOptions().evalFetchOptions(cacheDir)
+}
+
+func applyLiveOMLXDiscovery(cmd *commandIO, report *evals.Report) (evals.OMLXDiscovery, bool, error) {
+	return defaultInvocationOptions().applyLiveOMLXDiscovery(cmd, report)
+}
+
+func runEvals(cmd *commandIO, ignored1 []string) error {
+	return defaultInvocationOptions().runEvals(cmd, ignored1)
 }

@@ -64,11 +64,11 @@ func calculateStats(resp *gateway.JobResponse, originalRequests []gateway.JobReq
 	return stats
 }
 
-func printJobResults(resp *gateway.JobResponse, stats *JobStats) {
-	printJobResultsTo(os.Stdout, resp, stats)
+func (cliOpts *invocationOptions) printJobResults(resp *gateway.JobResponse, stats *JobStats) {
+	cliOpts.printJobResultsTo(os.Stdout, resp, stats)
 }
 
-func printJobResultsTo(out io.Writer, resp *gateway.JobResponse, stats *JobStats) {
+func (cliOpts *invocationOptions) printJobResultsTo(out io.Writer, resp *gateway.JobResponse, stats *JobStats) {
 	fmt := commandPrinter{out}
 	fmt.Println() // Clear progress line
 	fmt.Println()
@@ -117,7 +117,7 @@ func printJobResultsTo(out io.Writer, resp *gateway.JobResponse, stats *JobStats
 	printRequestBackendDistribution(fmt, stats.BackendCounts, stats.TotalRequests)
 
 	// Integrity verification
-	if runVerify {
+	if cliOpts.runVerify {
 		fmt.Println(styles.Header.Render("Integrity Verification"))
 		if len(stats.IntegrityIssues) == 0 {
 			fmt.Printf("  %s All request IDs accounted for\n", styles.Success.Render("PASS"))
@@ -146,3 +146,12 @@ func printJobResultsTo(out io.Writer, resp *gateway.JobResponse, stats *JobStats
 }
 
 // stressJobResult holds the result of a single stress test job
+
+// Scalar helpers retain their signatures with independent default options.
+func printJobResultsTo(out io.Writer, resp *gateway.JobResponse, stats *JobStats) {
+	defaultInvocationOptions().printJobResultsTo(out, resp, stats)
+}
+
+func printJobResults(resp *gateway.JobResponse, stats *JobStats) {
+	defaultInvocationOptions().printJobResults(resp, stats)
+}

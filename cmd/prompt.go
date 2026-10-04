@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -24,34 +25,21 @@ type PromptResult struct {
 	EstimatedOutputCost float64
 }
 
-var (
-	systemPrompt             string
-	outputFile               string
-	timeoutSeconds           int
-	promptModels             string
-	promptProviders          string
-	promptIncludeQuarantine  bool
-	promptMaxOutputCost      float64
-	promptFreeOnly           bool
-	promptIncludeUnknownCost bool
-	promptSmart              bool
-	promptFuse               bool
-	promptFuseModels         string
-	promptFuseControl        bool
-)
-
 const defaultPromptFuseModels = "zai/GLM-5.2"
 const defaultSmartPromptModels = "healthy"
 
-func runPromptCommand(cmd *commandIO, args []string) error {
+func (cliOpts *invocationOptions) runPromptCommand(cmd *commandIO, args []string) error {
+	if err := cmd.Context().Err(); err != nil {
+		return err
+	}
 	promptText, err := promptTextFromArgsOrStdin(args)
 	if err != nil {
 		return err
 	}
-	applyPromptUXDefaults(cmd)
+	cliOpts.applyPromptUXDefaults(cmd)
 
 	// Get system prompt from flag
-	sysPrompt := systemPrompt
+	sysPrompt := cliOpts.systemPrompt
 	// Treat empty string as no system prompt
 	if sysPrompt == "" {
 		sysPrompt = "You are a helpful assistant."
@@ -67,25 +55,34 @@ func runPromptCommand(cmd *commandIO, args []string) error {
 
 	var results []PromptResult
 	if run == nil {
-		results, err = executePromptAgainstSelectedModelsTo(cmd.Context(), cmd.ErrOrStderr(), promptText, sysPrompt, timeoutSeconds)
+		results, err = cliOpts.executePromptAgainstSelectedModelsTo(cmd.Context(), cmd.ErrOrStderr(), promptText, sysPrompt, cliOpts.timeoutSeconds)
 	} else {
-		results, err = executePromptAgainstSelectedModelsWithRun(cmd.Context(), cmd.ErrOrStderr(), promptText, sysPrompt, timeoutSeconds, run)
+		results, err = cliOpts.executePromptAgainstSelectedModelsWithRun(cmd.Context(), cmd.ErrOrStderr(), promptText, sysPrompt, cliOpts.timeoutSeconds, run)
 	}
 	if err != nil {
+		return err
+	}
+	if err := cmd.Context().Err(); err != nil {
 		return err
 	}
 	baseErr := checkAllFailed(results)
 	var control *PromptFusionControl
 	var controlErr error
-	if promptFuseControl && baseErr == nil {
-		control, controlErr = executePromptFusionControlWithRun(cmd.Context(), promptText, sysPrompt, timeoutSeconds, promptFuseModels, run)
+	if cliOpts.promptFuseControl && baseErr == nil {
+		control, controlErr = cliOpts.executePromptFusionControlWithRun(cmd.Context(), promptText, sysPrompt, cliOpts.timeoutSeconds, cliOpts.promptFuseModels, run)
+	}
+	if err := cmd.Context().Err(); err != nil {
+		return err
 	}
 	var fusion *PromptFusion
 	var fuseErr error
-	if promptFuse && baseErr == nil {
-		fusion, fuseErr = executePromptFusionResponseWithRun(cmd.Context(), promptText, sysPrompt, results, timeoutSeconds, promptFuseModels, run)
+	if cliOpts.promptFuse && baseErr == nil {
+		fusion, fuseErr = cliOpts.executePromptFusionResponseWithRun(cmd.Context(), promptText, sysPrompt, results, cliOpts.timeoutSeconds, cliOpts.promptFuseModels, run)
 	}
 
+	if err := cmd.Context().Err(); err != nil {
+		return err
+	}
 	healthResults := results
 	if control != nil {
 		healthResults = append(append([]PromptResult(nil), healthResults...), control.Result)
@@ -97,23 +94,19 @@ func runPromptCommand(cmd *commandIO, args []string) error {
 		fmt.Fprintf(cmd.ErrOrStderr(), "Warning: %v\n", err)
 	}
 
+	var outputErr error
 	// If output file is specified, write to file
-	if outputFile != "" {
-		if err := writeResultsToFile(cmd, promptText, results, control, fusion, outputFile); err != nil {
+	if cliOpts.outputFile != "" {
+		if err := writeResultsToFile(cmd, promptText, results, control, fusion, cliOpts.outputFile); err != nil {
+			outputErr = err
 			// Print error but continue to display results to stdout
-			fmt.Fprintf(cmd.ErrOrStderr(), "Error writing to file %s: %v\n", outputFile, err)
+			fmt.Fprintf(cmd.ErrOrStderr(), "Error writing to file %s: %v\n", cliOpts.outputFile, err)
 			fmt.Fprintln(cmd.OutOrStdout(), "Displaying results to stdout instead:")
 		} else {
 			// Success message
-			fmt.Fprintf(cmd.OutOrStdout(), "Results written to %s\n", outputFile)
+			fmt.Fprintf(cmd.OutOrStdout(), "Results written to %s\n", cliOpts.outputFile)
 			// Return early - don't print to stdout when file write succeeds
-			if baseErr != nil {
-				return baseErr
-			}
-			if controlErr != nil {
-				return controlErr
-			}
-			return fuseErr
+			return errors.Join(baseErr, controlErr, fuseErr)
 		}
 	}
 
@@ -126,13 +119,7 @@ func runPromptCommand(cmd *commandIO, args []string) error {
 		outputPromptFusion(cmd, fusion)
 	}
 
-	if baseErr != nil {
-		return baseErr
-	}
-	if controlErr != nil {
-		return controlErr
-	}
-	return fuseErr
+	return errors.Join(baseErr, controlErr, fuseErr, outputErr)
 }
 
 // hasInjectedPromptExecutionSeam preserves the package-level execution seams
@@ -145,27 +132,27 @@ func hasInjectedPromptExecutionSeam() bool {
 		reflect.ValueOf(executePromptFusionResponse).Pointer() != reflect.ValueOf(defaultExecutePromptFusionResponse).Pointer()
 }
 
-func applyPromptUXDefaults(cmd *commandIO) {
-	if promptSmart {
-		if !cmd.FlagChanged("models") && promptModels == "" {
-			promptModels = defaultSmartPromptModels
+func (cliOpts *invocationOptions) applyPromptUXDefaults(cmd *commandIO) {
+	if cliOpts.promptSmart {
+		if !cmd.FlagChanged("models") && cliOpts.promptModels == "" {
+			cliOpts.promptModels = defaultSmartPromptModels
 		}
 		if !cmd.FlagChanged("fuse") {
-			promptFuse = true
+			cliOpts.promptFuse = true
 		}
 	}
 
-	if !cmd.FlagChanged("models") && promptModels == "" {
-		promptModels = strings.TrimSpace(os.Getenv("LLAMBO_PROMPT_MODELS"))
+	if !cmd.FlagChanged("models") && cliOpts.promptModels == "" {
+		cliOpts.promptModels = strings.TrimSpace(os.Getenv("LLAMBO_PROMPT_MODELS"))
 	}
 	if !cmd.FlagChanged("fuse") {
 		if v, ok := boolEnv("LLAMBO_PROMPT_FUSE"); ok {
-			promptFuse = v
+			cliOpts.promptFuse = v
 		}
 	}
 	if !cmd.FlagChanged("fuse-models") {
 		if v := strings.TrimSpace(os.Getenv("LLAMBO_PROMPT_FUSE_MODELS")); v != "" {
-			promptFuseModels = v
+			cliOpts.promptFuseModels = v
 		}
 	}
 }
@@ -251,3 +238,12 @@ func writeResultsToFile(_ *commandIO, promptText string, results []PromptResult,
 
 // executePromptAgainstAllProviders sends the prompt to all enabled providers concurrently
 // This is a variable to allow mocking in tests
+
+// Scalar helpers retain their signatures with independent default options.
+func applyPromptUXDefaults(cmd *commandIO) {
+	defaultInvocationOptions().applyPromptUXDefaults(cmd)
+}
+
+func runPromptCommand(cmd *commandIO, args []string) error {
+	return defaultInvocationOptions().runPromptCommand(cmd, args)
+}

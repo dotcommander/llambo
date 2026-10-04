@@ -84,6 +84,7 @@ func TestCalculateStatsPreservesMetricsAndIntegrity(t *testing.T) {
 }
 
 func TestPrintJobResultsToRendersPercentilesAndSortsStatsInPlace(t *testing.T) {
+	legacyTestOptions := invocationOptions{modelsGrouped: true, timeoutSeconds: 60, promptFuseModels: defaultPromptFuseModels}
 	t.Parallel()
 	latencies := make([]time.Duration, 20)
 	for i := range latencies {
@@ -96,20 +97,21 @@ func TestPrintJobResultsToRendersPercentilesAndSortsStatsInPlace(t *testing.T) {
 		BackendCounts: map[string]int{"zeta": 1, "alpha": 1},
 	}
 	var out bytes.Buffer
-	printJobResultsTo(&out, &gateway.JobResponse{JobID: "batch", Status: "completed"}, stats)
+	legacyTestOptions.printJobResultsTo(&out, &gateway.JobResponse{JobID: "batch", Status: "completed"}, stats)
 
 	rendered := out.String()
 	require.Contains(t, rendered, "Latency")
 	require.Contains(t, rendered, "P50:     11ms")
 	require.Contains(t, rendered, "P95:     20ms")
 	require.Contains(t, rendered, "P99:     20ms")
-	require.Contains(t, rendered, "(  5.0%)")
+	require.Contains(t, rendered, "( 50.0%)")
 	require.Less(t, strings.Index(rendered, "alpha"), strings.Index(rendered, "zeta"))
 	require.Equal(t, 1*time.Millisecond, stats.Latencies[0])
 	require.Equal(t, 20*time.Millisecond, stats.Latencies[len(stats.Latencies)-1])
 }
 
 func TestPrintJobResultsToHandlesEmptyAndSingleMetrics(t *testing.T) {
+	legacyTestOptions := invocationOptions{modelsGrouped: true, timeoutSeconds: 60, promptFuseModels: defaultPromptFuseModels}
 	t.Parallel()
 	tests := []struct {
 		name      string
@@ -133,7 +135,7 @@ func TestPrintJobResultsToHandlesEmptyAndSingleMetrics(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			var out bytes.Buffer
-			printJobResultsTo(&out, &gateway.JobResponse{Status: "completed"}, tt.stats)
+			legacyTestOptions.printJobResultsTo(&out, &gateway.JobResponse{Status: "completed"}, tt.stats)
 			if tt.contains != "" {
 				require.Contains(t, out.String(), tt.contains)
 			}

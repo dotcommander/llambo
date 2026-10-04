@@ -162,77 +162,68 @@ func TestPromptCommand_AppearsInCommandList(t *testing.T) {
 
 // resetRootCmd resets mutable command state so tests don't interfere with each other.
 func resetRootCmd() {
-	systemPrompt = ""
-	outputFile = ""
-	timeoutSeconds = 60
-	promptModels = ""
-	promptProviders = ""
-	promptIncludeQuarantine = false
-	promptMaxOutputCost = 0
-	promptFreeOnly = false
-	promptIncludeUnknownCost = false
-	promptSmart = false
-	promptFuse = false
-	promptFuseModels = defaultPromptFuseModels
-	promptFuseControl = false
 	rootCmd = &testRootCommand{}
 	promptCmd = &commandIO{stdout: io.Discard, stderr: io.Discard, changed: map[string]bool{}}
 }
 
 func TestApplyPromptUXDefaults_SmartPresetUsesHealthyAndFuse(t *testing.T) {
+	legacyTestOptions := invocationOptions{modelsGrouped: true, timeoutSeconds: 60, promptFuseModels: defaultPromptFuseModels}
 	resetRootCmd()
-	promptSmart = true
+	legacyTestOptions.promptSmart = true
 
-	applyPromptUXDefaults(promptCmd)
+	legacyTestOptions.applyPromptUXDefaults(promptCmd)
 
-	require.Equal(t, defaultSmartPromptModels, promptModels)
-	require.True(t, promptFuse)
+	require.Equal(t, defaultSmartPromptModels, legacyTestOptions.promptModels)
+	require.True(t, legacyTestOptions.promptFuse)
 }
 
 func TestApplyPromptUXDefaults_ExplicitFlagsOverrideSmartPreset(t *testing.T) {
+	legacyTestOptions := invocationOptions{modelsGrouped: true, timeoutSeconds: 60, promptFuseModels: defaultPromptFuseModels}
 	resetRootCmd()
-	promptSmart = true
-	promptModels = "free"
-	promptFuse = false
+	legacyTestOptions.promptSmart = true
+	legacyTestOptions.promptModels = "free"
+	legacyTestOptions.promptFuse = false
 	promptCmd.changed["models"] = true
 	promptCmd.changed["fuse"] = true
 
-	applyPromptUXDefaults(promptCmd)
+	legacyTestOptions.applyPromptUXDefaults(promptCmd)
 
-	require.Equal(t, "free", promptModels)
-	require.False(t, promptFuse)
+	require.Equal(t, "free", legacyTestOptions.promptModels)
+	require.False(t, legacyTestOptions.promptFuse)
 }
 
 func TestApplyPromptUXDefaults_UsesEnvWhenFlagsUnset(t *testing.T) {
+	legacyTestOptions := invocationOptions{modelsGrouped: true, timeoutSeconds: 60, promptFuseModels: defaultPromptFuseModels}
 	resetRootCmd()
 	t.Setenv("LLAMBO_PROMPT_MODELS", "tag:smart")
 	t.Setenv("LLAMBO_PROMPT_FUSE", "true")
 	t.Setenv("LLAMBO_PROMPT_FUSE_MODELS", "zai/custom")
 
-	applyPromptUXDefaults(promptCmd)
+	legacyTestOptions.applyPromptUXDefaults(promptCmd)
 
-	require.Equal(t, "tag:smart", promptModels)
-	require.True(t, promptFuse)
-	require.Equal(t, "zai/custom", promptFuseModels)
+	require.Equal(t, "tag:smart", legacyTestOptions.promptModels)
+	require.True(t, legacyTestOptions.promptFuse)
+	require.Equal(t, "zai/custom", legacyTestOptions.promptFuseModels)
 }
 
 func TestApplyPromptUXDefaults_ExplicitFlagsOverrideEnv(t *testing.T) {
+	legacyTestOptions := invocationOptions{modelsGrouped: true, timeoutSeconds: 60, promptFuseModels: defaultPromptFuseModels}
 	resetRootCmd()
 	t.Setenv("LLAMBO_PROMPT_MODELS", "tag:smart")
 	t.Setenv("LLAMBO_PROMPT_FUSE", "true")
 	t.Setenv("LLAMBO_PROMPT_FUSE_MODELS", "zai/custom")
-	promptModels = "free"
-	promptFuse = false
-	promptFuseModels = "zai/explicit"
+	legacyTestOptions.promptModels = "free"
+	legacyTestOptions.promptFuse = false
+	legacyTestOptions.promptFuseModels = "zai/explicit"
 	promptCmd.changed["models"] = true
 	promptCmd.changed["fuse"] = true
 	promptCmd.changed["fuse-models"] = true
 
-	applyPromptUXDefaults(promptCmd)
+	legacyTestOptions.applyPromptUXDefaults(promptCmd)
 
-	require.Equal(t, "free", promptModels)
-	require.False(t, promptFuse)
-	require.Equal(t, "zai/explicit", promptFuseModels)
+	require.Equal(t, "free", legacyTestOptions.promptModels)
+	require.False(t, legacyTestOptions.promptFuse)
+	require.Equal(t, "zai/explicit", legacyTestOptions.promptFuseModels)
 }
 
 func TestBuildFusionPrompt_IncludesOriginalPromptAndSuccessfulResponses(t *testing.T) {
@@ -327,13 +318,14 @@ func TestComputeFusionConsensus_LabelsDraftAgreement(t *testing.T) {
 }
 
 func TestPromptTextForModel_OnlyWrapsWhenFuseEnabled(t *testing.T) {
-	promptFuse = false
-	require.Equal(t, "plain prompt", promptTextForModel("plain prompt", "system", 0, 2, "p", "m"))
+	legacyTestOptions := invocationOptions{modelsGrouped: true, timeoutSeconds: 60, promptFuseModels: defaultPromptFuseModels}
+	legacyTestOptions.promptFuse = false
+	require.Equal(t, "plain prompt", legacyTestOptions.promptTextForModel("plain prompt", "system", 0, 2, "p", "m"))
 
-	promptFuse = true
-	t.Cleanup(func() { promptFuse = false })
+	legacyTestOptions.promptFuse = true
+	t.Cleanup(func() { legacyTestOptions.promptFuse = false })
 
-	got := promptTextForModel("plain prompt", "system", 0, 2, "p", "m")
+	got := legacyTestOptions.promptTextForModel("plain prompt", "system", 0, 2, "p", "m")
 	assert.Contains(t, got, "plain prompt")
 	assert.Contains(t, got, "draft contributor 1 of 2")
 	assert.Contains(t, got, "Assigned lens:")
@@ -1550,8 +1542,8 @@ func TestPromptCommand_OutputFlag_UnwritablePath(t *testing.T) {
 	rootCmd.SetArgs([]string{"prompt", "--output", invalidPath, "test prompt"})
 	err := rootCmd.Execute()
 
-	// Command should still succeed even if file write fails
-	require.NoError(t, err)
+	// File errors are returned while results still fall back to stdout.
+	require.Error(t, err)
 
 	output := out.String()
 

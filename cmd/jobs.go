@@ -18,24 +18,8 @@ import (
 const maxJobStatusErrorBodyBytes = 1 << 20
 
 // Run command flags
-var (
-	runCount   int
-	runPrompt  string
-	runSystem  string
-	runServer  string
-	runWait    bool
-	runPoll    time.Duration
-	runTimeout time.Duration
-	runVerify  bool
-)
 
 // Stress command flags
-var (
-	stressJobs           int
-	stressRequestsPerJob int
-	stressPrompt         string
-	stressServer         string
-)
 
 // JobStats holds aggregated statistics for job results
 type JobStats struct {
@@ -48,17 +32,17 @@ type JobStats struct {
 	IntegrityIssues []string
 }
 
-func runJobsRun(cmd *commandIO, args []string) error {
+func (cliOpts *invocationOptions) runJobsRun(cmd *commandIO, args []string) error {
 	out := cmd.OutOrStdout()
 	fmt.Fprintf(out, "%s Submitting batch job with %d requests\n",
 		styles.Info.Render(">>"),
-		runCount)
+		cliOpts.runCount)
 
 	// Build requests
-	requests := buildRequests(runCount, runPrompt)
+	requests := buildRequests(cliOpts.runCount, cliOpts.runPrompt)
 
 	// Submit job
-	jobResp, err := submitJobContext(cmd.Context(), runServer, requests, runSystem)
+	jobResp, err := submitJobContext(cmd.Context(), cliOpts.runServer, requests, cliOpts.runSystem)
 	if err != nil {
 		return fmt.Errorf("submit job: %w", err)
 	}
@@ -67,39 +51,39 @@ func runJobsRun(cmd *commandIO, args []string) error {
 		styles.Success.Render(">>"),
 		styles.Header.Render(jobResp.JobID))
 
-	if !runWait {
-		fmt.Fprintf(out, "Poll status: curl %s/v1/jobs/%s\n", runServer, jobResp.JobID)
+	if !cliOpts.runWait {
+		fmt.Fprintf(out, "Poll status: curl %s/v1/jobs/%s\n", cliOpts.runServer, jobResp.JobID)
 		return nil
 	}
 
 	// Wait for completion
 	start := time.Now()
-	finalResp, err := waitForJobWithWriterContext(cmd.Context(), out, runServer, jobResp.JobID, runPoll, runTimeout)
+	finalResp, err := waitForJobWithWriterContext(cmd.Context(), out, cliOpts.runServer, jobResp.JobID, cliOpts.runPoll, cliOpts.runTimeout)
 	if err != nil {
 		return fmt.Errorf("wait for job: %w", err)
 	}
 	totalDuration := time.Since(start)
 
 	// Calculate and print stats
-	stats := calculateStats(finalResp, requests, runVerify)
+	stats := calculateStats(finalResp, requests, cliOpts.runVerify)
 	stats.TotalDuration = totalDuration
 
-	printJobResultsTo(out, finalResp, stats)
+	cliOpts.printJobResultsTo(out, finalResp, stats)
 
 	return nil
 }
 
-func runJobsStress(cmd *commandIO, args []string) error {
+func (cliOpts *invocationOptions) runJobsStress(cmd *commandIO, args []string) error {
 	out := cmd.OutOrStdout()
 	fmt.Fprintf(out, "%s Starting stress test: %d jobs x %d requests = %d total requests\n",
 		styles.Info.Render(">>"),
-		stressJobs,
-		stressRequestsPerJob,
-		stressJobs*stressRequestsPerJob)
+		cliOpts.stressJobs,
+		cliOpts.stressRequestsPerJob,
+		cliOpts.stressJobs*cliOpts.stressRequestsPerJob)
 
 	start := time.Now()
 
-	jobIndexes := make([]int, stressJobs)
+	jobIndexes := make([]int, cliOpts.stressJobs)
 	for i := range jobIndexes {
 		jobIndexes[i] = i
 	}
@@ -107,22 +91,22 @@ func runJobsStress(cmd *commandIO, args []string) error {
 	results := runOrderedParallel(jobIndexes, func(_ int, jobIndex int) stressJobResult {
 		jobStart := time.Now()
 
-		requests := make([]gateway.JobRequest, stressRequestsPerJob)
-		for j := 0; j < stressRequestsPerJob; j++ {
-			n := jobIndex*stressRequestsPerJob + j + 1
-			prompt := strings.ReplaceAll(stressPrompt, "{n}", fmt.Sprintf("%d", n))
+		requests := make([]gateway.JobRequest, cliOpts.stressRequestsPerJob)
+		for j := 0; j < cliOpts.stressRequestsPerJob; j++ {
+			n := jobIndex*cliOpts.stressRequestsPerJob + j + 1
+			prompt := strings.ReplaceAll(cliOpts.stressPrompt, "{n}", fmt.Sprintf("%d", n))
 			requests[j] = gateway.JobRequest{
 				ID:       fmt.Sprintf("job%d-req-%03d", jobIndex+1, j+1),
 				Messages: []gateway.Message{{Role: "user", Content: prompt}},
 			}
 		}
 
-		jobResp, err := submitJobContext(cmd.Context(), stressServer, requests, "")
+		jobResp, err := submitJobContext(cmd.Context(), cliOpts.stressServer, requests, "")
 		if err != nil {
 			return stressJobResult{err: err}
 		}
 
-		finalResp, err := waitForJobContext(cmd.Context(), stressServer, jobResp.JobID, 200*time.Millisecond, 5*time.Minute)
+		finalResp, err := waitForJobContext(cmd.Context(), cliOpts.stressServer, jobResp.JobID, 200*time.Millisecond, 5*time.Minute)
 		return stressJobResult{
 			jobID:    jobResp.JobID,
 			response: finalResp,
@@ -136,7 +120,7 @@ func runJobsStress(cmd *commandIO, args []string) error {
 	}
 
 	// Aggregate results
-	printStressResultsTo(out, results, totalDuration, stressJobs*stressRequestsPerJob)
+	printStressResultsTo(out, results, totalDuration, cliOpts.stressJobs*cliOpts.stressRequestsPerJob)
 
 	return nil
 }
@@ -276,4 +260,13 @@ func printProgressTo(out io.Writer, resp *gateway.JobResponse) {
 		resp.Completed,
 		resp.Failed,
 		pending)
+}
+
+// Scalar helpers retain their signatures with independent default options.
+func runJobsStress(cmd *commandIO, args []string) error {
+	return defaultInvocationOptions().runJobsStress(cmd, args)
+}
+
+func runJobsRun(cmd *commandIO, args []string) error {
+	return defaultInvocationOptions().runJobsRun(cmd, args)
 }

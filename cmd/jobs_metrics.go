@@ -70,11 +70,15 @@ func printRequestLatencyStats(fmt commandPrinter, heading string, latencies []ti
 	fmt.Println()
 }
 
-func printRequestBackendDistribution(fmt commandPrinter, backendCounts map[string]int, total int) {
+func printRequestBackendDistribution(fmt commandPrinter, backendCounts map[string]int, _ int) {
 	if len(backendCounts) == 0 {
 		return
 	}
 
+	total := 0
+	for _, count := range backendCounts {
+		total += count
+	}
 	fmt.Println(styles.Header.Render("Backend Distribution"))
 	backends := make([]string, 0, len(backendCounts))
 	for backend := range backendCounts {
@@ -84,8 +88,8 @@ func printRequestBackendDistribution(fmt commandPrinter, backendCounts map[strin
 
 	for _, backend := range backends {
 		count := backendCounts[backend]
-		pct := float64(count) / float64(total) * 100
-		fmt.Printf("  %-15s %4d (%5.1f%%)\n", backend, count, pct)
+		percentage := pct(count, total)
+		fmt.Printf("  %-15s %4d (%5.1f%%)\n", backend, count, percentage)
 	}
 	fmt.Println()
 }

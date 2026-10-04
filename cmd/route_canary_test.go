@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 const canaryEnvOnlyKey = "env-only-canary-secret"
 
 func TestCanaryMutationsPersistRawConfig(t *testing.T) {
+	legacyTestOptions := invocationOptions{modelsGrouped: true, timeoutSeconds: 60, promptFuseModels: defaultPromptFuseModels}
 	t.Setenv("LLAMBO_CANARY_TEST_API_KEY", canaryEnvOnlyKey)
 
 	t.Run("start", func(t *testing.T) {
@@ -23,13 +25,13 @@ func TestCanaryMutationsPersistRawConfig(t *testing.T) {
     "canary": {"base_url":"https://canary.example","model":"canary","enabled":true,"priority":19,"env_var":"LLAMBO_CANARY_TEST_API_KEY"}
   }
 }`)
-		oldProvider, oldTraffic, oldPromoteAfter, oldBaseline := canaryStartProvider, canaryStartTrafficPct, canaryStartPromoteAfter, canaryStartBaseline
+		oldProvider, oldTraffic, oldPromoteAfter, oldBaseline := legacyTestOptions.canaryStartProvider, legacyTestOptions.canaryStartTrafficPct, legacyTestOptions.canaryStartPromoteAfter, legacyTestOptions.canaryStartBaseline
 		t.Cleanup(func() {
-			canaryStartProvider, canaryStartTrafficPct, canaryStartPromoteAfter, canaryStartBaseline = oldProvider, oldTraffic, oldPromoteAfter, oldBaseline
+			legacyTestOptions.canaryStartProvider, legacyTestOptions.canaryStartTrafficPct, legacyTestOptions.canaryStartPromoteAfter, legacyTestOptions.canaryStartBaseline = oldProvider, oldTraffic, oldPromoteAfter, oldBaseline
 		})
-		canaryStartProvider, canaryStartTrafficPct, canaryStartPromoteAfter, canaryStartBaseline = "canary", 0.25, 12, "baseline"
+		legacyTestOptions.canaryStartProvider, legacyTestOptions.canaryStartTrafficPct, legacyTestOptions.canaryStartPromoteAfter, legacyTestOptions.canaryStartBaseline = "canary", 0.25, 12, "baseline"
 
-		if err := runCanaryStart(&commandIO{stdout: new(bytes.Buffer)}, nil); err != nil {
+		if err := legacyTestOptions.runCanaryStart(&commandIO{ctx: context.Background(), stdout: new(bytes.Buffer)}, nil); err != nil {
 			t.Fatalf("runCanaryStart: %v", err)
 		}
 
@@ -50,7 +52,7 @@ func TestCanaryMutationsPersistRawConfig(t *testing.T) {
   "routing": {"canary":{"provider":"canary","traffic_pct":0.25,"baseline":"baseline"}}
 }`)
 
-		if err := runCanaryPromote(&commandIO{stdout: new(bytes.Buffer)}, nil); err != nil {
+		if err := runCanaryPromote(&commandIO{ctx: context.Background(), stdout: new(bytes.Buffer)}, nil); err != nil {
 			t.Fatalf("runCanaryPromote: %v", err)
 		}
 
@@ -74,7 +76,7 @@ func TestCanaryMutationsPersistRawConfig(t *testing.T) {
   "routing": {"canary":{"provider":"canary","traffic_pct":0.25,"baseline":"baseline"}}
 }`)
 
-		if err := runCanaryStop(&commandIO{stdout: new(bytes.Buffer)}, nil); err != nil {
+		if err := runCanaryStop(&commandIO{ctx: context.Background(), stdout: new(bytes.Buffer)}, nil); err != nil {
 			t.Fatalf("runCanaryStop: %v", err)
 		}
 
