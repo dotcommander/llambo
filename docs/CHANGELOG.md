@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-04
+
+### Added
+- OpenAI-compatible tool calling end to end: `tools`, `tool_choice`, `tool_calls`, and `stop` on `/v1/chat/completions` and batch job requests, including streaming tool-call deltas and `finish_reason: "tool_calls"`
+- Anthropic Messages translation of assistant `tool_use` and user `tool_result` content blocks into the OpenAI wire format
+- `response_format` passthrough and per-request sampling parameters (`temperature`, `top_p`, `max_tokens`) for batch job requests
+- `stream_options.include_usage` for streaming chat completions
+- Configurable gateway timeouts: `gateway.handler_timeout_seconds` (90), `gateway.write_timeout_seconds` (120), and `gateway.shutdown_timeout_seconds` (95)
+- Job retention limits `gateway.max_retained_jobs` (1000) and `gateway.max_retained_payload_bytes` (64 MiB) with automatic pruning of drained terminal jobs
+- Transactional global-config updates through locked atomic file transactions (`internal/filetxn`) that never materialize environment credentials
+- Per-model embedding target resolution on `/v1/embeddings`
+
+### Changed
+- CLI commands read invocation options from a per-run struct instead of package-level flag globals
+- Routing publication uses immutable config snapshots while provider HTTP resources stay pooled across generations
+- Canary auto-promotion runs as a coalescing, cancellable background evaluator and publishes through transactional config updates
+- `models.dev` price sync rejects missing, NaN, infinite, or negative prices and matches provider filters case-insensitively; CSV price parsing rejects invalid values
+- Catalog store and routing-metrics persistence reuse the shared atomic file-transaction helpers
+- Gateway shutdown honors the configured shutdown timeout and request context cancellation
+
 ## [0.1.0] - 2026-07-31
 
 ### Added

@@ -56,7 +56,8 @@ POST /v1/jobs/{id}/cancel  -> cancel non-terminal work and return job state
 
 The HTTP contract is polling. Internally, the queue schedules requests across
 healthy backends and records each result as it completes. `max_active_jobs` and
-`max_requests_per_job` bound admission.
+`max_requests_per_job` bound admission; `max_retained_jobs` and
+`max_retained_payload_bytes` prune drained terminal jobs.
 
 ## Failure ownership
 

@@ -49,13 +49,22 @@ Cancel a running job (pending or processing jobs only).
 |-------|------|----------|-------------|-------------|
 | `id` | string | **Yes** | Unique identifier for this request within the job | Must be unique within the batch |
 | `messages` | array[Message] | **Yes** | Array of conversation messages | Minimum 1 message |
+| `tools` | array[Tool] | No | Tool definitions for provider-native function calling | OpenAI-style tool objects |
+| `tool_choice` | string or object | No | Tool choice policy | `auto`, `none`, `required`, or object form |
+| `stop` | string or array[string] | No | Up to 4 stop sequences | String or array of strings |
+| `response_format` | object | No | Structured output request | `json_object` / `json_schema` passthrough |
+| `temperature` | float64 | No | Sampling temperature | 0.0 to 2.0 |
+| `top_p` | float64 | No | Nucleus sampling parameter | 0.0 to 1.0 |
+| `max_tokens` | integer | No | Maximum tokens to generate | Positive integer |
 
 ### Message Object
 
 | Field | Type | Required | Description | Allowed Values |
 |-------|------|----------|-------------|----------------|
-| `role` | string | **Yes** | Role of the message author | `system`, `user`, `assistant` |
+| `role` | string | **Yes** | Role of the message author | `system`, `user`, `assistant`, `tool` |
 | `content` | string | **Yes** | Content of the message | Any non-empty string |
+| `tool_calls` | array | No | Tool calls issued by an assistant message | Present in tool loops |
+| `tool_call_id` | string | No | ID of the tool call this message answers | Required for `role: "tool"` |
 
 ## Examples
 

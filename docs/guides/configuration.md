@@ -90,6 +90,11 @@ Create with: `llambo config init`
 | --- | --- | --- |
 | `gateway.max_active_jobs` | `64` | Maximum active jobs |
 | `gateway.max_requests_per_job` | `500` | Maximum requests accepted in one job |
+| `gateway.handler_timeout_seconds` | `90` | Per-request gateway handler timeout |
+| `gateway.write_timeout_seconds` | `120` | HTTP response write timeout |
+| `gateway.shutdown_timeout_seconds` | `95` | Graceful shutdown window on Ctrl+C |
+| `gateway.max_retained_jobs` | `1000` | Cap on retained finished jobs; older drained jobs are pruned |
+| `gateway.max_retained_payload_bytes` | `67108864` | Cap on retained job payload bytes (64 MiB) |
 | `gateway.auth_token_env` | none | Preferred environment variable containing the bearer token |
 | `gateway.auth_token` | none | Direct bearer token; prefer the environment-variable field |
 | `gateway.allowed_origins` | empty | Exact browser origins allowed by CORS; empty disables CORS |

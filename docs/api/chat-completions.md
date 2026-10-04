@@ -24,15 +24,23 @@ If you need Anthropic-compatible request and response envelopes, see [Messages](
 | `model` | string | No | Model identifier hint | Any string; backend's configured model is actually used |
 | `messages` | array[Message] | **Yes** | Array of conversation messages | Minimum 1 message |
 | `temperature` | float64 | No | Sampling temperature | 0.0 to 2.0, defaults to 1.0 |
+| `top_p` | float64 | No | Nucleus sampling parameter | 0.0 to 1.0 |
 | `max_tokens` | integer | No | Maximum tokens to generate | Positive integer |
+| `tools` | array[Tool] | No | Tool definitions for provider-native function calling | OpenAI-style tool objects |
+| `tool_choice` | string or object | No | Tool choice policy | `auto`, `none`, `required`, or `{"type":"function",...}` |
+| `stop` | string or array[string] | No | Up to 4 stop sequences | String or array of strings |
+| `response_format` | object | No | Structured output request | `json_object` / `json_schema` passthrough |
 | `stream` | boolean | No | Stream Server-Sent Events when `true` | Defaults to `false` |
+| `stream_options` | object | No | Streaming options | `include_usage: true` emits a final usage chunk |
 
 ### Message Object
 
 | Field | Type | Required | Description | Allowed Values |
 |-------|------|----------|-------------|----------------|
-| `role` | string | **Yes** | Role of the message author | `system`, `user`, `assistant` |
+| `role` | string | **Yes** | Role of the message author | `system`, `user`, `assistant`, `tool` |
 | `content` | string | **Yes** | Content of the message | Any non-empty string |
+| `tool_calls` | array | No | Tool calls issued by an assistant message | Present on assistant messages in tool loops |
+| `tool_call_id` | string | No | ID of the tool call this message answers | Required for `role: "tool"` |
 
 ## Examples
 
@@ -140,7 +148,8 @@ curl -X POST http://localhost:8080/v1/chat/completions \
 | `choices[].message` | Message | The generated message |
 | `choices[].message.role` | string | Always `"assistant"` |
 | `choices[].message.content` | string | Generated response content |
-| `choices[].finish_reason` | string | Reason generation stopped: `"stop"`, `"length"`, or `"content_filter"` |
+| `choices[].message.tool_calls` | array | Tool calls issued by the assistant, when tools were requested |
+| `choices[].finish_reason` | string | Reason generation stopped: `"stop"`, `"length"`, `"tool_calls"`, or `"content_filter"` |
 | `usage` | Usage | Token usage information (if provider returns it) |
 | `usage.prompt_tokens` | integer | Number of tokens in the prompt |
 | `usage.completion_tokens` | integer | Number of tokens in the completion |
@@ -203,8 +212,8 @@ curl -X POST http://localhost:8080/v1/chat/completions \
 - Maximum messages: Limited by request size
 
 ### Timeouts
-- Handler timeout: **90 seconds**
-- Server write timeout: **120 seconds**
+- Handler timeout: **90 seconds** (configurable via `gateway.handler_timeout_seconds`)
+- Server write timeout: **120 seconds** (configurable via `gateway.write_timeout_seconds`)
 
 ### Token Limits
 - Token limits are enforced by individual backends
@@ -222,6 +231,26 @@ The `model` field in the request is treated as a hint. The actual model used is 
 
 ### System Prompt Extraction
 System prompts are automatically extracted from messages with `role: "system"`. Multiple system messages are concatenated.
+
+### Tool Calling
+`tools` and `tool_choice` are forwarded to backends that support OpenAI-style function tools. When the model invokes a tool, the response (or final stream chunk) carries `message.tool_calls` and `finish_reason: "tool_calls"`. Send tool outputs back as `role: "tool"` messages with the matching `tool_call_id` to continue the loop.
+
+```bash
+curl -X POST http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages": [{"role": "user", "content": "What is the weather in Tokyo?"}],
+    "tools": [{
+      "type": "function",
+      "function": {
+        "name": "get_weather",
+        "description": "Get current weather for a city",
+        "parameters": {"type": "object", "properties": {"city": {"type": "string"}}}
+      }
+    }],
+    "tool_choice": "auto"
+  }'
+```
 
 ### Failover Transparency
 - The `X-Llambo-Provider` header indicates which backend served the request

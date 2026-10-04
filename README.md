@@ -141,6 +141,11 @@ Config file location: `~/.config/llambo/config.json`
 | `capabilities` | Intent tags (e.g. `["chat", "code", "extraction"]`) |
 | `gateway.auth_token_env` | Preferred environment variable containing the gateway bearer token |
 | `gateway.allowed_origins` | Exact browser origins allowed by CORS; empty disables CORS |
+| `gateway.handler_timeout_seconds` | Per-request gateway handler timeout (default `90`) |
+| `gateway.write_timeout_seconds` | HTTP response write timeout (default `120`) |
+| `gateway.shutdown_timeout_seconds` | Graceful shutdown window (default `95`) |
+| `gateway.max_retained_jobs` | Cap on retained finished jobs (default `1000`) |
+| `gateway.max_retained_payload_bytes` | Cap on retained job payload bytes (default 64 MiB) |
 
 Non-loopback serving requires `--allow-remote`. Set gateway authentication
 before exposing Llambo beyond loopback.
