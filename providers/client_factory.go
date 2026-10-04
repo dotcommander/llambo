@@ -1,6 +1,7 @@
 package providers
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -34,27 +35,12 @@ type OpenAIClients struct {
 	closed         bool
 	clientFactory  providerFactory
 
-	// canaryPromoteOnce gates canary auto-promotion for THIS instance only.
-	// Promotion is a one-way transition (Routing.Canary set nil after success),
-	// so a second attempt is wasted disk IO that can race concurrent canary
-	// requests. Per-instance (not package-global) so a fresh OpenAIClients can
-	// promote again — across process lifetimes and across tests. Pointer +
-	// lazy init (canaryOnce) keeps existing struct literals valid without
-	// setting this field.
-	canaryPromoteOnce *sync.Once
-	canaryOnceInit    sync.Once
-}
-
-// canaryOnce returns this instance's canary-promotion gate, lazily allocating
-// it so struct literals that omit canaryPromoteOnce stay valid. canaryOnceInit
-// makes the allocation itself race-free.
-func (oc *OpenAIClients) canaryOnce() *sync.Once {
-	oc.canaryOnceInit.Do(func() {
-		if oc.canaryPromoteOnce == nil {
-			oc.canaryPromoteOnce = &sync.Once{}
-		}
-	})
-	return oc.canaryPromoteOnce
+	routingMu       sync.Mutex
+	routingState    *routingSnapshot
+	canaryMu        sync.Mutex
+	canaryEvaluator *canaryEvaluator
+	canaryStopped   bool
+	canaryUpdate    func(context.Context, func(*GlobalConfig) error) error
 }
 
 // GetClient returns the wormhole provider for a backend (thread-safe).
@@ -73,6 +59,7 @@ func (oc *OpenAIClients) Cleanup() {
 	if oc == nil {
 		return
 	}
+	oc.stopCanaryEvaluator()
 	if !oc.sharedMetrics && oc.RoutingMetrics != nil {
 		if err := oc.RoutingMetrics.Save(); err != nil {
 			oc.loggerOrDefault().Warn("save routing metrics failed", "path", oc.RoutingMetrics.path, "error", err)
@@ -248,6 +235,8 @@ func createOpenAIClientsWithRoutingMetrics(configs map[string]Config, routing Ro
 type providerFactory func(string, Config, string) (whtypes.Provider, error)
 
 func createOpenAIClientsWithRoutingMetricsAndFactory(configs map[string]Config, routing RoutingConfig, callback CircuitBreakerCallback, sharedMetrics *RoutingMetricsStore, factory providerFactory) (*OpenAIClients, error) {
+	configs = cloneProviderConfigs(configs)
+	routing = cloneRoutingConfig(routing)
 	clients := make(map[string]whtypes.Provider)
 	gens := make(map[string]*clientGeneration)
 	limiters := make(map[string]chan struct{})
@@ -303,6 +292,7 @@ func createOpenAIClientsWithRoutingMetricsAndFactory(configs map[string]Config, 
 		limiters:       limiters,
 		sharedMetrics:  hasSharedMetrics,
 		clientFactory:  factory,
+		routingState:   &routingSnapshot{configs: cloneProviderConfigs(configs), routing: cloneRoutingConfig(routing)},
 	}, nil
 }
 

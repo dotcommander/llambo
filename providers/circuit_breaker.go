@@ -1,6 +1,7 @@
 package providers
 
 import (
+	"context"
 	"errors"
 	"sync"
 	"time"
@@ -79,8 +80,9 @@ func (cb *CircuitBreaker) IsHealthy(name string) bool {
 				})
 			}
 		}
+		healthy := !h.Disabled
 		cb.mu.Unlock()
-		return true
+		return healthy
 	}
 
 	cb.mu.RUnlock()
@@ -91,7 +93,7 @@ func (cb *CircuitBreaker) IsHealthy(name string) bool {
 func (cb *CircuitBreaker) RecordFailure(name string, err error) {
 	// A failed client construction during key rotation is not a backend
 	// health signal — do not advance circuit-breaker state for it.
-	if errors.Is(err, ErrKeyClientInit) {
+	if errors.Is(err, ErrKeyClientInit) || IsConsumerError(err) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return
 	}
 

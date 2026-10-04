@@ -211,6 +211,9 @@ func TestExtractHTTPStatus(t *testing.T) {
 		{"bare status", "429", 429},
 		{"status prefix", "status 429", 429},
 		{"status colon", "status: 429", 429},
+		{"status code", "status code: 429", 429},
+		{"model number", "model revision 429 available", 0},
+		{"request number", "request 503 failed", 0},
 		{"status_code", "status_code: 401", 401},
 		{"no status", "some error", 0},
 		{"invalid number", "status: abc", 0},
@@ -303,5 +306,22 @@ func TestCaseInsensitivity(t *testing.T) {
 				t.Errorf("ClassifyError(%q) = %v, want %v", tt.errMsg, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestTypedStatusRemainsAuthoritativeOverText(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		status int
+		text   string
+		want   ErrorCategory
+	}{
+		{401, "bad gateway 502", AuthError},
+		{429, "service unavailable 503", RateLimitError},
+		{418, "rate limit gateway timeout", UnknownError},
+	} {
+		if got := ClassifyError(NewOpenAIError(test.text, test.status, nil)); got != test.want {
+			t.Errorf("status %d text %q classified %v, want %v", test.status, test.text, got, test.want)
+		}
 	}
 }

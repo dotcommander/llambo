@@ -69,12 +69,19 @@ func executeChatRequestWithIdentity(
 ) (string, *LLMUsage, string, []ToolCall, chatResponseIdentity, error) {
 	request := buildTextRequest(ctx, cfg, systemPrompt, userContent)
 	usedNativeStops := len(request.Stop) > 0
+	if _, structured := ctx.Value(structuredRequestKey{}).(StructuredChatRequest); structured {
+		usedNativeStops = false
+	}
 	start := time.Now()
 	slog.Debug("provider chat request: entry", "provider", cfg.GetProviderType(), "model", cfg.Model)
 
 	var lastErr error
 	for attempt := 0; attempt <= reqConfig.MaxRetries; attempt++ {
-		resp, err := client.Text(ctx, request)
+		attemptRequest := buildTextRequest(ctx, cfg, systemPrompt, userContent)
+		if len(request.Stop) == 0 {
+			attemptRequest.Stop = nil
+		}
+		resp, err := client.Text(ctx, attemptRequest)
 		if err == nil {
 			content, usage, finishReason, toolCalls, identity, err := extractContentFromTextResponseWithIdentity(resp, cfg.Model)
 			outcome := "success"
@@ -131,13 +138,22 @@ func executeChatStreamRequestWithIdentity(
 ) (string, *LLMUsage, string, []ToolCall, bool, chatResponseIdentity, error) {
 	request := buildTextRequest(ctx, cfg, systemPrompt, userContent)
 	usedNativeStops := len(request.Stop) > 0
+	if _, structured := ctx.Value(structuredRequestKey{}).(StructuredChatRequest); structured {
+		usedNativeStops = false
+	}
 	start := time.Now()
 	slog.Debug("provider chat stream request: entry", "provider", cfg.GetProviderType(), "model", cfg.Model)
 
 	var lastErr error
 	for attempt := 0; attempt <= reqConfig.MaxRetries; attempt++ {
-		stream, err := client.Stream(ctx, request)
+		attemptCtx, cancel := context.WithCancel(ctx)
+		attemptRequest := buildTextRequest(ctx, cfg, systemPrompt, userContent)
+		if len(request.Stop) == 0 {
+			attemptRequest.Stop = nil
+		}
+		stream, err := client.Stream(attemptCtx, attemptRequest)
 		if err != nil {
+			cancel()
 			action, wrapped := decideChatRetry(err, cfg, attempt, reqConfig.MaxRetries, usedNativeStops, false)
 			if action == chatRetryWithoutNativeStops {
 				request.Stop = nil
@@ -158,6 +174,7 @@ func executeChatStreamRequestWithIdentity(
 		}
 
 		content, usage, finishReason, toolCalls, emitted, identity, err := consumeTextStream(stream, cfg.Model, onChunk)
+		cancel()
 		if err == nil {
 			slog.Debug("provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "success")
 			return content, usageOrEstimate(usage, systemPrompt, userContent, content), finishReason, toolCalls, emitted, identity, nil

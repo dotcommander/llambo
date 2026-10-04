@@ -25,16 +25,23 @@ type chatExecutionOutcome struct {
 }
 
 type executionCoordinator struct {
-	oc      *OpenAIClients
-	configs map[string]Config
-	counter *uint64
+	oc                  *OpenAIClients
+	configs             map[string]Config
+	snapshotConfigs     map[string]Config
+	counter             *uint64
+	routing             RoutingConfig
+	promotionIneligible bool
+	failoverCallback    FailoverCallback
 }
 
 func newExecutionCoordinator(oc *OpenAIClients, configs map[string]Config, counter *uint64) executionCoordinator {
+	configs, routing := oc.routingSnapshot(configs)
 	return executionCoordinator{
-		oc:      oc,
-		configs: configs,
-		counter: counter,
+		oc:              oc,
+		configs:         configs,
+		snapshotConfigs: configs,
+		counter:         counter,
+		routing:         routing,
 	}
 }
 
@@ -51,8 +58,8 @@ func (c executionCoordinator) collectEnabledProvidersForPrompt(systemPrompt, use
 	if c.oc.RoutingMetrics != nil {
 		metrics = c.oc.RoutingMetrics.Snapshot()
 	}
-	scored := scoreCandidates(c.configs, healthy, c.oc.RoutingConfig, metrics, intent, estimatedTokens)
-	decision := &RouteDecision{Mode: c.oc.RoutingConfig.Mode, Intent: intent, Candidates: scored}
+	scored := scoreCandidates(c.configs, healthy, c.routing, metrics, intent, estimatedTokens)
+	decision := &RouteDecision{Mode: c.routing.Mode, Intent: intent, Candidates: scored}
 
 	if len(scored) > 0 {
 		decision.Chosen = scored[0].Provider
@@ -63,7 +70,10 @@ func (c executionCoordinator) collectEnabledProvidersForPrompt(systemPrompt, use
 	totalWeight := 0
 	if len(scored) == 0 {
 		for _, b := range healthy {
-			cfg := c.configs[b.Name]
+			cfg, exists := c.configs[b.Name]
+			if !exists {
+				continue
+			}
 			weight := cfg.GetWorkers()
 			enabled = append(enabled, providerInfo{name: b.Name, cfg: cfg, weight: weight})
 			totalWeight += weight
@@ -146,7 +156,7 @@ func (c executionCoordinator) plan(systemPrompt, userContent string, allowUnheal
 	if len(enabled) == 0 && allowUnhealthyFallback {
 		enabled, totalWeight = c.collectConfiguredProviders()
 		if decision == nil {
-			decision = &RouteDecision{Mode: c.oc.RoutingConfig.Mode}
+			decision = &RouteDecision{Mode: c.routing.Mode}
 		}
 	}
 	if len(enabled) == 0 {
@@ -155,7 +165,7 @@ func (c executionCoordinator) plan(systemPrompt, userContent string, allowUnheal
 
 	// Canary routing: deterministically route a fraction of requests to the canary provider
 	isCanary := false
-	canary := c.oc.RoutingConfig.Canary
+	canary := c.routing.Canary
 	var selected providerInfo
 	if canary != nil && shouldRouteToCanary(canary, systemPrompt, userContent) {
 		for _, info := range enabled {

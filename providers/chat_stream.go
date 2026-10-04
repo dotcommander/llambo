@@ -37,18 +37,31 @@ func consumeTextStream(stream <-chan whtypes.TextChunk, model string, onChunk Ch
 			out.ContentDelta = delta
 		}
 
-		chunkToolCalls := wormholeToolCalls(chunk)
-		if len(chunkToolCalls) > 0 {
-			out.ToolDeltas = make([]ToolCallDelta, 0, len(chunkToolCalls))
-			for _, tc := range chunkToolCalls {
-				toolCalls = append(toolCalls, tc)
-				out.ToolDeltas = append(out.ToolDeltas, ToolCallDelta{
-					Index:          len(toolCalls) - 1,
-					ID:             tc.ID,
-					Name:           tc.Name,
-					ArgumentsDelta: tc.Arguments,
-				})
+		rawCalls := chunk.ToolCalls
+		if len(rawCalls) == 0 && chunk.Delta != nil {
+			rawCalls = chunk.Delta.ToolCalls
+		}
+		if len(rawCalls) == 0 && chunk.ToolCall != nil {
+			rawCalls = []whtypes.ToolCall{*chunk.ToolCall}
+		}
+		for _, raw := range rawCalls {
+			tc := convertWormholeToolCalls([]whtypes.ToolCall{raw})[0]
+			index := raw.Index
+			if index < 0 || index > 4096 {
+				return "", usage, finishReason, nil, emitted, identity, fmt.Errorf("invalid tool index %d", index)
 			}
+			for len(toolCalls) <= index {
+				toolCalls = append(toolCalls, ToolCall{})
+			}
+			current := &toolCalls[index]
+			if tc.ID != "" {
+				current.ID = tc.ID
+			}
+			if tc.Name != "" {
+				current.Name = tc.Name
+			}
+			current.Arguments += tc.Arguments
+			out.ToolDeltas = append(out.ToolDeltas, ToolCallDelta{Index: index, ID: tc.ID, Name: tc.Name, ArgumentsDelta: tc.Arguments})
 		}
 
 		if chunk.FinishReason != nil {
@@ -60,7 +73,7 @@ func consumeTextStream(stream <-chan whtypes.TextChunk, model string, onChunk Ch
 			emitted = true
 			if onChunk != nil {
 				if err := onChunk(out); err != nil {
-					return "", usage, finishReason, compactToolCalls(toolCalls), emitted, identity, err
+					return "", usage, finishReason, compactToolCalls(toolCalls), emitted, identity, &ConsumerError{Err: err}
 				}
 			}
 		}

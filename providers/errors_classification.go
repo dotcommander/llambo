@@ -2,6 +2,7 @@ package providers
 
 import (
 	"errors"
+	whtypes "github.com/garyblankenship/wormhole/v3/types"
 	"strings"
 	"time"
 )
@@ -44,6 +45,14 @@ func ClassifyError(err error) ErrorCategory {
 		return UnknownError
 	}
 
+	var upstream *whtypes.WormholeError
+	if errors.As(err, &upstream) && upstream.StatusCode > 0 {
+		return classifyByStatusCode(upstream.StatusCode)
+	}
+	var status interface{ StatusCode() int }
+	if errors.As(err, &status) && status.StatusCode() > 0 {
+		return classifyByStatusCode(status.StatusCode())
+	}
 	// Try to get HTTP status code from OpenAIError (errors.As unwraps the chain)
 	var oe *OpenAIError
 	if errors.As(err, &oe) && oe.statusCode > 0 {

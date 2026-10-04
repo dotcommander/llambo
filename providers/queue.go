@@ -33,20 +33,26 @@ type BackendQueue struct {
 
 // Job is work to be processed
 type Job struct {
-	ID           string
-	SystemPrompt string
-	UserContent  string
+	ID                  string
+	SystemPrompt        string
+	UserContent         string
+	Request             *StructuredChatRequest
+	Target              ResolvedTarget
+	plan                *chatExecutionPlan
+	coordinatorSnapshot *executionCoordinator
 }
 
 // Result is completed work
 type Result struct {
-	ID       string
-	Content  string
-	Backend  string
-	Model    string
-	Duration time.Duration
-	Error    error
-	Usage    *LLMUsage // token usage and cost (may be nil)
+	ID           string
+	Content      string
+	Backend      string
+	Model        string
+	Duration     time.Duration
+	Error        error
+	ToolCalls    []ToolCall
+	FinishReason string
+	Usage        *LLMUsage // token usage and cost (may be nil)
 }
 
 // JobStarted signals when a job begins processing
@@ -89,15 +95,24 @@ func (q *BackendQueue) nextBackend() Backend {
 }
 
 func (q *BackendQueue) executeJob(ctx context.Context, job Job, plan chatExecutionPlan) Result {
-	outcome, err := q.coordinator().execute(ctx, plan, job.SystemPrompt, job.UserContent, nil, q.executeChatAttempt)
+	if job.Request != nil {
+		ctx = structuredContext(ctx, *job.Request)
+	}
+	coordinator := q.coordinator()
+	if job.coordinatorSnapshot != nil {
+		coordinator = *job.coordinatorSnapshot
+	}
+	outcome, err := coordinator.execute(ctx, plan, job.SystemPrompt, job.UserContent, nil, q.executeChatAttempt)
 	return Result{
-		ID:       job.ID,
-		Content:  outcome.result.content,
-		Backend:  outcome.provider.name,
-		Model:    outcome.provider.cfg.Model,
-		Duration: outcome.result.duration,
-		Error:    err,
-		Usage:    outcome.result.usage,
+		ID:           job.ID,
+		Content:      outcome.result.content,
+		Backend:      outcome.provider.name,
+		Model:        outcomeModel(outcome),
+		Duration:     outcome.result.duration,
+		Error:        err,
+		Usage:        outcome.result.usage,
+		ToolCalls:    append([]ToolCall(nil), outcome.result.toolCalls...),
+		FinishReason: outcome.result.finishReason,
 	}
 }
 
@@ -191,36 +206,48 @@ func (q *BackendQueue) ProcessStream(ctx context.Context, jobs <-chan Job, resul
 // chat sends one request to a backend with a bounded timeout derived
 // from parent. parent must be non-nil; the caller (chatRequest) always
 // has a context from the worker pool.
-func (q *BackendQueue) chat(parent context.Context, backend Backend, systemPrompt, userContent string) (string, *LLMUsage, string, *clientGeneration, error) {
+func (q *BackendQueue) chat(parent context.Context, backend Backend, cfg Config, systemPrompt, userContent string) (chatRequestResult, error) {
 	ctx, cancel := context.WithTimeout(parent, DefaultRequestTimeout)
 	defer cancel()
+	start := time.Now()
 	if err := q.oc.acquireBackend(ctx, backend.Name); err != nil {
-		return "", nil, "", nil, err
+		return chatRequestResult{}, err
 	}
 	defer q.oc.releaseBackend(backend.Name)
 	if !q.oc.CircuitBreaker.IsHealthy(backend.Name) {
-		return "", nil, "", nil, ErrBackendUnavailable
+		return chatRequestResult{}, ErrBackendUnavailable
 	}
-
-	// Use custom executor if set (for testing)
 	if q.executor != nil {
+		if structured, ok := ctx.Value(structuredRequestKey{}).(StructuredChatRequest); ok {
+			executor, ok := q.executor.(StructuredChatExecutor)
+			if !ok {
+				return chatRequestResult{}, fmt.Errorf("executor does not support ordered requests")
+			}
+			response, err := executor.ExecuteStructuredChat(ctx, backend.Name, cfg, structured)
+			return finalizeChatRequest(backend.Name, cfg, start, response.Content, response.Usage, response.FinishReason, response.ToolCalls, err)
+		}
 		content, err := q.executor.ExecuteChat(ctx, backend.Name, systemPrompt, userContent)
-		return content, nil, "", nil, err // test executor doesn't return usage
+		return finalizeChatRequest(backend.Name, cfg, start, content, nil, "", nil, err)
 	}
-
-	cfg := q.configs[backend.Name]
-
 	lease, err := q.oc.leaseClientAfterAdmission(backend.Name)
 	if err != nil {
-		return "", nil, "", nil, fmt.Errorf("no client available for backend %q: %w", backend.Name, err)
+		return chatRequestResult{}, fmt.Errorf("no client available for backend %q: %w", backend.Name, err)
 	}
 	defer lease.Release()
-	content, usage, _, _, err := ExecuteChatRequest(ctx, lease.Client(), cfg, systemPrompt, userContent, DefaultChatConfig)
-	return content, usage, lease.keyForRotation(), lease.generationForRotation(), err
+	content, usage, finish, calls, identity, err := executeChatRequestWithIdentity(ctx, lease.Client(), cfg, systemPrompt, userContent, DefaultChatConfig)
+	result, err := finalizeChatRequest(backend.Name, cfg, start, content, usage, finish, calls, err)
+	result.clientKey = lease.keyForRotation()
+	result.clientGeneration = lease.generationForRotation()
+	result.actualProvider = identity.provider
+	result.actualModel = identity.model
+	return result, err
 }
 
 func (q *BackendQueue) planJob(job Job) (chatExecutionPlan, error) {
-	return q.coordinator().plan(job.SystemPrompt, job.UserContent, true)
+	if job.plan != nil {
+		return *job.plan, nil
+	}
+	return q.coordinator().withTarget(job.Target).plan(job.SystemPrompt, job.UserContent, true)
 }
 
 func (q *BackendQueue) coordinator() executionCoordinator {
@@ -236,12 +263,8 @@ func (q *BackendQueue) chatRequestWithKeyRotation(ctx context.Context, backendNa
 }
 
 func (q *BackendQueue) chatRequest(ctx context.Context, backendName string, cfg Config, systemPrompt, userContent string) (chatRequestResult, error) {
-	start := time.Now()
-	content, usage, key, generation, err := q.chat(ctx, Backend{Name: backendName, Model: cfg.Model}, systemPrompt, userContent)
-	result, err := finalizeChatRequest(backendName, cfg, start, content, usage, "", nil, err)
-	result.clientKey = key
-	result.clientGeneration = generation
-	return result, err
+	return q.chat(ctx, Backend{Name: backendName, Model: cfg.Model}, cfg, systemPrompt, userContent)
+
 }
 
 // WorkerCount returns total number of parallel workers across all backends
@@ -271,4 +294,31 @@ func (q *BackendQueue) Shutdown() {
 // GetCircuitBreaker returns the circuit breaker for health monitoring
 func (q *BackendQueue) GetCircuitBreaker() *CircuitBreaker {
 	return q.oc.CircuitBreaker
+}
+
+// PrepareJob freezes the routing generation at gateway admission.
+func (q *BackendQueue) PrepareJob(job Job) (Job, error) {
+	if job.Request != nil {
+		if err := job.Request.Validate(); err != nil {
+			return job, err
+		}
+		cloned := cloneStructuredRequest(*job.Request)
+		job.Request = &cloned
+		job.SystemPrompt, job.UserContent = job.Request.projection()
+	}
+	coordinator := q.coordinator().withTarget(job.Target)
+	plan, err := coordinator.plan(job.SystemPrompt, job.UserContent, true)
+	if err != nil {
+		return job, err
+	}
+	job.plan = &plan
+	job.coordinatorSnapshot = &coordinator
+	return job, nil
+}
+
+func outcomeModel(outcome chatExecutionOutcome) string {
+	if outcome.result.actualModel != "" {
+		return outcome.result.actualModel
+	}
+	return outcome.provider.cfg.Model
 }

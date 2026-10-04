@@ -3,37 +3,35 @@ package providers
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"time"
 )
 
 func executeChatAttemptWithKeyRotation(ctx context.Context, backendName string, cfg Config, systemPrompt, userContent string, rotateKey func(string, chatRequestResult) (bool, error), request func(context.Context, string, Config, string, string) (chatRequestResult, error)) (chatRequestResult, error) {
-	slog.Debug("provider attempt: entry", "provider", backendName, "model", cfg.Model)
-	result, err := request(ctx, backendName, cfg, systemPrompt, userContent)
-	if err == nil {
-		slog.Debug("provider attempt: exit", "provider", backendName, "model", cfg.Model, "latency", result.duration, "retry_count", 0, "outcome", "success")
-		return result, nil
-	}
-	if rotateKey != nil && IsRateLimitError(err) {
-		rotated, rotErr := rotateKey(backendName, result)
-		if rotated {
-			retryResult, retryErr := request(ctx, backendName, cfg, systemPrompt, userContent)
-			outcome := "success"
-			if retryErr != nil {
-				outcome = "error"
-			}
-			slog.Debug("provider attempt: exit", "provider", backendName, "model", cfg.Model, "latency", retryResult.duration, "retry_count", 1, "outcome", outcome)
-			return retryResult, retryErr
+	seen := make(map[string]bool)
+	for {
+		if err := ctx.Err(); err != nil {
+			return chatRequestResult{}, err
 		}
-		// A client-construction failure during rotation is NOT a quota event;
-		// propagate the distinct error so the circuit breaker stays healthy.
-		if rotErr != nil {
-			slog.Debug("provider attempt: exit", "provider", backendName, "model", cfg.Model, "latency", result.duration, "retry_count", 0, "outcome", "error")
-			return result, rotErr
+		result, err := request(ctx, backendName, cfg, systemPrompt, userContent)
+		if err != nil && ctx.Err() != nil {
+			return result, ctx.Err()
+		}
+		if err == nil || rotateKey == nil || !IsRateLimitError(err) {
+			return result, err
+		}
+		if seen[result.clientKey] {
+			return result, err
+		}
+		seen[result.clientKey] = true
+		rotated, rotationErr := rotateKey(backendName, result)
+		if rotationErr != nil {
+			return result, rotationErr
+		}
+		if !rotated {
+			return result, err
 		}
 	}
-	slog.Debug("provider attempt: exit", "provider", backendName, "model", cfg.Model, "latency", result.duration, "retry_count", 0, "outcome", "error")
-	return result, err
+
 }
 
 func finalizeChatRequest(backendName string, cfg Config, start time.Time, content string, usage *LLMUsage, finishReason string, toolCalls []ToolCall, err error) (chatRequestResult, error) {

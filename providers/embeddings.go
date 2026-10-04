@@ -56,10 +56,12 @@ func DefaultEmbedConfig() EmbedConfig {
 
 // OpenAIEmbedding implements EmbeddingProvider using a wormhole openai provider
 type OpenAIEmbedding struct {
-	provider   *whopenai.Provider
-	model      string
-	dimensions int
-	batchSize  int
+	providerName string
+	configs      map[string]Config
+	provider     *whopenai.Provider
+	model        string
+	dimensions   int
+	batchSize    int
 }
 
 // NewOpenAIEmbedding creates an embedding provider from global config
@@ -122,10 +124,12 @@ func NewOpenAIEmbeddingWithConfig(embedCfg EmbedConfig, providerConfigs map[stri
 	})
 
 	return &OpenAIEmbedding{
-		provider:   provider,
-		model:      embedCfg.Model,
-		dimensions: embedCfg.Dimensions,
-		batchSize:  embedCfg.BatchSize,
+		provider:     provider,
+		providerName: selectedName,
+		configs:      cloneEmbeddingConfigs(providerConfigs),
+		model:        embedCfg.Model,
+		dimensions:   embedCfg.Dimensions,
+		batchSize:    embedCfg.BatchSize,
 	}, nil
 }
 
@@ -180,4 +184,8 @@ func (e *OpenAIEmbedding) ModelName() string {
 // Close is a no-op for OpenAI clients
 func (e *OpenAIEmbedding) Close() {
 	// OpenAI clients don't need explicit cleanup
+}
+
+func cloneEmbeddingConfigs(configs map[string]Config) map[string]Config {
+	return cloneProviderConfigs(configs)
 }

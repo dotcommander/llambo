@@ -11,27 +11,6 @@ import (
 	"time"
 )
 
-func TestCanaryOnce_PerInstanceReFires(t *testing.T) {
-	t.Parallel()
-
-	count := func(oc *OpenAIClients) int {
-		n := 0
-		oc.canaryOnce().Do(func() { n++ })
-		oc.canaryOnce().Do(func() { n++ }) // second call on SAME instance must no-op
-		return n
-	}
-
-	a := &OpenAIClients{}
-	b := &OpenAIClients{}
-
-	if got := count(a); got != 1 {
-		t.Fatalf("instance A: want exactly one fire, got %d", got)
-	}
-	if got := count(b); got != 1 {
-		t.Fatalf("instance B (fresh instance): want one fire, got %d, gate leaked across instances", got)
-	}
-}
-
 func TestPerformCanaryAutoPromotePersistsRawConfig(t *testing.T) {
 	setTestConfigPath(t)
 	const envOnlyKey = "env-only-auto-promote-secret"
@@ -68,14 +47,14 @@ func TestPerformCanaryAutoPromotePersistsRawConfig(t *testing.T) {
   "routing": {"canary":{"provider":"canary","traffic_pct":0.25,"promote_after":5,"baseline":"baseline","started_at":"`+startedAt.Format(time.RFC3339)+`"}}
 }`)
 
-	performCanaryAutoPromote(
-		&CanaryConfig{Provider: "canary", TrafficPct: 0.25, PromoteAfter: 5, Baseline: "baseline", StartedAt: startedAt.Format(time.RFC3339)},
-		eventsPath,
-		map[string]Config{
-			"baseline": {Priority: 7},
-			"canary":   {Priority: 19},
-		},
-	)
+	canary := &CanaryConfig{Provider: "canary", TrafficPct: 0.25, PromoteAfter: 5, Baseline: "baseline", StartedAt: startedAt.Format(time.RFC3339)}
+	oc := &OpenAIClients{}
+	snapshot := &routingSnapshot{routing: RoutingConfig{Canary: canary, EventsPath: eventsPath}, configs: map[string]Config{
+		"baseline": {Priority: 7}, "canary": {Priority: 19},
+	}}
+	if err := oc.evaluateAndPublishCanary(context.Background(), snapshot); err != nil {
+		t.Fatalf("promote: %v", err)
+	}
 
 	data, err := os.ReadFile(ConfigFile())
 	if err != nil {

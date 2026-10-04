@@ -16,19 +16,20 @@ import (
 
 // RouteEvent captures one routing decision and outcome.
 type RouteEvent struct {
-	Timestamp       time.Time        `json:"timestamp"`
-	Mode            string           `json:"mode"`
-	Intent          RoutingIntent    `json:"intent"`
-	EstimatedTokens int              `json:"estimated_tokens"`
-	PlannedProvider string           `json:"planned_provider,omitempty"`
-	ChosenProvider  string           `json:"chosen_provider,omitempty"`
-	Model           string           `json:"model,omitempty"`
-	LatencyMs       int64            `json:"latency_ms,omitempty"`
-	CostUSD         float64          `json:"cost_usd,omitempty"`
-	Success         bool             `json:"success"`
-	Error           string           `json:"error,omitempty"`
-	Candidates      []CandidateScore `json:"candidates,omitempty"`
-	IsCanary        bool             `json:"is_canary,omitempty"`
+	Timestamp           time.Time        `json:"timestamp"`
+	Mode                string           `json:"mode"`
+	Intent              RoutingIntent    `json:"intent"`
+	EstimatedTokens     int              `json:"estimated_tokens"`
+	PlannedProvider     string           `json:"planned_provider,omitempty"`
+	ChosenProvider      string           `json:"chosen_provider,omitempty"`
+	Model               string           `json:"model,omitempty"`
+	LatencyMs           int64            `json:"latency_ms,omitempty"`
+	CostUSD             float64          `json:"cost_usd,omitempty"`
+	Success             bool             `json:"success"`
+	Error               string           `json:"error,omitempty"`
+	Candidates          []CandidateScore `json:"candidates,omitempty"`
+	IsCanary            bool             `json:"is_canary,omitempty"`
+	PromotionIneligible bool             `json:"promotion_ineligible,omitempty"`
 }
 
 // RouteEventLogger appends route events to JSONL.

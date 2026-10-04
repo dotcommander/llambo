@@ -111,6 +111,9 @@ var ModelUnsupportedPatterns = []string{
 // - Timeout errors: i/o timeout, tls handshake timeout
 // - Temporary failures: eof, temporary failure
 var TransientPatterns = []string{
+	"bad gateway",
+	"service unavailable",
+	"gateway timeout",
 	"server closed connection",
 	"connection reset",
 	"connection refused",

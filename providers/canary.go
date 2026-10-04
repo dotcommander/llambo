@@ -109,6 +109,9 @@ func EvaluateCanary(canary *CanaryConfig, events []RouteEvent, configs map[strin
 	}
 
 	for _, ev := range events {
+		if ev.PromotionIneligible {
+			continue
+		}
 		if !startFilter.IsZero() && ev.Timestamp.Before(startFilter) {
 			continue
 		}
@@ -134,6 +137,9 @@ func EvaluateCanary(canary *CanaryConfig, events []RouteEvent, configs map[strin
 	if baseline == "" {
 		counts := make(map[string]int)
 		for _, ev := range events {
+			if ev.PromotionIneligible {
+				continue
+			}
 			if !startFilter.IsZero() && ev.Timestamp.Before(startFilter) {
 				continue
 			}
@@ -150,6 +156,9 @@ func EvaluateCanary(canary *CanaryConfig, events []RouteEvent, configs map[strin
 		}
 		status.BaselineProvider = baseline
 		for _, ev := range events {
+			if ev.PromotionIneligible {
+				continue
+			}
 			if !startFilter.IsZero() && ev.Timestamp.Before(startFilter) {
 				continue
 			}

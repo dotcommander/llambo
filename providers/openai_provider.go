@@ -122,11 +122,12 @@ func (p *OpenAIProvider) ChatWithInfo(ctx context.Context, systemPrompt, userCon
 
 // ChatWithInfoContext sends a request with explicit context control
 func (p *OpenAIProvider) ChatWithInfoContext(ctx context.Context, systemPrompt, userContent string) (ChatResult, error) {
-	plan, err := p.coordinator().plan(systemPrompt, userContent, false)
+	coordinator := p.coordinator()
+	plan, err := coordinator.plan(systemPrompt, userContent, false)
 	if err != nil {
 		return ChatResult{}, err
 	}
-	outcome, err := p.coordinator().execute(ctx, plan, systemPrompt, userContent, p.failoverCallback, p.executeChatAttempt)
+	outcome, err := coordinator.execute(ctx, plan, systemPrompt, userContent, p.failoverCallback, p.executeChatAttempt)
 	if err != nil {
 		return ChatResult{}, err
 	}
@@ -135,11 +136,12 @@ func (p *OpenAIProvider) ChatWithInfoContext(ctx context.Context, systemPrompt, 
 
 // ChatStreamWithInfoContext streams response deltas and returns final metadata.
 func (p *OpenAIProvider) ChatStreamWithInfoContext(ctx context.Context, systemPrompt, userContent string, onChunk ChatStreamHandler) (ChatResult, error) {
-	plan, err := p.coordinator().plan(systemPrompt, userContent, false)
+	coordinator := p.coordinator()
+	plan, err := coordinator.plan(systemPrompt, userContent, false)
 	if err != nil {
 		return ChatResult{}, err
 	}
-	outcome, err := p.coordinator().executeStream(ctx, plan, systemPrompt, userContent, onChunk, p.executeStreamAttempt)
+	outcome, err := coordinator.executeStream(ctx, plan, systemPrompt, userContent, onChunk, p.executeStreamAttempt)
 	if err != nil {
 		return ChatResult{}, err
 	}
@@ -178,7 +180,9 @@ func decisionCandidates(decision *RouteDecision) []CandidateScore {
 }
 
 func (p *OpenAIProvider) coordinator() executionCoordinator {
-	return newExecutionCoordinator(p.oc, p.configs, &p.requestCounter)
+	coordinator := newExecutionCoordinator(p.oc, p.configs, &p.requestCounter)
+	coordinator.failoverCallback = p.failoverCallback
+	return coordinator
 }
 
 func (p *OpenAIProvider) executeChatAttempt(ctx context.Context, info providerInfo, systemPrompt, userContent string) (chatRequestResult, error) {
@@ -227,16 +231,31 @@ func (p *OpenAIProvider) chatRequestWithKeyRotation(ctx context.Context, backend
 }
 
 func (p *OpenAIProvider) chatStreamRequestWithKeyRotation(ctx context.Context, backendName string, cfg Config, systemPrompt, userContent string, onChunk ChatStreamHandler) (chatRequestResult, bool, error) {
-	result, emitted, err := p.chatStreamRequest(ctx, backendName, cfg, systemPrompt, userContent, onChunk)
-	if err == nil {
-		return result, emitted, nil
+	seen := make(map[string]bool)
+	for {
+		if err := ctx.Err(); err != nil {
+			return chatRequestResult{}, false, err
+		}
+		result, emitted, err := p.chatStreamRequest(ctx, backendName, cfg, systemPrompt, userContent, onChunk)
+		if err != nil && !IsConsumerError(err) && ctx.Err() != nil {
+			return result, emitted, ctx.Err()
+		}
+		if err == nil || emitted || !IsRateLimitError(err) {
+			return result, emitted, err
+		}
+		if seen[result.clientKey] {
+			return result, emitted, err
+		}
+		seen[result.clientKey] = true
+		rotated, rotationErr := p.rotateKeyWithErrorForResult(backendName, result)
+		if rotationErr != nil {
+			return result, emitted, rotationErr
+		}
+		if !rotated {
+			return result, emitted, err
+		}
 	}
 
-	if !emitted && IsRateLimitError(err) && p.rotateKeyForResult(backendName, result) {
-		return p.chatStreamRequest(ctx, backendName, cfg, systemPrompt, userContent, onChunk)
-	}
-
-	return result, emitted, err
 }
 
 // chatRequestResult holds content and usage from a chat request

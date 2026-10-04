@@ -13,12 +13,19 @@ import (
 // =============================================================================
 
 // httpStatusPattern matches HTTP status codes in error messages.
-// Matches patterns like "429", "status 429", "status: 429", "status_code: 429"
-var httpStatusPattern = regexp.MustCompile(`(?:status[_\s:]*)?(\d{3})`)
+// Matches explicit HTTP or status contexts, never unrelated model numbers.
+var httpStatusPattern = regexp.MustCompile(`(?i)(?:http(?:/\d(?:\.\d)?)?\s+|status(?:_code|\s+code)?[\s:=]+)([1-5][0-9]{2})(?:\b)`)
 
 // extractHTTPStatus attempts to extract an HTTP status code from an error message.
 // Returns 0 if no valid status code is found.
 func extractHTTPStatus(msg string) int {
+	// A status-only error is unambiguous; numbers embedded in ordinary text are not.
+	trimmed := strings.TrimSpace(msg)
+	if len(trimmed) == 3 {
+		if code, err := strconv.Atoi(trimmed); err == nil && code >= 100 && code < 600 {
+			return code
+		}
+	}
 	matches := httpStatusPattern.FindAllStringSubmatch(msg, -1)
 	for _, match := range matches {
 		if len(match) >= 2 {
