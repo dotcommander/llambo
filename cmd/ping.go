@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/dotcommander/llambo/internal/catalog"
@@ -116,11 +115,7 @@ func (cliOpts *invocationOptions) runPing(cmd *commandIO, args []string) error {
 		return results[i].Latency < results[j].Latency
 	})
 
-	fmt.Fprintf(out, "%-12s %-35s %8s  %s\n", "PROVIDER", "MODEL", "LATENCY", "RESULT")
-	fmt.Fprintln(out, strings.Repeat("─", 90))
-	for _, result := range results {
-		printResult(out, result)
-	}
+	printResultsTable(out, results)
 
 	// Summary
 	printSummary(out, results)
