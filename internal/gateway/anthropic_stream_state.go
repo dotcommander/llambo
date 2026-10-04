@@ -15,9 +15,8 @@ func (s *anthropicStreamState) startTextBlock(w http.ResponseWriter, flusher htt
 		return nil
 	}
 	s.textStarted = true
-	if s.nextIndex == 0 {
-		s.nextIndex = 1
-	}
+	s.textIndex = s.nextIndex
+	s.nextIndex++
 	s.openBlocks = append(s.openBlocks, s.textIndex)
 	return writeAnthropicSSEEvent(w, flusher, "content_block_start", map[string]any{
 		"type": "content_block_start", "index": s.textIndex,

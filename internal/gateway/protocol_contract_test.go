@@ -69,7 +69,7 @@ func TestHandler_ChatCompletionStream_UsesActualChunkMetadata(t *testing.T) {
 	t.Parallel()
 	server, stream := newHandlerStreamTestServer(t)
 	stream.streamChunks = []providers.ChatStreamChunk{{ContentDelta: "hello", Provider: "routed-backend", Model: "routed-model"}}
-	req := ChatCompletionRequest{Model: "requested-model", Messages: []Message{{Role: "user", Content: "hello"}}, Stream: true}
+	req := ChatCompletionRequest{Model: "requested-model", Messages: []Message{{Role: "user", Content: "hello"}}, Stream: true, StreamOptions: &StreamOptions{IncludeUsage: true}}
 	rr := makeRequest(t, server.handleChatCompletion, http.MethodPost, "/v1/chat/completions", req)
 	if got := rr.Header().Get("X-Llambo-Provider"); got != "routed-backend" {
 		t.Fatalf("provider header = %q, want routed-backend", got)
@@ -84,7 +84,7 @@ func TestHandler_ChatCompletionStream_ZeroDeltasUseResultMetadata(t *testing.T) 
 	server, stream := newHandlerStreamTestServer(t)
 	stream.streamChunks = nil
 	stream.streamResult = providers.ChatResult{Provider: "routed-backend", Model: "routed-model", FinishReason: "stop"}
-	req := ChatCompletionRequest{Model: "requested-model", Messages: []Message{{Role: "user", Content: "hello"}}, Stream: true}
+	req := ChatCompletionRequest{Model: "requested-model", Messages: []Message{{Role: "user", Content: "hello"}}, Stream: true, StreamOptions: &StreamOptions{IncludeUsage: true}}
 	rr := makeRequest(t, server.handleChatCompletion, http.MethodPost, "/v1/chat/completions", req)
 	if got := rr.Header().Get("X-Llambo-Model"); got != "routed-model" {
 		t.Fatalf("model header = %q, want routed-model", got)
@@ -109,7 +109,7 @@ func TestHandler_ChatCompletionStream_ZeroDeltaRolePrecedesTerminalEvents(t *tes
 			server, stream := newHandlerStreamTestServer(t)
 			stream.streamChunks = tc.chunks
 			stream.streamResult = providers.ChatResult{Provider: "routed-backend", Model: "routed-model", FinishReason: "stop"}
-			req := ChatCompletionRequest{Model: "requested-model", Messages: []Message{{Role: "user", Content: "hello"}}, Stream: true}
+			req := ChatCompletionRequest{Model: "requested-model", Messages: []Message{{Role: "user", Content: "hello"}}, Stream: true, StreamOptions: &StreamOptions{IncludeUsage: true}}
 			rr := makeRequest(t, server.handleChatCompletion, http.MethodPost, "/v1/chat/completions", req)
 
 			events := strings.Split(strings.TrimSpace(rr.Body.String()), "\n\n")
@@ -203,7 +203,7 @@ func TestValidateJobBatch_Contracts(t *testing.T) {
 		{"blank id", []JobRequest{{ID: " ", Messages: valid[0].Messages}}, "requests[0].id"},
 		{"exact duplicate", []JobRequest{{ID: "a", Messages: valid[0].Messages}, {ID: "a", Messages: valid[0].Messages}}, "requests[1].id"},
 		{"missing messages", []JobRequest{{ID: "a"}}, "requests[0].messages"},
-		{"invalid role", []JobRequest{{ID: "a", Messages: []Message{{Role: "tool", Content: "x"}}}}, "requests[0].messages[0].role"},
+		{"invalid role", []JobRequest{{ID: "a", Messages: []Message{{Role: "tool", Content: "x"}}}}, "requests[0].messages[0].tool_call_id"},
 		{"blank content", []JobRequest{{ID: "a", Messages: []Message{{Role: "user", Content: " "}}}}, "requests[0].messages[0].content"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

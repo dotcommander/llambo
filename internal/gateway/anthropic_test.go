@@ -113,7 +113,7 @@ func TestTranslateAnthropicRequest_RejectsImageBlocks(t *testing.T) {
 	}
 }
 
-func TestTranslateAnthropicRequest_AppendsContinuationForFinalAssistantPrefill(t *testing.T) {
+func TestTranslateAnthropicRequest_PreservesFinalAssistantPrefill(t *testing.T) {
 	t.Parallel()
 	req := AnthropicMessagesRequest{
 		Model:     "claude-3-5-sonnet",
@@ -128,15 +128,8 @@ func TestTranslateAnthropicRequest_AppendsContinuationForFinalAssistantPrefill(t
 	if err != nil {
 		t.Fatalf("Expected successful translation, got error: %v", err)
 	}
-	if len(out.Messages) != 3 {
-		t.Fatalf("Expected 3 messages after synthetic continuation prompt, got %d", len(out.Messages))
-	}
-	last := out.Messages[len(out.Messages)-1]
-	if last.Role != "user" {
-		t.Fatalf("Expected synthetic user message, got role %q", last.Role)
-	}
-	if last.Content != anthropicPrefillContinuationPrompt {
-		t.Fatalf("Unexpected synthetic continuation prompt: %q", last.Content)
+	if len(out.Messages) != 2 || out.Messages[1].Role != "assistant" || out.Messages[1].Content != "The answer is (" {
+		t.Fatalf("prefill history changed: %+v", out.Messages)
 	}
 }
 

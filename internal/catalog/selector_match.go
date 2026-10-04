@@ -26,9 +26,19 @@ func candidateModels(cat *Catalog, providerName string, cfg providers.Config, se
 	if pc == nil || len(pc.Models) == 0 {
 		return configModels(cfg)
 	}
+	seen := make(map[string]bool, len(pc.Models))
 	models := make([]string, 0, len(pc.Models))
+	for _, id := range configModels(cfg) {
+		if !seen[id] {
+			seen[id] = true
+			models = append(models, id)
+		}
+	}
 	for id := range pc.Models {
-		models = append(models, id)
+		if !seen[id] {
+			seen[id] = true
+			models = append(models, id)
+		}
 	}
 	sort.Strings(models)
 	return models

@@ -34,6 +34,10 @@ type WritingRunStore struct {
 }
 
 func OpenWritingRunStore(dir string, manifest WritingRunManifest) (*WritingRunStore, error) {
+	return openWritingRunStore(dir, manifest, os.OpenFile)
+}
+
+func openWritingRunStore(dir string, manifest WritingRunManifest, openLedger func(string, int, os.FileMode) (*os.File, error)) (*WritingRunStore, error) {
 	dir = filepath.Clean(dir)
 	if dir == "." || dir == "" || filepath.Dir(dir) == dir {
 		return nil, fmt.Errorf("writing run output directory must be explicit")
@@ -96,41 +100,38 @@ func OpenWritingRunStore(dir string, manifest WritingRunManifest) (*WritingRunSt
 		intents:            make(map[string]WritingDispatchIntent),
 		lock:               lock,
 	}
+	initialized := false
+	defer func() {
+		if !initialized {
+			_ = store.Close()
+		}
+	}()
+	lockOwned = false
 	if err := store.load(); err != nil {
 		return nil, err
 	}
-	store.intentFile, err = os.OpenFile(filepath.Join(dir, "intents.jsonl"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	store.intentFile, err = openLedger(filepath.Join(dir, "intents.jsonl"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("open dispatch intent ledger: %w", err)
 	}
-	store.generationFile, err = os.OpenFile(filepath.Join(dir, "generations.jsonl"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	store.generationFile, err = openLedger(filepath.Join(dir, "generations.jsonl"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
-		_ = store.intentFile.Close()
 		return nil, fmt.Errorf("open generation ledger: %w", err)
 	}
-	store.judgmentFile, err = os.OpenFile(filepath.Join(dir, "judgments.jsonl"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	store.judgmentFile, err = openLedger(filepath.Join(dir, "judgments.jsonl"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
-		_ = store.intentFile.Close()
-		_ = store.generationFile.Close()
 		return nil, fmt.Errorf("open judgment ledger: %w", err)
 	}
 	if err := store.intentFile.Chmod(0o600); err != nil {
-		_ = store.intentFile.Close()
-		_ = store.generationFile.Close()
-		_ = store.judgmentFile.Close()
 		return nil, fmt.Errorf("secure dispatch intent ledger: %w", err)
 	}
 	if err := store.generationFile.Chmod(0o600); err != nil {
-		_ = store.generationFile.Close()
-		_ = store.judgmentFile.Close()
 		return nil, fmt.Errorf("secure generation ledger: %w", err)
 	}
 	if err := store.judgmentFile.Chmod(0o600); err != nil {
-		_ = store.generationFile.Close()
-		_ = store.judgmentFile.Close()
 		return nil, fmt.Errorf("secure judgment ledger: %w", err)
 	}
-	lockOwned = false
+	initialized = true
 	return store, nil
 }
 

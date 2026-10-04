@@ -12,7 +12,7 @@ import (
 
 // handleChatCompletionStream handles streaming chat completions in OpenAI SSE format.
 func (s *Server) handleChatCompletionStream(w http.ResponseWriter, r *http.Request, req ChatCompletionRequest) {
-	streamer, ok := any(s.provider).(providers.ChatStreamProvider)
+	_, ok := any(s.provider).(providers.ChatStreamProvider)
 	if !ok {
 		writeError(w, http.StatusNotImplemented, "not_implemented", "Streaming not supported by provider")
 		return
@@ -24,9 +24,7 @@ func (s *Server) handleChatCompletionStream(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	systemPrompt, userContent := ExtractPrompts(req.Messages)
-
-	ctx, cancel := openAIRequestContext(r.Context(), req)
+	ctx, cancel := openAIRequestContextTimeout(r.Context(), req, s.effectiveHandlerTimeout())
 	defer cancel()
 
 	completionID := generateID("chatcmpl")
@@ -70,9 +68,18 @@ func (s *Server) handleChatCompletionStream(w http.ResponseWriter, r *http.Reque
 		return nil
 	}
 
-	result, err := streamer.ChatStreamWithInfoContext(ctx, systemPrompt, userContent, func(chunk providers.ChatStreamChunk) error {
+	result, err := s.executeChatStream(ctx, req, func(chunk providers.ChatStreamChunk) (callbackErr error) {
+		defer func() {
+			if callbackErr != nil {
+				cancel()
+			}
+		}()
 		setProviderHeaders(chunk.Provider, chunk.Model)
-		if chunk.ContentDelta != "" {
+		if chunk.ContentDelta != "" || len(chunk.ToolDeltas) > 0 {
+			tools := make([]OpenAIToolDelta, 0, len(chunk.ToolDeltas))
+			for _, td := range chunk.ToolDeltas {
+				tools = append(tools, OpenAIToolDelta{Index: td.Index, ID: td.ID, Type: "function", Function: OpenAIToolFunction{Name: td.Name, Arguments: td.ArgumentsDelta}})
+			}
 			if err := emitAssistantRole(); err != nil {
 				return err
 			}
@@ -82,7 +89,7 @@ func (s *Server) handleChatCompletionStream(w http.ResponseWriter, r *http.Reque
 				Created: created,
 				Choices: []Choice{{
 					Index: 0,
-					Delta: &Delta{Content: chunk.ContentDelta},
+					Delta: &Delta{Content: chunk.ContentDelta, ToolCalls: tools},
 				}},
 			}); err != nil {
 				return err
@@ -103,6 +110,7 @@ func (s *Server) handleChatCompletionStream(w http.ResponseWriter, r *http.Reque
 				Choices: []Choice{{
 					Index:        0,
 					FinishReason: reason,
+					Delta:        &Delta{},
 				}},
 			}); err != nil {
 				return err
@@ -152,13 +160,12 @@ func (s *Server) handleChatCompletionStream(w http.ResponseWriter, r *http.Reque
 			Choices: []Choice{{
 				Index:        0,
 				FinishReason: reason,
+				Delta:        &Delta{},
 			}},
 		})
 	}
 
-	// The final empty-choice chunk is the metadata boundary, even when the
-	// upstream omitted usage. It lets successful zero-delta streams report the
-	// actual routed provider/model before [DONE].
+	// Usage and extension metadata are emitted only when requested.
 	meta := &LlamboMeta{Backend: result.Provider, Model: result.Model}
 	var usage *Usage
 	if result.Usage != nil {
@@ -167,10 +174,12 @@ func (s *Server) handleChatCompletionStream(w http.ResponseWriter, r *http.Reque
 			meta.CostUSD = result.Usage.Cost.TotalCost
 		}
 	}
-	_ = writeOpenAISSEChunk(w, flusher, ChatCompletionResponse{
-		ID: completionID, Object: ObjectChatCompletionChunk, Created: created, Model: result.Model,
-		Choices: []Choice{}, Usage: usage, XLlambo: meta,
-	})
+	if req.StreamOptions != nil && req.StreamOptions.IncludeUsage {
+		_ = writeOpenAISSEChunk(w, flusher, ChatCompletionResponse{
+			ID: completionID, Object: ObjectChatCompletionChunk, Created: created, Model: result.Model,
+			Choices: []Choice{}, Usage: usage, XLlambo: meta,
+		})
+	}
 
 	writeOpenAISSEDone(w, flusher)
 }

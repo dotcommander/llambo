@@ -3,6 +3,7 @@ package gateway
 import (
 	"errors"
 	"fmt"
+	"github.com/dotcommander/llambo/providers"
 	"net/http"
 	"strings"
 )
@@ -26,7 +27,12 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
-	job, err := s.jobManager.CreateJobIfCapacity(r.Context(), req.Requests, req.SystemPrompt)
+	target, err := providers.ResolveTarget(s.configs, req.Model, "")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	job, err := s.jobManager.createTargetJob(r.Context(), req.Requests, req.SystemPrompt, true, target)
 	if err != nil {
 		if errors.Is(err, ErrJobManagerShuttingDown) {
 			writeError(w, http.StatusServiceUnavailable, "server_shutting_down", "Job manager is shutting down")
@@ -56,14 +62,12 @@ func validateJobBatch(requests []JobRequest) error {
 			return fmt.Errorf("requests[%d].messages is required", index)
 		}
 		for messageIndex, message := range request.Messages {
-			switch message.Role {
-			case "system", "user", "assistant":
-			default:
-				return fmt.Errorf("requests[%d].messages[%d].role is invalid", index, messageIndex)
-			}
-			if strings.TrimSpace(message.Content) == "" {
+			if strings.TrimSpace(message.Content) == "" && !(message.Role == "assistant" && len(message.ToolCalls) > 0) {
 				return fmt.Errorf("requests[%d].messages[%d].content is required", index, messageIndex)
 			}
+		}
+		if _, err := structuredRequest(request.chatRequest()); err != nil {
+			return fmt.Errorf("requests[%d].%w", index, err)
 		}
 	}
 	return nil
@@ -89,10 +93,14 @@ func (s *Server) handleCancelJob(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", "Job ID is required")
 		return
 	}
-	if !s.jobManager.CancelJob(jobID) {
-		writeError(w, http.StatusNotFound, "not_found", "Job not found or already completed")
+	job, status := s.jobManager.CancelJobStatus(jobID)
+	if status == http.StatusNotFound {
+		writeError(w, status, "not_found", "Job not found")
 		return
 	}
-	job := s.jobManager.GetJob(jobID)
+	if status != http.StatusOK {
+		writeError(w, status, "invalid_request", "Job is no longer active")
+		return
+	}
 	writeJSON(w, http.StatusOK, job.ToResponse())
 }

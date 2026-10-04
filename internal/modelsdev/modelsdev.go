@@ -2,14 +2,17 @@ package modelsdev
 
 import (
 	"encoding/json"
+	"math"
+	"strings"
 
 	"github.com/dotcommander/llambo/internal/costs"
 )
 
 // modelCost is the per-1M-token pricing block in api.json (USD per 1M tokens).
 type modelCost struct {
-	Input  float64 `json:"input"`
-	Output float64 `json:"output"`
+	Input   float64 `json:"input"`
+	Output  float64 `json:"output"`
+	invalid bool
 }
 
 type model struct {
@@ -39,12 +42,12 @@ func Normalize(api map[string]ProviderModels, providerToKey map[string]string, f
 	if len(filter) > 0 {
 		allow = make(map[string]bool, len(filter))
 		for _, f := range filter {
-			allow[f] = true
+			allow[strings.ToLower(strings.TrimSpace(f))] = true
 		}
 	}
 	out := costs.ModelsDevFile{}
 	for llamboName, devKey := range providerToKey {
-		if allow != nil && !allow[llamboName] {
+		if allow != nil && !allow[strings.ToLower(llamboName)] {
 			continue
 		}
 		pm, ok := api[devKey]
@@ -52,7 +55,7 @@ func Normalize(api map[string]ProviderModels, providerToKey map[string]string, f
 			continue
 		}
 		for id, m := range pm.Models {
-			if m.Cost == nil {
+			if m.Cost == nil || m.Cost.invalid || m.Cost.Input < 0 || m.Cost.Output < 0 || math.IsNaN(m.Cost.Input) || math.IsNaN(m.Cost.Output) || math.IsInf(m.Cost.Input, 0) || math.IsInf(m.Cost.Output, 0) {
 				continue
 			}
 			out[costs.Key(llamboName, id)] = costs.ModelsDevPrice{InputPer1M: m.Cost.Input, OutputPer1M: m.Cost.Output}
@@ -64,7 +67,7 @@ func Normalize(api map[string]ProviderModels, providerToKey map[string]string, f
 
 func applyOfficialPriceBackfills(out costs.ModelsDevFile, providerToKey map[string]string, allow map[string]bool) {
 	for llamboName, devKey := range providerToKey {
-		if allow != nil && !allow[llamboName] {
+		if allow != nil && !allow[strings.ToLower(llamboName)] {
 			continue
 		}
 		if devKey != "google" {
@@ -82,4 +85,22 @@ func applyOfficialPriceBackfills(out costs.ModelsDevFile, providerToKey map[stri
 var officialGeminiPrices = map[string]costs.ModelsDevPrice{
 	// Gemini Developer API standard paid tier, text/image/video token pricing.
 	"gemini-3.1-flash-lite": {InputPer1M: 0.25, OutputPer1M: 1.50},
+}
+
+func (m *modelCost) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		Input  *float64 `json:"input"`
+		Output *float64 `json:"output"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	m.invalid = raw.Input == nil || raw.Output == nil
+	if raw.Input != nil {
+		m.Input = *raw.Input
+	}
+	if raw.Output != nil {
+		m.Output = *raw.Output
+	}
+	return nil
 }

@@ -2,6 +2,8 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
+	whtypes "github.com/garyblankenship/wormhole/v3/types"
 	"net/http"
 	"strings"
 
@@ -76,6 +78,23 @@ func (s *Server) parseAnthropicMessagesRequest(w http.ResponseWriter, r *http.Re
 		return nil, false
 	}
 
+	if err := s.prepareChat(&translated); err != nil {
+		writeAnthropicError(w, http.StatusBadRequest, requestID, err.Error())
+		return nil, false
+	}
+	translated.structured.Stop = req.StopSequences
+	for _, tool := range parsedTools {
+		var schema map[string]any
+		_ = json.Unmarshal(tool.InputSchema, &schema)
+		translated.structured.Tools = append(translated.structured.Tools, whtypes.Tool{Name: tool.Name, Description: tool.Description, InputSchema: schema})
+	}
+	if toolChoice != nil {
+		kind := whtypes.ToolChoiceType(toolChoice.Type)
+		if kind == "tool" {
+			kind = whtypes.ToolChoiceTypeSpecific
+		}
+		translated.structured.ToolChoice = &whtypes.ToolChoice{Type: kind, ToolName: toolChoice.Name}
+	}
 	return &anthropicParsedRequest{
 		RequestID:     requestID,
 		Original:      req,
@@ -88,10 +107,9 @@ func (s *Server) parseAnthropicMessagesRequest(w http.ResponseWriter, r *http.Re
 }
 
 func (s *Server) executeAnthropicMessages(parent context.Context, parsed *anthropicParsedRequest) (providers.ChatResult, error) {
-	ctx, cancel := context.WithTimeout(parent, HandlerTimeout)
+	ctx, cancel := context.WithTimeout(parent, s.effectiveHandlerTimeout())
 	defer cancel()
 	ctx = parsed.enrichContext(ctx)
 
-	systemPrompt, userContent := buildAnthropicPrompts(parsed.Translated.Messages)
-	return s.provider.ChatWithInfoContext(ctx, systemPrompt, userContent)
+	return s.executeChat(ctx, parsed.Translated)
 }

@@ -111,7 +111,7 @@ func TestUpdateCancellationWhileLockIsHeldDoesNotPublish(t *testing.T) {
 	require.Equal(t, before, after)
 }
 
-func TestUpdateCanonicalizesParentWithoutFollowingTargetSymlink(t *testing.T) {
+func TestUpdateCanonicalizesParentAndPreservesTargetSymlink(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
@@ -133,10 +133,10 @@ func TestUpdateCanonicalizesParentWithoutFollowingTargetSymlink(t *testing.T) {
 	require.NoError(t, Save(aliasPath, &Catalog{Version: 1, Providers: map[string]*ProviderCatalog{}}))
 	info, err := os.Lstat(realPath)
 	require.NoError(t, err)
-	require.False(t, info.Mode()&os.ModeSymlink != 0)
+	require.True(t, info.Mode()&os.ModeSymlink != 0)
 	old, err := os.ReadFile(oldTarget)
 	require.NoError(t, err)
-	require.Equal(t, []byte("old"), old)
+	require.NotEqual(t, []byte("old"), old)
 }
 
 func TestPublishCatalogCleansUpFailedReplacement(t *testing.T) {

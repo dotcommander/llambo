@@ -17,7 +17,7 @@ import (
 )
 
 var (
-	statusCodeRegex = regexp.MustCompile(`\b([1-5][0-9]{2})\b`)
+	statusCodeRegex = regexp.MustCompile(`(?:http status|status code|status)[ :=]+([45][0-9]{2})\b`)
 	idCounter       atomic.Uint64
 )
 
@@ -97,6 +97,12 @@ func writeAnthropicError(w http.ResponseWriter, status int, requestID, message s
 func anthropicStatusFromError(err error) int {
 	if err == nil {
 		return http.StatusBadGateway
+	}
+	var statusErr interface{ StatusCode() int }
+	if errors.As(err, &statusErr) {
+		if code := statusErr.StatusCode(); code >= 400 && code <= 599 {
+			return code
+		}
 	}
 	var oe *providers.OpenAIError
 	if errors.As(err, &oe) {

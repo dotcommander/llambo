@@ -2,10 +2,12 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"sync"
 	"time"
 
 	"github.com/dotcommander/llambo/providers"
+	whtypes "github.com/garyblankenship/wormhole/v3/types"
 )
 
 // Job represents a batch processing job
@@ -26,7 +28,11 @@ type Job struct {
 	// done is closed by processJob once the ProcessStream goroutine has fully
 	// exited. It is the single signal that the job has released its worker
 	// pool, so the active-job admission slot can be reclaimed exactly once.
-	done chan struct{}
+	done         chan struct{}
+	target       providers.ResolvedTarget
+	requestBytes int64
+	drained      bool
+	queueJobs    chan providers.Job
 }
 
 // ToResponse converts Job to JobResponse with proper locking
@@ -52,13 +58,21 @@ func (j *Job) ToResponse() JobResponse {
 
 // convertToQueueJobs converts JobRequests to a channel of provider Jobs
 func convertToQueueJobs(requests []JobRequest, systemPrompt string) chan providers.Job {
+	return convertToTargetQueueJobs(requests, systemPrompt, providers.ResolvedTarget{})
+}
+func convertToTargetQueueJobs(requests []JobRequest, systemPrompt string, target providers.ResolvedTarget) chan providers.Job {
 	queueJobs := make(chan providers.Job, len(requests))
 	for _, req := range requests {
 		userContent := ExtractUserContent(req.Messages)
+		structured, _ := structuredRequest(req.chatRequest())
+		if systemPrompt != "" {
+			structured.Messages = append([]whtypes.Message{whtypes.NewSystemMessage(systemPrompt)}, structured.Messages...)
+		}
 		queueJobs <- providers.Job{
 			ID:           req.ID,
 			SystemPrompt: systemPrompt,
 			UserContent:  userContent,
+			Request:      &structured, Target: target,
 		}
 	}
 	close(queueJobs)
@@ -104,6 +118,7 @@ func (m *JobManager) collectResults(job *Job, results <-chan providers.Result) {
 				Backend:    result.Backend,
 				Model:      result.Model,
 				DurationMs: result.Duration.Milliseconds(),
+				ToolCalls:  openAIResultToolCalls(result.ToolCalls), FinishReason: normalizeOpenAIFinishReason(result.FinishReason),
 			}
 
 			if result.Error != nil {
@@ -139,8 +154,17 @@ func (m *JobManager) collectResults(job *Job, results <-chan providers.Result) {
 func (m *JobManager) processJob(job *Job, requests []JobRequest, systemPrompt string) {
 	// Single done signal + slot release, regardless of completion or cancel.
 	defer func() {
-		m.decrementActiveJobs()
+		m.mu.Lock()
+		job.mu.Lock()
+		job.drained = true
+		job.mu.Unlock()
+		if m.activeJobs > 0 {
+			m.activeJobs--
+		}
+		m.closeDrainIfIdleLocked()
+		m.enforceRetentionLocked(time.Now().Add(-JobMaxAge))
 		close(job.done)
+		m.mu.Unlock()
 	}()
 
 	job.mu.Lock()
@@ -152,7 +176,10 @@ func (m *JobManager) processJob(job *Job, requests []JobRequest, systemPrompt st
 	job.UpdatedAt = time.Now()
 	job.mu.Unlock()
 
-	queueJobs := convertToQueueJobs(requests, systemPrompt)
+	queueJobs := job.queueJobs
+	if queueJobs == nil {
+		queueJobs = convertToTargetQueueJobs(requests, systemPrompt, job.target)
+	}
 
 	// Create results channel
 	results := make(chan providers.Result, len(requests))
@@ -182,4 +209,9 @@ func (m *JobManager) decrementActiveJobs() {
 		m.activeJobs--
 	}
 	m.closeDrainIfIdleLocked()
+}
+
+func (j *Job) retainedBytesLocked() int64 {
+	b, _ := json.Marshal(j.Results)
+	return j.requestBytes + int64(len(b))
 }

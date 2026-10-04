@@ -41,9 +41,9 @@ func TestResolveModelsCategoryPolicyCandidateScope(t *testing.T) {
 			want:     []string{"configured-only", "primary"},
 		},
 		{
-			name:     "category whitespace keeps catalog candidate scope",
+			name:     "category whitespace unions catalog and configured candidates",
 			selector: "category: missing_speed",
-			want:     []string{"catalog-only", "primary", "tagged"},
+			want:     []string{"catalog-only", "configured-only", "primary", "tagged"},
 		},
 		{
 			name:     "unknown categories retain tag fallback",

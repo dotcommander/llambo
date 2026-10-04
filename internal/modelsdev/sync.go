@@ -3,8 +3,9 @@ package modelsdev
 import (
 	"context"
 	"encoding/json"
+	"github.com/dotcommander/llambo/internal/filetxn"
 	"os"
-	"path/filepath"
+	"strings"
 
 	"github.com/dotcommander/llambo/internal/costs"
 )
@@ -43,37 +44,54 @@ func RunSync(ctx context.Context, opts SyncOptions) (*SyncResult, costs.ModelsDe
 	if err != nil {
 		return nil, nil, err
 	}
-	prior := loadPrior(opts.OutPath) // missing/invalid prior -> empty, non-fatal
-	next := Normalize(api, opts.ProviderToKey, opts.Filter)
-	if len(opts.Filter) > 0 {
-		next = mergeUnfilteredPrior(next, prior, opts.Filter)
+	filter := make([]string, 0, len(opts.Filter))
+	for _, provider := range opts.Filter {
+		filter = append(filter, strings.ToLower(strings.TrimSpace(provider)))
 	}
+	var res *SyncResult
+	var next costs.ModelsDevFile
+	apply := func(path string) error {
+		prior := loadPrior(path)
+		next = Normalize(api, opts.ProviderToKey, filter)
+		if len(filter) > 0 {
+			next = mergeUnfilteredPrior(next, prior, filter)
+		}
 
-	res := &SyncResult{Models: len(next)}
-	provSet := map[string]bool{}
-	for k, p := range next {
-		if i := indexColon(k); i >= 0 {
-			provSet[k[:i]] = true
+		res = &SyncResult{Models: len(next)}
+		provSet := map[string]bool{}
+		for k, p := range next {
+			if i := indexColon(k); i >= 0 {
+				provSet[k[:i]] = true
+			}
+			old, ok := prior[k]
+			switch {
+			case !ok:
+				res.Added++
+			case old.InputPer1M != p.InputPer1M || old.OutputPer1M != p.OutputPer1M:
+				res.Changed++
+			}
 		}
-		old, ok := prior[k]
-		switch {
-		case !ok:
-			res.Added++
-		case old.InputPer1M != p.InputPer1M || old.OutputPer1M != p.OutputPer1M:
-			res.Changed++
+		for k := range prior {
+			if _, ok := next[k]; !ok {
+				res.Removed++
+			}
 		}
-	}
-	for k := range prior {
-		if _, ok := next[k]; !ok {
-			res.Removed++
-		}
-	}
-	res.Providers = len(provSet)
+		res.Providers = len(provSet)
 
+		if opts.DryRun {
+			return nil
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		return writeAtomic(path, next)
+	}
 	if opts.DryRun {
-		return res, next, nil
+		err = apply(opts.OutPath)
+	} else {
+		err = filetxn.WithLock(ctx, opts.OutPath, apply)
 	}
-	if err := writeAtomic(opts.OutPath, next); err != nil {
+	if err != nil {
 		return nil, nil, err
 	}
 	return res, next, nil
@@ -85,14 +103,14 @@ func mergeUnfilteredPrior(next, prior costs.ModelsDevFile, filter []string) cost
 	}
 	allowed := make(map[string]bool, len(filter))
 	for _, provider := range filter {
-		allowed[provider] = true
+		allowed[strings.ToLower(strings.TrimSpace(provider))] = true
 	}
 	for key, price := range prior {
 		provider := key
 		if i := indexColon(key); i >= 0 {
 			provider = key[:i]
 		}
-		if !allowed[provider] {
+		if !allowed[strings.ToLower(provider)] {
 			next[key] = price
 		}
 	}
@@ -124,16 +142,9 @@ func loadPrior(path string) costs.ModelsDevFile {
 }
 
 func writeAtomic(path string, f costs.ModelsDevFile) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
 	b, err := json.MarshalIndent(f, "", "  ")
 	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return filetxn.WriteAtomic(path, b, 0o644)
 }

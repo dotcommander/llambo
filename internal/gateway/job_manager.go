@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
@@ -24,17 +25,19 @@ var (
 // (safe to call repeatedly — cancel is idempotent, unlike close(chan))
 // and waits for cleanupLoop to exit via cleanupWG.
 type JobManager struct {
-	queue         providers.JobQueue // parallel job processing queue
-	jobs          map[string]*Job
-	maxActive     int
-	activeJobs    int
-	mu            sync.RWMutex
-	cleanupCtx    context.Context
-	cleanupCancel context.CancelFunc
-	cleanupWG     sync.WaitGroup
-	shuttingDown  bool
-	drainDone     chan struct{}
-	drainClosed   bool
+	queue            providers.JobQueue // parallel job processing queue
+	jobs             map[string]*Job
+	maxActive        int
+	maxRetained      int
+	maxRetainedBytes int64
+	activeJobs       int
+	mu               sync.RWMutex
+	cleanupCtx       context.Context
+	cleanupCancel    context.CancelFunc
+	cleanupWG        sync.WaitGroup
+	shuttingDown     bool
+	drainDone        chan struct{}
+	drainClosed      bool
 }
 
 // NewJobManager creates a new job manager with automatic cleanup. The
@@ -43,9 +46,10 @@ type JobManager struct {
 func NewJobManager(ctx context.Context, queue providers.JobQueue) *JobManager {
 	cleanupCtx, cancel := context.WithCancel(ctx)
 	m := &JobManager{
-		queue:         queue,
-		jobs:          make(map[string]*Job),
-		maxActive:     JobMaxActiveDefault,
+		queue:       queue,
+		jobs:        make(map[string]*Job),
+		maxActive:   JobMaxActiveDefault,
+		maxRetained: 1000, maxRetainedBytes: 67108864,
 		cleanupCtx:    cleanupCtx,
 		cleanupCancel: cancel,
 		drainDone:     make(chan struct{}),
@@ -143,14 +147,33 @@ func (m *JobManager) CreateJobIfCapacity(parent context.Context, requests []JobR
 }
 
 func (m *JobManager) createJob(parent context.Context, requests []JobRequest, systemPrompt string, enforceCapacity bool) (*Job, error) {
+	return m.createTargetJob(parent, requests, systemPrompt, enforceCapacity, providers.ResolvedTarget{})
+}
+func (m *JobManager) createTargetJob(parent context.Context, requests []JobRequest, systemPrompt string, enforceCapacity bool, target providers.ResolvedTarget) (*Job, error) {
 	id := generateID("job")
+	encoded, _ := json.Marshal(CreateJobRequest{Requests: requests, SystemPrompt: systemPrompt, Model: target.Model()})
+	queueJobs := make(chan providers.Job, len(requests))
+	for candidate := range convertToTargetQueueJobs(requests, systemPrompt, target) {
+		if preparer, ok := m.queue.(interface {
+			PrepareJob(providers.Job) (providers.Job, error)
+		}); ok {
+			var err error
+			candidate, err = preparer.PrepareJob(candidate)
+			if err != nil {
+				return nil, err
+			}
+		}
+		queueJobs <- candidate
+	}
+	close(queueJobs)
 	// Inherit parent's values (e.g. request IDs, deadlines for logging)
 	// but NOT its cancellation: jobs are async background work that
 	// outlives the submitting HTTP request.
 	ctx, cancel := context.WithCancel(context.WithoutCancel(parent))
 
 	job := &Job{
-		ID:        id,
+		ID:     id,
+		target: target, requestBytes: int64(len(encoded)), queueJobs: queueJobs,
 		Status:    JobStatusPending,
 		Total:     len(requests),
 		Results:   make([]JobResult, 0, len(requests)),
@@ -289,22 +312,7 @@ func (m *JobManager) CleanupOldJobs(maxAge time.Duration) int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	cutoff := time.Now().Add(-maxAge)
-	removed := 0
-
-	for id, job := range m.jobs {
-		job.mu.RLock()
-		isOld := job.UpdatedAt.Before(cutoff)
-		isTerminal := job.Status.IsTerminal()
-		job.mu.RUnlock()
-
-		if isOld && isTerminal {
-			delete(m.jobs, id)
-			removed++
-		}
-	}
-
-	return removed
+	return m.enforceRetentionLocked(time.Now().Add(-maxAge))
 }
 
 // Stats returns job statistics

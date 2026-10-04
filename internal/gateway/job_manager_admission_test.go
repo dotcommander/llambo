@@ -267,23 +267,10 @@ func TestJobManager_CleanupOldJobs(t *testing.T) {
 
 	job := manager.CreateJob(t.Context(), requests, "System")
 
-	// Wait for job to complete
-	timeout := time.After(2 * time.Second)
-	for {
-		job.mu.RLock()
-		status := job.Status
-		job.mu.RUnlock()
-
-		if status == JobStatusCompleted {
-			break
-		}
-
-		select {
-		case <-timeout:
-			t.Fatal("timed out waiting for job to complete")
-		default:
-			time.Sleep(10 * time.Millisecond)
-		}
+	select {
+	case <-job.done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for job drain")
 	}
 
 	// Manually set old timestamp

@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -10,11 +11,12 @@ import (
 
 // handlerMockChatProvider implements providers.ChatProvider for handler testing
 type handlerMockChatProvider struct {
-	chatResult providers.ChatResult
-	chatErr    error
-	lastCtx    context.Context
-	lastSystem string
-	lastUser   string
+	chatResult  providers.ChatResult
+	chatErr     error
+	lastCtx     context.Context
+	lastSystem  string
+	lastUser    string
+	lastRequest providers.StructuredChatRequest
 }
 
 func (m *handlerMockChatProvider) Name() string   { return "mock" }
@@ -133,7 +135,7 @@ func newHandlerTestServer(t *testing.T) (*Server, *handlerMockChatProvider, *han
 		queue:      mockQueue,
 		jobManager: NewJobManager(context.Background(), mockQueue),
 		configs: map[string]providers.Config{
-			"mock-backend": {Enabled: true, Model: "mock-model", Workers: 2},
+			"mock-backend": {Enabled: true, Model: "mock-model", Models: []string{"test", "requested-model", "test-model", "claude-3-5-sonnet", "gemini-2.5-pro", "gemini-2.5-flash", "text-embedding-test"}, Workers: 2},
 		},
 		startTime:       time.Now(),
 		anthropicStrict: resolveAnthropicStrict(),
@@ -159,4 +161,26 @@ func newHandlerTestServerWithEmbeddings(t *testing.T) (*Server, *handlerMockEmbe
 	server.embedder = mockEmbed
 
 	return server, mockEmbed
+}
+
+func (m *handlerMockChatProvider) ChatStructuredWithInfoContext(ctx context.Context, req providers.StructuredChatRequest, target providers.ResolvedTarget) (providers.ChatResult, error) {
+	m.lastRequest = req
+	var system, user []string
+	for _, message := range req.Messages {
+		text, _ := message.GetContent().(string)
+		if message.GetRole() == "system" {
+			system = append(system, text)
+		} else {
+			user = append(user, text)
+		}
+	}
+	return m.ChatWithInfoContext(ctx, strings.Join(system, "\n"), strings.Join(user, "\n"))
+}
+func (m *handlerMockEmbeddingProvider) EmbedResolved(ctx context.Context, texts []string, target providers.ResolvedTarget) (providers.EmbeddingResult, error) {
+	vectors, err := m.Embed(ctx, texts)
+	model := m.model
+	if target.Model() != "" {
+		model = target.Model()
+	}
+	return providers.EmbeddingResult{Vectors: vectors, Model: model}, err
 }

@@ -113,7 +113,7 @@ func TestWormholeGateway_AnthropicMessagesShapeUsesSameProviderPath(t *testing.T
 	})
 
 	req := map[string]any{
-		"model":      "claude-3-5-sonnet",
+		"model":      "gpt-test",
 		"max_tokens": 128,
 		"messages": []map[string]any{
 			{"role": "user", "content": "hello"},
@@ -159,7 +159,7 @@ func TestWormholeGateway_StreamUsageCarriesXLlambo(t *testing.T) {
 
 	req := ChatCompletionRequest{
 		Model:  "gpt-test",
-		Stream: true,
+		Stream: true, StreamOptions: &StreamOptions{IncludeUsage: true},
 		Messages: []Message{
 			{Role: "user", Content: "hello"},
 		},

@@ -31,6 +31,8 @@ type Server struct {
 	authRequired       bool
 	allowedOrigins     map[string]struct{}
 	closeResourcesOnce sync.Once
+	handlerTimeout     time.Duration
+	writeTimeout       time.Duration
 }
 
 // resolveAnthropicStrict reads LLAMBO_ANTHROPIC_STRICT env var once at startup.
@@ -47,6 +49,10 @@ func resolveAnthropicStrict() bool {
 // New creates a new gateway server. The provided ctx bounds the lifetime of
 // the job-manager cleanup goroutine; canceling it triggers a clean shutdown.
 func New(ctx context.Context, configs map[string]providers.Config, routing providers.RoutingConfig, gatewayCfg providers.GatewayConfig) (*Server, error) {
+	gatewayCfg, err := gatewayCfg.Normalize()
+	if err != nil {
+		return nil, err
+	}
 	authToken, err := gatewayCfg.ResolveAuthToken()
 	if err != nil {
 		return nil, err
@@ -68,12 +74,17 @@ func New(ctx context.Context, configs map[string]providers.Config, routing provi
 	queue := providers.NewBackendQueue(provider.GetOpenAIClients(), configs)
 
 	// Create embedding provider (optional - don't fail if not configured)
-	embedder, _ := providers.NewOpenAIEmbedding()
+	embedCfg := providers.DefaultEmbedConfig()
+	if globalCfg, loadErr := providers.LoadGlobalConfig(); loadErr == nil {
+		embedCfg = globalCfg.Embed
+	}
+	embedder, _ := providers.NewOpenAIEmbeddingWithConfig(embedCfg, configs)
 
 	gatewayCfg.ApplyDefaults()
 
 	jobManager := NewJobManager(ctx, queue)
 	jobManager.SetMaxActiveJobs(gatewayCfg.MaxActiveJobs)
+	jobManager.SetRetentionLimits(gatewayCfg.MaxRetainedJobs, gatewayCfg.MaxRetainedPayloadBytes)
 
 	server := &Server{
 		provider:          provider,
@@ -85,6 +96,8 @@ func New(ctx context.Context, configs map[string]providers.Config, routing provi
 		startTime:         time.Now(),
 		anthropicStrict:   resolveAnthropicStrict(),
 		allowedOrigins:    allowedOrigins,
+		handlerTimeout:    time.Duration(gatewayCfg.HandlerTimeoutSeconds) * time.Second,
+		writeTimeout:      time.Duration(gatewayCfg.WriteTimeoutSeconds) * time.Second,
 	}
 	if authToken != "" {
 		server.authRequired = true
@@ -134,7 +147,7 @@ func (s *Server) Start(addr string) error {
 		Addr:         addr,
 		Handler:      s.middleware(mux),
 		ReadTimeout:  ServerReadTimeout,
-		WriteTimeout: ServerWriteTimeout,
+		WriteTimeout: s.effectiveWriteTimeout(),
 		IdleTimeout:  ServerIdleTimeout,
 	}
 
@@ -213,7 +226,7 @@ func allowedPreflight(r *http.Request) bool {
 	}
 	for header := range strings.SplitSeq(r.Header.Get("Access-Control-Request-Headers"), ",") {
 		header = strings.TrimSpace(header)
-		if header != "" && !strings.EqualFold(header, "Content-Type") && !strings.EqualFold(header, "Authorization") {
+		if header != "" && !strings.EqualFold(header, "Content-Type") && !strings.EqualFold(header, "Authorization") && !strings.EqualFold(header, "x-api-key") && !strings.EqualFold(header, "anthropic-version") && !strings.EqualFold(header, "anthropic-beta") {
 			return false
 		}
 	}
@@ -234,7 +247,7 @@ func (s *Server) allowOrigin(w http.ResponseWriter, r *http.Request) bool {
 
 	w.Header().Set("Access-Control-Allow-Origin", origin)
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Api-Key, Anthropic-Version, Anthropic-Beta")
 	return true
 }
 
@@ -242,7 +255,12 @@ func (s *Server) authorized(r *http.Request) bool {
 	if !s.authRequired {
 		return true
 	}
-	parts := strings.Fields(r.Header.Get("Authorization"))
+	authorization, present := r.Header["Authorization"]
+	if !present && r.URL.Path == "/v1/messages" {
+		candidateHash := sha256.Sum256([]byte(r.Header.Get("x-api-key")))
+		return subtle.ConstantTimeCompare(candidateHash[:], s.authTokenHash[:]) == 1
+	}
+	parts := strings.Fields(strings.Join(authorization, " "))
 	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
 		return false
 	}
@@ -285,4 +303,17 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "  GET  /stats                - Usage and cost stats\n")
 	fmt.Fprintf(w, "\nBackends: %v\n", s.BackendNames())
 	fmt.Fprintf(w, "Uptime: %s\n", time.Since(s.startTime).Round(time.Second))
+}
+
+func (s *Server) effectiveHandlerTimeout() time.Duration {
+	if s.handlerTimeout > 0 {
+		return s.handlerTimeout
+	}
+	return HandlerTimeout
+}
+func (s *Server) effectiveWriteTimeout() time.Duration {
+	if s.writeTimeout > 0 {
+		return s.writeTimeout
+	}
+	return ServerWriteTimeout
 }

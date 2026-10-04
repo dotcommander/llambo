@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -53,7 +54,7 @@ func modelCostStatus(costMap map[string]costs.ModelCost, providerName, modelID s
 
 func modelCostStatusForEntry(costMap map[string]costs.ModelCost, providerName, modelID string, entry *ModelEntry) (CostStatus, float64, float64) {
 	mc, ok := costMap[costs.Key(providerName, modelID)]
-	if ok && mc.InputExplicit && mc.OutputExplicit {
+	if ok && mc.InputExplicit && mc.OutputExplicit && validPrice(mc.InputPer1M) && validPrice(mc.OutputPer1M) {
 		if mc.InputPer1M == 0 && mc.OutputPer1M == 0 {
 			return CostFree, mc.InputPer1M, mc.OutputPer1M
 		}
@@ -86,7 +87,7 @@ func pricePer1M(raw string) (float64, bool) {
 		return 0, false
 	}
 	price, err := strconv.ParseFloat(raw, 64)
-	if err != nil || price < 0 {
+	if err != nil || !validPrice(price) || !validPrice(price*1_000_000) {
 		return 0, false
 	}
 	return price * 1_000_000, true
@@ -96,3 +97,5 @@ func isFree(costMap map[string]costs.ModelCost, providerName, modelID string) bo
 	status, _, _ := modelCostStatus(costMap, providerName, modelID)
 	return status == CostFree
 }
+
+func validPrice(price float64) bool { return price >= 0 && !math.IsNaN(price) && !math.IsInf(price, 0) }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -90,16 +91,22 @@ func Load(path string) (map[string]ModelCost, error) {
 
 		var mc ModelCost
 		if len(rec) > 2 && rec[2] != "" {
-			mc.InputPer1M, _ = strconv.ParseFloat(rec[2], 64)
-			mc.InputExplicit = true
+			mc.InputPer1M, mc.InputExplicit = parsePrice(rec[2])
 		}
 		if len(rec) > 3 && rec[3] != "" {
-			mc.OutputPer1M, _ = strconv.ParseFloat(rec[3], 64)
-			mc.OutputExplicit = true
+			mc.OutputPer1M, mc.OutputExplicit = parsePrice(rec[3])
 		}
 
 		result[Key(provider, model)] = mc
 	}
 
 	return result, nil
+}
+
+func parsePrice(raw string) (float64, bool) {
+	value, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+	if err != nil || value < 0 || math.IsNaN(value) || math.IsInf(value, 0) {
+		return 0, false
+	}
+	return value, true
 }

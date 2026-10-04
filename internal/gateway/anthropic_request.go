@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	whtypes "github.com/garyblankenship/wormhole/v3/types"
 	"sort"
 	"strings"
 )
@@ -34,16 +35,11 @@ func translateAnthropicRequest(req AnthropicMessagesRequest) (ChatCompletionRequ
 			return ChatCompletionRequest{}, fmt.Errorf("messages[%d].role must be user or assistant", i)
 		}
 
-		content, err := parseAnthropicContent(msg.Content, fmt.Sprintf("messages[%d].content", i))
+		converted, err := translateAnthropicMessage(msg, i)
 		if err != nil {
 			return ChatCompletionRequest{}, err
 		}
-
-		messages = append(messages, Message{Role: msg.Role, Content: content})
-	}
-
-	if req.Messages[len(req.Messages)-1].Role == "assistant" {
-		messages = append(messages, Message{Role: "user", Content: anthropicPrefillContinuationPrompt})
+		messages = append(messages, converted...)
 	}
 
 	maxTokens := req.MaxTokens
@@ -252,4 +248,62 @@ func anthropicJSONOverrides(req AnthropicMessagesRequest) map[string]any {
 
 func buildAnthropicPrompts(msgs []Message) (string, string) {
 	return extractMessagesCore(msgs, true, true)
+}
+
+func translateAnthropicMessage(msg AnthropicInputMessage, index int) ([]Message, error) {
+	if isRawNull(msg.Content) {
+		return nil, fmt.Errorf("messages[%d].content is required", index)
+	}
+	var text string
+	if json.Unmarshal(msg.Content, &text) == nil {
+		return []Message{{Role: msg.Role, Content: text}}, nil
+	}
+	var blocks []AnthropicContentBlock
+	if json.Unmarshal(msg.Content, &blocks) != nil || len(blocks) == 0 || len(blocks) > maxAnthropicContentBlocks {
+		return nil, fmt.Errorf("messages[%d].content is invalid", index)
+	}
+	out := []Message{}
+	current := Message{Role: msg.Role}
+	flush := func() {
+		if current.Content != "" || len(current.ToolCalls) > 0 {
+			out = append(out, current)
+			current = Message{Role: msg.Role}
+		}
+	}
+	for _, b := range blocks {
+		switch b.Type {
+		case "text":
+			current.Content += b.Text
+		case "tool_use":
+			if msg.Role != "assistant" || b.ID == "" || b.Name == "" {
+				return nil, fmt.Errorf("invalid tool_use block")
+			}
+			var args map[string]any
+			if json.Unmarshal(b.Input, &args) != nil || args == nil {
+				return nil, fmt.Errorf("tool_use.input must be an object")
+			}
+			current.ToolCalls = append(current.ToolCalls, whtypes.ToolCall{Type: "function", ID: b.ID, Name: b.Name, Arguments: args, Function: &whtypes.ToolCallFunction{Name: b.Name, Arguments: string(b.Input)}})
+		case "tool_result":
+			if msg.Role != "user" || b.ToolUseID == "" {
+				return nil, fmt.Errorf("invalid tool_result block")
+			}
+			flush()
+			content, err := parseAnthropicContent(b.Content, "tool_result.content")
+			if err != nil {
+				var value map[string]any
+				if json.Unmarshal(b.Content, &value) != nil {
+					return nil, err
+				}
+				content = compactJSON(b.Content)
+			}
+			out = append(out, Message{Role: "tool", ToolCallID: b.ToolUseID, Content: content})
+		default:
+			return nil, fmt.Errorf("unsupported content block %q", b.Type)
+		}
+	}
+	flush()
+	if len(out) == 0 {
+		out = append(out, current)
+	}
+	return out, nil
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dotcommander/llambo/internal/filetxn"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -67,21 +68,7 @@ func Update(ctx context.Context, path string, mutate func(*Catalog) error) error
 	return publishCatalog(path, cat, ctx.Err)
 }
 
-func canonicalCatalogPath(path string) (string, error) {
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		return "", fmt.Errorf("absolute catalog path: %w", err)
-	}
-	dir := filepath.Dir(abs)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", fmt.Errorf("create catalog dir: %w", err)
-	}
-	canonicalDir, err := filepath.EvalSymlinks(dir)
-	if err != nil {
-		return "", fmt.Errorf("canonicalize catalog dir: %w", err)
-	}
-	return filepath.Join(canonicalDir, filepath.Base(abs)), nil
-}
+func canonicalCatalogPath(path string) (string, error) { return filetxn.CanonicalPath(path) }
 
 func lockCatalog(ctx context.Context, lock *os.File) error {
 	for {

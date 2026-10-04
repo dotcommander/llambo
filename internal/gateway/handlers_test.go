@@ -162,7 +162,7 @@ func newHandlerStreamTestServer(t *testing.T) (*Server, *handlerMockStreamChatPr
 		queue:      mockQueue,
 		jobManager: NewJobManager(context.Background(), mockQueue),
 		configs: map[string]providers.Config{
-			"mock-backend": {Enabled: true, Model: "mock-model", Workers: 2},
+			"mock-backend": {Enabled: true, Model: "mock-model", Models: []string{"requested-model", "test-model", "claude-3-5-sonnet", "gemini-2.5-pro", "gemini-2.5-flash"}, Workers: 2},
 		},
 		startTime: time.Now(),
 	}
@@ -1553,8 +1553,8 @@ func TestHandler_CancelJob_Success(t *testing.T) {
 	mux.ServeHTTP(rr, req)
 
 	// Note: The job might complete before we cancel it, so we check for either success or already completed
-	if rr.Code != http.StatusOK && rr.Code != http.StatusNotFound {
-		t.Errorf("Expected status %d or %d, got %d", http.StatusOK, http.StatusNotFound, rr.Code)
+	if rr.Code != http.StatusOK && rr.Code != http.StatusConflict {
+		t.Errorf("Expected status %d or %d, got %d", http.StatusOK, http.StatusConflict, rr.Code)
 	}
 }
 
@@ -1808,7 +1808,7 @@ func TestHandler_Embeddings_InvalidJSON(t *testing.T) {
 func TestHandler_Embeddings_UpstreamError(t *testing.T) {
 	t.Parallel()
 	server, mockEmbed := newHandlerTestServerWithEmbeddings(t)
-	mockEmbed.embedErr = errors.New("embedding service unavailable")
+	mockEmbed.embedErr = errors.New("embedding execution failed")
 
 	req := EmbeddingRequest{
 		Model: "text-embedding-test",
@@ -1910,4 +1910,8 @@ func TestHandler_ChatCompletion_TableDriven(t *testing.T) {
 			}
 		})
 	}
+}
+
+func (m *handlerMockStreamChatProvider) ChatStructuredStreamWithInfoContext(ctx context.Context, req providers.StructuredChatRequest, target providers.ResolvedTarget, onChunk providers.ChatStreamHandler) (providers.ChatResult, error) {
+	return m.ChatStreamWithInfoContext(ctx, "", "", onChunk)
 }

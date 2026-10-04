@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -44,14 +45,24 @@ func loadModelsDev(path string) (map[string]ModelCost, error) {
 		return nil, err
 	}
 
-	var raw ModelsDevFile
+	var raw map[string]struct {
+		Input  *float64 `json:"input_per_1m"`
+		Output *float64 `json:"output_per_1m"`
+	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, err
 	}
 
 	out := make(map[string]ModelCost, len(raw))
 	for k, p := range raw {
-		out[strings.ToLower(k)] = ModelCost{InputPer1M: p.InputPer1M, OutputPer1M: p.OutputPer1M, InputExplicit: true, OutputExplicit: true}
+		var mc ModelCost
+		if p.Input != nil {
+			mc.InputPer1M, mc.InputExplicit = parsePrice(strconv.FormatFloat(*p.Input, 'g', -1, 64))
+		}
+		if p.Output != nil {
+			mc.OutputPer1M, mc.OutputExplicit = parsePrice(strconv.FormatFloat(*p.Output, 'g', -1, 64))
+		}
+		out[strings.ToLower(k)] = mc
 	}
 	return out, nil
 }

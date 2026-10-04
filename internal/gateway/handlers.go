@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -27,19 +28,21 @@ func (s *Server) handleChatCompletion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Extract system and user prompts from messages
-	systemPrompt, userContent := ExtractPrompts(req.Messages)
+	if err := s.prepareChat(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
 
 	if req.Stream {
 		s.handleChatCompletionStream(w, r, req)
 		return
 	}
 
-	ctx, cancel := openAIRequestContext(r.Context(), req)
+	ctx, cancel := openAIRequestContextTimeout(r.Context(), req, s.effectiveHandlerTimeout())
 	defer cancel()
 
 	start := time.Now()
-	result, err := s.provider.ChatWithInfoContext(ctx, systemPrompt, userContent)
+	result, err := s.executeChat(ctx, req)
 	if err != nil {
 		writeErrorDetail(w, http.StatusBadGateway, upstreamErrorDetail(err))
 		return
@@ -79,7 +82,7 @@ func (s *Server) handleChatCompletion(w http.ResponseWriter, r *http.Request) {
 		Model:   result.Model,
 		Choices: []Choice{{
 			Index:        0,
-			Message:      &Message{Role: "assistant", Content: result.Content},
+			Message:      openAIResultMessage(result),
 			FinishReason: normalizeOpenAIFinishReason(result.FinishReason),
 		}},
 		Usage:   usage,
@@ -177,7 +180,36 @@ func (s *Server) handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	embeddings, err := s.embedder.Embed(r.Context(), req.Input)
+	target, err := providers.ResolveTarget(s.configs, req.Model, s.embedder.ModelName())
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	if validator, ok := s.embedder.(interface {
+		ValidateEmbeddingTarget(providers.ResolvedTarget) error
+	}); ok {
+		if err := validator.ValidateEmbeddingTarget(target); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+			return
+		}
+	}
+	model := s.embedder.ModelName()
+	provider := ""
+	var embeddings [][]float32
+	if resolved, ok := s.embedder.(interface {
+		EmbedResolved(context.Context, []string, providers.ResolvedTarget) (providers.EmbeddingResult, error)
+	}); ok {
+		var result providers.EmbeddingResult
+		result, err = resolved.EmbedResolved(r.Context(), req.Input, target)
+		embeddings = result.Vectors
+		model = result.Model
+		provider = result.Provider
+	} else if req.Model != "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "Explicit embedding targets unavailable")
+		return
+	} else {
+		embeddings, err = s.embedder.Embed(r.Context(), req.Input)
+	}
 	if err != nil {
 		errType, message := sanitizeUpstreamError(err)
 		writeError(w, http.StatusBadGateway, errType, message)
@@ -196,14 +228,14 @@ func (s *Server) handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	resp := EmbeddingResponse{
 		Object: "list",
 		Data:   data,
-		Model:  s.embedder.ModelName(),
+		Model:  model,
 		Usage: Usage{
 			PromptTokens: len(req.Input) * TokenEstimationMultiplier,
 			TotalTokens:  len(req.Input) * TokenEstimationMultiplier,
 		},
 	}
 
-	writeJSON(w, http.StatusOK, resp)
+	writeJSONWithProviderHeaders(w, http.StatusOK, resp, provider, model)
 }
 
 // handleListModels handles GET /v1/models

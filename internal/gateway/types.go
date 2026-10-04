@@ -3,6 +3,8 @@ package gateway
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/dotcommander/llambo/providers"
+	whtypes "github.com/garyblankenship/wormhole/v3/types"
 	"time"
 )
 
@@ -17,6 +19,16 @@ type ChatCompletionRequest struct {
 	MaxTokens      *int            `json:"max_tokens,omitempty"`
 	ResponseFormat *ResponseFormat `json:"response_format,omitempty"`
 	Stream         bool            `json:"stream"`
+	Tools          []whtypes.Tool  `json:"tools,omitempty"`
+	ToolChoice     json.RawMessage `json:"tool_choice,omitempty"`
+	Stop           json.RawMessage `json:"stop,omitempty"`
+	StreamOptions  *StreamOptions  `json:"stream_options,omitempty"`
+	target         providers.ResolvedTarget
+	structured     providers.StructuredChatRequest
+}
+
+type StreamOptions struct {
+	IncludeUsage bool `json:"include_usage"`
 }
 
 // ResponseFormat captures OpenAI-compatible structured response requests.
@@ -27,8 +39,10 @@ type ResponseFormat struct {
 
 // Message represents a chat message
 type Message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role       string             `json:"role"`
+	Content    string             `json:"content"`
+	ToolCalls  []whtypes.ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string             `json:"tool_call_id,omitempty"`
 }
 
 // ChatCompletionResponse matches OpenAI's chat completion response format
@@ -50,10 +64,28 @@ type Choice struct {
 	FinishReason string   `json:"finish_reason,omitempty"`
 }
 
+type OpenAIToolCall struct {
+	ID       string                    `json:"id"`
+	Type     string                    `json:"type"`
+	Function *whtypes.ToolCallFunction `json:"function"`
+}
+
 // Delta represents streaming content delta
 type Delta struct {
-	Role    string `json:"role,omitempty"`
-	Content string `json:"content,omitempty"`
+	Role      string            `json:"role,omitempty"`
+	Content   string            `json:"content,omitempty"`
+	ToolCalls []OpenAIToolDelta `json:"tool_calls,omitempty"`
+}
+
+type OpenAIToolDelta struct {
+	Index    int                `json:"index"`
+	ID       string             `json:"id,omitempty"`
+	Type     string             `json:"type,omitempty"`
+	Function OpenAIToolFunction `json:"function"`
+}
+type OpenAIToolFunction struct {
+	Name      string `json:"name,omitempty"`
+	Arguments string `json:"arguments,omitempty"`
 }
 
 // Usage represents token usage
@@ -154,8 +186,15 @@ type CreateJobRequest struct {
 
 // JobRequest represents a single request within a batch job
 type JobRequest struct {
-	ID       string    `json:"id"`
-	Messages []Message `json:"messages"`
+	ID             string          `json:"id"`
+	Messages       []Message       `json:"messages"`
+	Tools          []whtypes.Tool  `json:"tools,omitempty"`
+	ToolChoice     json.RawMessage `json:"tool_choice,omitempty"`
+	Stop           json.RawMessage `json:"stop,omitempty"`
+	ResponseFormat *ResponseFormat `json:"response_format,omitempty"`
+	Temperature    *float64        `json:"temperature,omitempty"`
+	TopP           *float64        `json:"top_p,omitempty"`
+	MaxTokens      *int            `json:"max_tokens,omitempty"`
 }
 
 // JobResponse represents job status and results
@@ -172,13 +211,15 @@ type JobResponse struct {
 
 // JobResult represents the result of a single request within a job
 type JobResult struct {
-	ID         string `json:"id"`
-	Status     string `json:"status"` // pending, processing, completed, failed
-	Content    string `json:"content,omitempty"`
-	Error      string `json:"error,omitempty"`
-	Backend    string `json:"backend,omitempty"`
-	Model      string `json:"model,omitempty"`
-	DurationMs int64  `json:"duration_ms,omitempty"`
+	ID           string           `json:"id"`
+	Status       string           `json:"status"` // pending, processing, completed, failed
+	Content      string           `json:"content,omitempty"`
+	Error        string           `json:"error,omitempty"`
+	Backend      string           `json:"backend,omitempty"`
+	Model        string           `json:"model,omitempty"`
+	DurationMs   int64            `json:"duration_ms,omitempty"`
+	ToolCalls    []OpenAIToolCall `json:"tool_calls,omitempty"`
+	FinishReason string           `json:"finish_reason,omitempty"`
 }
 
 // Health and status types

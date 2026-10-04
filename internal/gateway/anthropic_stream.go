@@ -43,7 +43,7 @@ func newAnthropicStreamState(model string, stopSequences []string) *anthropicStr
 
 func (s *Server) handleAnthropicMessagesStream(w http.ResponseWriter, r *http.Request, parsed *anthropicParsedRequest) {
 	req := parsed.Original
-	streamer, ok := any(s.provider).(providers.ChatStreamProvider)
+	_, ok := any(s.provider).(providers.ChatStreamProvider)
 	if !ok {
 		writeAnthropicError(w, http.StatusNotImplemented, parsed.RequestID, "Streaming not yet implemented")
 		return
@@ -58,7 +58,7 @@ func (s *Server) handleAnthropicMessagesStream(w http.ResponseWriter, r *http.Re
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-	ctx, cancel := context.WithTimeout(r.Context(), HandlerTimeout)
+	ctx, cancel := context.WithTimeout(r.Context(), s.effectiveHandlerTimeout())
 	defer cancel()
 	ctx = parsed.enrichContext(ctx)
 
@@ -99,9 +99,13 @@ func (s *Server) handleAnthropicMessagesStream(w http.ResponseWriter, r *http.Re
 		return nil
 	}
 
-	systemPrompt, userContent := buildAnthropicPrompts(parsed.Translated.Messages)
 	pending := make([]providers.ChatStreamChunk, 0, 2)
-	processChunk := func(chunk providers.ChatStreamChunk) error {
+	processChunk := func(chunk providers.ChatStreamChunk) (callbackErr error) {
+		defer func() {
+			if callbackErr != nil {
+				cancel()
+			}
+		}()
 		if chunk.ContentDelta != "" {
 			if err := state.processTextDelta(w, flusher, chunk.ContentDelta); err != nil {
 				return err
@@ -133,7 +137,12 @@ func (s *Server) handleAnthropicMessagesStream(w http.ResponseWriter, r *http.Re
 
 		return nil
 	}
-	result, err := streamer.ChatStreamWithInfoContext(ctx, systemPrompt, userContent, func(chunk providers.ChatStreamChunk) error {
+	result, err := s.executeChatStream(ctx, parsed.Translated, func(chunk providers.ChatStreamChunk) (callbackErr error) {
+		defer func() {
+			if callbackErr != nil {
+				cancel()
+			}
+		}()
 		if !started {
 			if chunk.Provider == "" && chunk.Model == "" {
 				pending = append(pending, chunk)
