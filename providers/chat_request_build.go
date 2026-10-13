@@ -43,7 +43,7 @@ func buildTextRequest(ctx context.Context, cfg Config, systemPrompt, userContent
 	if maxTokens > 0 {
 		request.MaxTokens = intPtr(maxTokens)
 	}
-	if temperatureSet {
+	if temperatureSet && !rejectsGeminiTemperature(cfg) {
 		request.Temperature = float32Ptr(float32(temperature))
 	}
 	if topP != nil && *topP > 0 {
@@ -78,7 +78,7 @@ func buildTextRequest(ctx context.Context, cfg Config, systemPrompt, userContent
 		}
 		request.Stop = append([]string(nil), structured.Stop...)
 		request.ResponseFormat = cloneJSONValue(structured.ResponseFormat)
-		if structured.Temperature != nil {
+		if structured.Temperature != nil && !rejectsGeminiTemperature(cfg) {
 			request.Temperature = float32Ptr(float32(*structured.Temperature))
 		}
 		if structured.TopP != nil {
