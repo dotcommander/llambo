@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-13
+
+### Added
+- Gateway forwarding of OpenAI-compatible reasoning controls: `reasoning_effort` (string) and `reasoning` (object) map onto the provider-neutral reasoning request control, so first-party OpenAI backends receive `reasoning_effort` and other OpenAI-compatible backends receive the `reasoning` object; malformed `reasoning` is rejected with HTTP 400
+- Native Gemini 3-series model detection: requests to Gemini 3-or-later models leave `temperature` unset because those models reject it, and writing-eval reasoning efforts translate to `generationConfig.thinkingConfig` (`thinkingLevel` for Gemini 3 models, with `off` mapped to the lowest supported level and thought summaries suppressed; `thinkingBudget` for 2.5-series)
+- `--reasoning-effort minimal` for `llambo evals writing run`, matching the Gemini flash-series thinking-level floor
+- Per-model writing-judge thinking levels: `high` for `gemini-3-pro-preview`, `medium` otherwise
+
+### Changed
+- Updated all dependencies: wormhole v3.0.1 → v3.2.0 (SDK lifecycle, stream, tool-pairing, and schema hardening; native reasoning controls; typed incomplete-generation classification), `modernc.org/sqlite` v1.60.1, `testify` v1.12.1, and refreshed indirects; the archived `gopkg.in/yaml.v3` dependency is replaced by its maintained continuation `go.yaml.in/yaml/v3`
+
+### Fixed
+- Empty, reasoning-only, and truncated generations no longer count against provider circuit breakers or routing-metrics failures; they surface as request-budget outcomes with failover preserved
+
 ## [0.3.0] - 2026-10-04
 
 ### Added

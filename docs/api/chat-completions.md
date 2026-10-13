@@ -32,6 +32,8 @@ If you need Anthropic-compatible request and response envelopes, see [Messages](
 | `response_format` | object | No | Structured output request | `json_object` / `json_schema` passthrough |
 | `stream` | boolean | No | Stream Server-Sent Events when `true` | Defaults to `false` |
 | `stream_options` | object | No | Streaming options | `include_usage: true` emits a final usage chunk |
+| `reasoning_effort` | string | No | Provider-neutral reasoning effort hint | `minimal`, `low`, `medium`, `high`, or `none`; forwarded to first-party OpenAI as `reasoning_effort` and to other backends as a `reasoning` object |
+| `reasoning` | object | No | Reasoning controls | `{"effort": "...", "max_tokens": 1024, "enabled": true}`; fields merge with `reasoning_effort`, and a non-object value is rejected with HTTP 400 |
 
 ### Message Object
 
