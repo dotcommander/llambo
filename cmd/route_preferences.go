@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/dotcommander/llambo/providers"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 //go:embed route_preferences.default.yaml
