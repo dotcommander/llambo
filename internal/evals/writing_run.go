@@ -83,7 +83,7 @@ func NewWritingRunManifest(inputPath, inputHash string, records []WritingPromptR
 			MaxRunCostUSD:           maxRunCost,
 			Generation:              adapter.GenerationSettings(),
 			JudgeLayout:             "combined-v1",
-			JudgeThinkingLevel:      "medium",
+			JudgeThinkingLevel:      writingJudgeThinkingLevel(judge.Model),
 			JudgeConcurrency:        1,
 		},
 	}

@@ -70,7 +70,9 @@ metadata. The adapter rejects additional and duplicate source fields.
 | Goal | Flag |
 | --- | --- |
 | Preserve model defaults | Omit reasoning flags |
-| Set a reasoning level | `--reasoning-effort off\|low\|medium\|high` |
+| Set a reasoning level | `--reasoning-effort off\|minimal\|low\|medium\|high` |
+
+On native Gemini candidates the reasoning effort and thinking budget are translated to `generationConfig.thinkingConfig` (`thinkingLevel`, or the lowest supported level with `includeThoughts: false` for `off`); Gemini 3-series candidates also drop temperature, which those models reject.
 | Set a thinking budget | `--thinking-budget-tokens 32768` |
 | Raise a proven-small output cap | `--generation-max-output-tokens 32768` |
 

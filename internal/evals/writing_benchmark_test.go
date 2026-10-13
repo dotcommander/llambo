@@ -132,3 +132,22 @@ func TestEQCreativeLocalRubricIdentity(t *testing.T) {
 		t.Fatalf("criteria = %#v, %v", criteria, err)
 	}
 }
+
+func TestWritingJudgeThinkingLevel(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		model string
+		want  string
+	}{
+		{"", "medium"},
+		{"gemini-3.6-flash", "medium"},
+		{"gemini-2.5-pro", "medium"},
+		{"gemini-3-pro-preview", "high"},
+		{"models/Gemini-3-Pro-Preview", "high"},
+	}
+	for _, tc := range cases {
+		if got := writingJudgeThinkingLevel(tc.model); got != tc.want {
+			t.Errorf("writingJudgeThinkingLevel(%q) = %q, want %q", tc.model, got, tc.want)
+		}
+	}
+}

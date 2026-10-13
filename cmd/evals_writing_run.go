@@ -28,7 +28,7 @@ type evalsWritingRunCommand struct {
 	Timeout          time.Duration `default:"5m" help:"Per-call timeout"`
 	JudgeTokens      int           `name:"judge-max-output-tokens" default:"8192" help:"Maximum judge output tokens (1..65536)"`
 	GenerationTokens int           `name:"generation-max-output-tokens" help:"Override candidate generation output tokens (1..65536); omitted uses model config"`
-	ReasoningEffort  string        `name:"reasoning-effort" default:"default" enum:"default,off,low,medium,high" help:"Candidate generation reasoning effort; off explicitly disables thinking, default leaves model settings unchanged"`
+	ReasoningEffort  string        `name:"reasoning-effort" default:"default" enum:"default,off,minimal,low,medium,high" help:"Candidate generation reasoning effort; off explicitly disables thinking, default leaves model settings unchanged"`
 	ThinkingBudget   int           `name:"thinking-budget-tokens" help:"Candidate thinking-token budget (1..65536); omitted leaves the provider/model budget unchanged"`
 	MaxRunCost       float64       `name:"max-run-cost" help:"Required positive worst-case USD budget with --execute"`
 	MaxCampaignCost  float64       `name:"max-campaign-cost" help:"Total campaign USD cap; required with --execute"`

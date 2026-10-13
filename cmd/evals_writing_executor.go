@@ -97,6 +97,9 @@ func writingExecutionContext(parent context.Context, cfg providers.Config, call 
 	}
 	ctx := providers.WithChatRequestOverrides(parent, &maxTokens, temperature, nil)
 	overrides := maps.Clone(call.Settings.ExtraBody)
+	if cfg.GetProviderType() == "gemini" {
+		overrides = geminiReasoningOverrides(overrides, call.Model.Model)
+	}
 	if incoming, ok := overrides["chat_template_kwargs"].(map[string]any); ok {
 		merged := make(map[string]any)
 		for _, configured := range []map[string]any{cfg.ExtraBody, cfg.ExtraBodyByModel[cfg.Model]} {

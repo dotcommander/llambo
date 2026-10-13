@@ -183,6 +183,18 @@ func CombinedWritingJudgeSettings(thinkingLevel string) (WritingGenerationSettin
 	}}, nil
 }
 
+// writingJudgeThinkingLevel picks the combined judge's Gemini thinkingLevel.
+// medium matches the flash-series default; gemini-3-pro-preview accepts only
+// low and high, so high (its documented default) is used there.
+// Source: https://aistudio.google.com/docs/thinking#thinking-levels
+func writingJudgeThinkingLevel(model string) string {
+	base := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(model)), "models/")
+	if strings.HasPrefix(base, "gemini-3-pro-preview") {
+		return "high"
+	}
+	return "medium"
+}
+
 func ParseWritingJudgment(raw string) (int, string, error) {
 	var value struct {
 		Score  int    `json:"score"`
