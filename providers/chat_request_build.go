@@ -49,6 +49,7 @@ func buildTextRequest(ctx context.Context, cfg Config, systemPrompt, userContent
 	if topP != nil && *topP > 0 {
 		request.TopP = float32Ptr(float32(*topP))
 	}
+	request.Reasoning = RequestReasoningFromContext(ctx)
 
 	stops := StopSequencesFromContext(ctx)
 	if len(stops) > 0 {

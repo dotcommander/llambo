@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"reflect"
+
+	whtypes "github.com/garyblankenship/wormhole/v3/types"
 )
 
 type requestOptionsKey string
@@ -16,6 +18,7 @@ const (
 	metadataContextKey       requestOptionsKey = "metadata"
 	jsonOverridesContextKey  requestOptionsKey = "json_overrides"
 	responseFormatContextKey requestOptionsKey = "response_format"
+	reasoningContextKey      requestOptionsKey = "reasoning"
 )
 
 // ToolDefinition captures tool metadata for provider-native tool calling.
@@ -51,6 +54,39 @@ func ResponseFormatOverrideFromContext(ctx context.Context) any {
 type ToolChoice struct {
 	Type string
 	Name string
+}
+
+// WithRequestReasoning attaches provider-neutral reasoning controls to a
+// request. The value is cloned so callers cannot alter an in-flight request
+// after it is attached to the context.
+func WithRequestReasoning(ctx context.Context, reasoning *whtypes.Reasoning) context.Context {
+	if ctx == nil || reasoning == nil {
+		return ctx
+	}
+	copyReasoning := *reasoning
+	if reasoning.Enabled != nil {
+		enabled := *reasoning.Enabled
+		copyReasoning.Enabled = &enabled
+	}
+	return context.WithValue(ctx, reasoningContextKey, &copyReasoning)
+}
+
+// RequestReasoningFromContext extracts cloned reasoning controls.
+func RequestReasoningFromContext(ctx context.Context) *whtypes.Reasoning {
+	if ctx == nil {
+		return nil
+	}
+	v := ctx.Value(reasoningContextKey)
+	reasoning, ok := v.(*whtypes.Reasoning)
+	if !ok || reasoning == nil {
+		return nil
+	}
+	out := *reasoning
+	if reasoning.Enabled != nil {
+		enabled := *reasoning.Enabled
+		out.Enabled = &enabled
+	}
+	return &out
 }
 
 // ChatRequestOverrides carries per-request parameter overrides.

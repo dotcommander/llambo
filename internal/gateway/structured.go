@@ -26,8 +26,13 @@ func (s *Server) prepareChat(req *ChatCompletionRequest) error {
 	if err != nil {
 		return err
 	}
+	reasoning, err := reasoningOverride(*req)
+	if err != nil {
+		return err
+	}
 	req.target = target
 	req.structured = request
+	req.reasoning = reasoning
 	return nil
 }
 func structuredRequest(req ChatCompletionRequest) (providers.StructuredChatRequest, error) {

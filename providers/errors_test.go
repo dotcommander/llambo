@@ -2,8 +2,56 @@ package providers
 
 import (
 	"errors"
+	"fmt"
 	"testing"
+
+	whtypes "github.com/garyblankenship/wormhole/v3/types"
 )
+
+func TestIsIncompleteGenerationError(t *testing.T) {
+	t.Parallel()
+	reasoningOnly := whtypes.NewIncompleteGenerationError(&whtypes.TextResponse{
+		Model:    "reasoning-model",
+		Thinking: &whtypes.Thinking{Content: "hidden chain of thought"},
+	})
+	truncated := whtypes.NewIncompleteGenerationError(&whtypes.TextResponse{
+		Model:        "reasoning-model",
+		FinishReason: whtypes.FinishReasonLength,
+	})
+	empty := whtypes.NewIncompleteGenerationError(&whtypes.TextResponse{Model: "reasoning-model"})
+
+	// finalizeChatAttempt wraps attempt errors with "<backend>: %w"; detection
+	// must survive that wrapping because recordAttemptFailure sees the wrapped form.
+	wrapped := fmt.Errorf("openai: %w", reasoningOnly)
+
+	for name, err := range map[string]error{
+		"reasoning-only": reasoningOnly,
+		"truncated":      truncated,
+		"empty":          empty,
+		"wrapped":        wrapped,
+	} {
+		if !IsIncompleteGenerationError(err) {
+			t.Errorf("IsIncompleteGenerationError(%s) = false, want true", name)
+		}
+		if category := ClassifyError(err); category == RateLimitError || category == TransientError {
+			t.Errorf("ClassifyError(%s) = %v; incomplete generations must not be rate-limit or retryable", name, category)
+		}
+		if IsRetryable(err) {
+			t.Errorf("IsRetryable(%s) = true, want false", name)
+		}
+	}
+
+	plainWormhole := whtypes.NewWormholeError(whtypes.ErrorCodeProvider, "provider exploded", true)
+	if IsIncompleteGenerationError(plainWormhole) {
+		t.Error("IsIncompleteGenerationError(plain WormholeError) = true, want false")
+	}
+	if IsIncompleteGenerationError(nil) {
+		t.Error("IsIncompleteGenerationError(nil) = true, want false")
+	}
+	if IsIncompleteGenerationError(errors.New("generation returned empty response")) {
+		t.Error("string lookalike must not be detected as incomplete generation")
+	}
+}
 
 func TestClassifyError_Nil(t *testing.T) {
 	t.Parallel()

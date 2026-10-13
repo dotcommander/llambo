@@ -150,7 +150,7 @@ func (c executionCoordinator) recordFailure(provider string, usage *LLMUsage, du
 }
 
 func (c executionCoordinator) recordAttemptFailure(provider string, usage *LLMUsage, duration time.Duration, err error) {
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrBackendUnavailable) || IsConsumerError(err) {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrBackendUnavailable) || IsConsumerError(err) || IsIncompleteGenerationError(err) {
 		return
 	}
 	c.recordFailure(provider, usage, duration, err)

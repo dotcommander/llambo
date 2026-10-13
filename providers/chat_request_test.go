@@ -154,6 +154,34 @@ func TestBuildTextRequest_UsesRequestOverrides(t *testing.T) {
 	}
 }
 
+func TestBuildTextRequest_AppliesRequestReasoning(t *testing.T) {
+	t.Parallel()
+	enabled := true
+	ctx := WithRequestReasoning(context.Background(), &whtypes.Reasoning{
+		Effort:    whtypes.ReasoningEffortHigh,
+		MaxTokens: 2048,
+		Enabled:   &enabled,
+	})
+
+	req := buildTextRequest(ctx, Config{Model: "gpt-4o"}, "system", "user")
+	if req.Reasoning == nil {
+		t.Fatal("expected reasoning override on request")
+	}
+	if req.Reasoning.Effort != whtypes.ReasoningEffortHigh {
+		t.Fatalf("expected high effort, got %q", req.Reasoning.Effort)
+	}
+	if req.Reasoning.MaxTokens != 2048 {
+		t.Fatalf("expected reasoning max tokens 2048, got %d", req.Reasoning.MaxTokens)
+	}
+	if req.Reasoning.Enabled == nil || !*req.Reasoning.Enabled {
+		t.Fatalf("expected reasoning enabled, got %+v", req.Reasoning.Enabled)
+	}
+
+	if absent := buildTextRequest(context.Background(), Config{Model: "gpt-4o"}, "system", "user"); absent.Reasoning != nil {
+		t.Fatalf("expected no reasoning without override, got %+v", absent.Reasoning)
+	}
+}
+
 func TestBuildTextRequest_PreservesExplicitZeroTemperature(t *testing.T) {
 	t.Parallel()
 	temperature := 0.0

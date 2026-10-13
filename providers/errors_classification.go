@@ -119,6 +119,18 @@ func classifyByPatterns(msg string) ErrorCategory {
 	return UnknownError
 }
 
+// IsIncompleteGenerationError reports wormhole incomplete-generation outcomes:
+// generation ended without app-visible content (empty, reasoning-only, or
+// truncated by an output limit). These are request/budget outcomes where the
+// provider completed its work; they must not degrade provider health.
+func IsIncompleteGenerationError(err error) bool {
+	if err == nil {
+		return false
+	}
+	_, ok := whtypes.AsIncompleteGenerationError(err)
+	return ok
+}
+
 // IsRateLimitError checks if an error indicates rate limiting or quota exceeded.
 // Exported for direct use in circuit breaker.
 func IsRateLimitError(err error) bool {

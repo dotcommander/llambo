@@ -12,19 +12,22 @@ import (
 
 // ChatCompletionRequest matches OpenAI's chat completion request format
 type ChatCompletionRequest struct {
-	Model          string          `json:"model"`
-	Messages       []Message       `json:"messages"`
-	Temperature    *float64        `json:"temperature,omitempty"`
-	TopP           *float64        `json:"top_p,omitempty"`
-	MaxTokens      *int            `json:"max_tokens,omitempty"`
-	ResponseFormat *ResponseFormat `json:"response_format,omitempty"`
-	Stream         bool            `json:"stream"`
-	Tools          []whtypes.Tool  `json:"tools,omitempty"`
-	ToolChoice     json.RawMessage `json:"tool_choice,omitempty"`
-	Stop           json.RawMessage `json:"stop,omitempty"`
-	StreamOptions  *StreamOptions  `json:"stream_options,omitempty"`
-	target         providers.ResolvedTarget
-	structured     providers.StructuredChatRequest
+	Model           string          `json:"model"`
+	Messages        []Message       `json:"messages"`
+	Temperature     *float64        `json:"temperature,omitempty"`
+	TopP            *float64        `json:"top_p,omitempty"`
+	MaxTokens       *int            `json:"max_tokens,omitempty"`
+	ResponseFormat  *ResponseFormat `json:"response_format,omitempty"`
+	Stream          bool            `json:"stream"`
+	Tools           []whtypes.Tool  `json:"tools,omitempty"`
+	ToolChoice      json.RawMessage `json:"tool_choice,omitempty"`
+	Stop            json.RawMessage `json:"stop,omitempty"`
+	StreamOptions   *StreamOptions  `json:"stream_options,omitempty"`
+	ReasoningEffort string          `json:"reasoning_effort,omitempty"`
+	Reasoning       json.RawMessage `json:"reasoning,omitempty"`
+	target          providers.ResolvedTarget
+	structured      providers.StructuredChatRequest
+	reasoning       *whtypes.Reasoning
 }
 
 type StreamOptions struct {

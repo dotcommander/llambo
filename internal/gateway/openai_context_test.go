@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/dotcommander/llambo/providers"
+	whtypes "github.com/garyblankenship/wormhole/v3/types"
 )
 
 func TestHandlerChatCompletionStreamUsesOpenAIRequestContext(t *testing.T) {
@@ -102,6 +103,120 @@ func assertOpenAIStreamRequestOptions(t *testing.T, ctx context.Context) {
 	}
 	assertOpenAIResponseFormatSchema(t, responseFormat["json_schema"])
 }
+
+type reasoningOverrideCase struct {
+	name        string
+	effort      string
+	reasoning   json.RawMessage
+	wantErr     bool
+	wantEffort  string
+	wantTokens  int
+	wantEnabled *bool
+}
+
+func assertReasoningCase(t *testing.T, got *whtypes.Reasoning, want reasoningOverrideCase) {
+	t.Helper()
+	if want.wantEffort == "" {
+		if got != nil {
+			t.Fatalf("reasoningOverride() = %+v, want nil", got)
+		}
+		return
+	}
+	if got == nil {
+		t.Fatalf("reasoningOverride() = nil, want effort %q", want.wantEffort)
+	}
+	if string(got.Effort) != want.wantEffort {
+		t.Fatalf("reasoningOverride() effort = %q, want %q", got.Effort, want.wantEffort)
+	}
+	if got.MaxTokens != want.wantTokens {
+		t.Fatalf("reasoningOverride() max tokens = %d, want %d", got.MaxTokens, want.wantTokens)
+	}
+	if (got.Enabled == nil) != (want.wantEnabled == nil) {
+		t.Fatalf("reasoningOverride() enabled = %+v, want %+v", got.Enabled, want.wantEnabled)
+	}
+}
+
+func TestReasoningOverride(t *testing.T) {
+	tests := []reasoningOverrideCase{
+		{
+			name:       "effort string only",
+			effort:     "high",
+			wantEffort: "high",
+		},
+		{
+			name:        "reasoning object",
+			reasoning:   json.RawMessage(`{"effort":"low","max_tokens":1024,"enabled":true}`),
+			wantEffort:  "low",
+			wantTokens:  1024,
+			wantEnabled: ptrBool(true),
+		},
+		{
+			name:        "object without effort merges effort string",
+			effort:      "medium",
+			reasoning:   json.RawMessage(`{"max_tokens":512}`),
+			wantEffort:  "medium",
+			wantTokens:  512,
+			wantEnabled: nil,
+		},
+		{
+			name:       "null reasoning falls back to effort string",
+			effort:     "minimal",
+			reasoning:  json.RawMessage(`null`),
+			wantEffort: "minimal",
+		},
+		{
+			name:      "malformed reasoning object is a request error",
+			effort:    "high",
+			reasoning: json.RawMessage(`"high"`),
+			wantErr:   true,
+		},
+		{
+			name: "no reasoning controls",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := reasoningOverride(ChatCompletionRequest{ReasoningEffort: tt.effort, Reasoning: tt.reasoning})
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("reasoningOverride() = %+v, want error", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("reasoningOverride() error = %v", err)
+			}
+			assertReasoningCase(t, got, tt)
+		})
+	}
+}
+
+func TestOpenAIRequestContextCarriesReasoning(t *testing.T) {
+	t.Parallel()
+	req := ChatCompletionRequest{ReasoningEffort: "high"}
+	parsed, err := reasoningOverride(req)
+	if err != nil {
+		t.Fatalf("reasoningOverride() error = %v", err)
+	}
+	req.reasoning = parsed
+
+	ctx, cancel := openAIRequestContextTimeout(context.Background(), req, time.Second)
+	defer cancel()
+
+	got := providers.RequestReasoningFromContext(ctx)
+	if got == nil || got.Effort != "high" {
+		t.Fatalf("request reasoning from context = %+v, want high effort", got)
+	}
+
+	bare, cancelBare := openAIRequestContextTimeout(context.Background(), ChatCompletionRequest{}, time.Second)
+	defer cancelBare()
+	if providers.RequestReasoningFromContext(bare) != nil {
+		t.Fatal("expected no reasoning on context for request without reasoning controls")
+	}
+}
+
+func ptrBool(v bool) *bool { return &v }
 
 func assertOpenAIJSONSchema(t *testing.T, value any) {
 	t.Helper()
