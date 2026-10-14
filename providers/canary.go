@@ -3,7 +3,6 @@ package providers
 import (
 	"fmt"
 	"hash/fnv"
-	"time"
 )
 
 // CanaryConfig controls canary routing: send a percentage of traffic to a trial provider.
@@ -85,107 +84,23 @@ func EvaluateCanary(canary *CanaryConfig, events []RouteEvent, configs map[strin
 	if canary == nil || canary.Provider == "" {
 		return nil
 	}
-
+	events = eligibleCanaryEvents(events, canary.StartedAt)
 	baseline := canary.Baseline
+	if baseline == "" {
+		baseline = mostUsedCanaryBaseline(events, canary.Provider)
+	}
 	status := &CanaryStatus{
 		CanaryProvider:   canary.Provider,
 		BaselineProvider: baseline,
 		TrafficPct:       canary.TrafficPct,
 		PromoteAfter:     canary.PromoteAfter,
 	}
-
-	var canarySuccesses, canaryTotal int
-	var canaryLatency int64
-	var canaryCost float64
-	var baselineSuccesses, baselineTotal int
-	var baselineLatency int64
-	var baselineCost float64
-
-	var startFilter time.Time
-	if canary.StartedAt != "" {
-		if t, err := time.Parse(time.RFC3339, canary.StartedAt); err == nil {
-			startFilter = t
-		}
-	}
-
-	for _, ev := range events {
-		if ev.PromotionIneligible {
-			continue
-		}
-		if !startFilter.IsZero() && ev.Timestamp.Before(startFilter) {
-			continue
-		}
-		if ev.IsCanary && ev.ChosenProvider == canary.Provider {
-			canaryTotal++
-			if ev.Success {
-				canarySuccesses++
-			}
-			canaryLatency += ev.LatencyMs
-			canaryCost += ev.CostUSD
-		}
-		if baseline != "" && ev.ChosenProvider == baseline && !ev.IsCanary {
-			baselineTotal++
-			if ev.Success {
-				baselineSuccesses++
-			}
-			baselineLatency += ev.LatencyMs
-			baselineCost += ev.CostUSD
-		}
-	}
-
-	// If no explicit baseline, find the most-used non-canary provider
-	if baseline == "" {
-		counts := make(map[string]int)
-		for _, ev := range events {
-			if ev.PromotionIneligible {
-				continue
-			}
-			if !startFilter.IsZero() && ev.Timestamp.Before(startFilter) {
-				continue
-			}
-			if !ev.IsCanary && ev.ChosenProvider != "" && ev.ChosenProvider != canary.Provider {
-				counts[ev.ChosenProvider]++
-			}
-		}
-		maxCount := 0
-		for name, c := range counts {
-			if c > maxCount {
-				maxCount = c
-				baseline = name
-			}
-		}
-		status.BaselineProvider = baseline
-		for _, ev := range events {
-			if ev.PromotionIneligible {
-				continue
-			}
-			if !startFilter.IsZero() && ev.Timestamp.Before(startFilter) {
-				continue
-			}
-			if ev.ChosenProvider == baseline && !ev.IsCanary {
-				baselineTotal++
-				if ev.Success {
-					baselineSuccesses++
-				}
-				baselineLatency += ev.LatencyMs
-				baselineCost += ev.CostUSD
-			}
-		}
-	}
-
-	status.CanaryRequests = canaryTotal
-	status.BaselineRequests = baselineTotal
-	if canaryTotal > 0 {
-		status.CanarySuccessRate = float64(canarySuccesses) / float64(canaryTotal)
-		status.CanaryAvgLatencyMs = canaryLatency / int64(canaryTotal)
-		status.CanaryAvgCostUSD = canaryCost / float64(canaryTotal)
-	}
-	if baselineTotal > 0 {
-		status.BaselineSuccessRate = float64(baselineSuccesses) / float64(baselineTotal)
-		status.BaselineAvgLatencyMs = baselineLatency / int64(baselineTotal)
-		status.BaselineAvgCostUSD = baselineCost / float64(baselineTotal)
-	}
-
+	trial := collectCanaryMetrics(events, canary.Provider, true)
+	control := collectCanaryMetrics(events, baseline, false)
+	status.CanaryRequests = trial.total
+	status.BaselineRequests = control.total
+	status.CanarySuccessRate, status.CanaryAvgLatencyMs, status.CanaryAvgCostUSD = trial.averages()
+	status.BaselineSuccessRate, status.BaselineAvgLatencyMs, status.BaselineAvgCostUSD = control.averages()
 	status.ShouldPromote, status.PromoteReason, status.RejectReason = evaluatePromotionCriteria(status, canary.PromoteAfter)
 	return status
 }

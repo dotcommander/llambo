@@ -25,30 +25,7 @@ func buildTextRequest(ctx context.Context, cfg Config, systemPrompt, userContent
 	}
 	request.ResponseFormat = ResponseFormatOverrideFromContext(ctx)
 
-	maxTokens := cfg.MaxTokens
-	temperature := cfg.Temperature
-	temperatureSet := temperature > 0
-	var topP *float64
-	if ov := ChatRequestOverridesFromContext(ctx); ov != nil {
-		if ov.MaxTokens != nil {
-			maxTokens = *ov.MaxTokens
-		}
-		if ov.Temperature != nil {
-			temperature = *ov.Temperature
-			temperatureSet = true
-		}
-		topP = ov.TopP
-	}
-
-	if maxTokens > 0 {
-		request.MaxTokens = intPtr(maxTokens)
-	}
-	if temperatureSet && !rejectsGeminiTemperature(cfg) {
-		request.Temperature = float32Ptr(float32(temperature))
-	}
-	if topP != nil && *topP > 0 {
-		request.TopP = float32Ptr(float32(*topP))
-	}
+	applyTextSampling(&request, ctx, cfg)
 	request.Reasoning = RequestReasoningFromContext(ctx)
 
 	stops := StopSequencesFromContext(ctx)
@@ -62,32 +39,7 @@ func buildTextRequest(ctx context.Context, cfg Config, systemPrompt, userContent
 	request.Tools = buildWormholeTools(ctx)
 	request.ToolChoice = buildWormholeToolChoice(ctx)
 	if structured, ok := ctx.Value(structuredRequestKey{}).(StructuredChatRequest); ok {
-		request.Messages = cloneStructuredMessages(structured.Messages)
-		request.SystemPrompt = structured.SystemPrompt
-		request.Tools = append([]whtypes.Tool(nil), structured.Tools...)
-		for i := range request.Tools {
-			request.Tools[i].InputSchema = cloneJSONMap(request.Tools[i].InputSchema)
-			if request.Tools[i].Function != nil {
-				function := *request.Tools[i].Function
-				function.Parameters = cloneJSONMap(function.Parameters)
-				request.Tools[i].Function = &function
-			}
-		}
-		if structured.ToolChoice != nil {
-			choice := *structured.ToolChoice
-			request.ToolChoice = &choice
-		}
-		request.Stop = append([]string(nil), structured.Stop...)
-		request.ResponseFormat = cloneJSONValue(structured.ResponseFormat)
-		if structured.Temperature != nil && !rejectsGeminiTemperature(cfg) {
-			request.Temperature = float32Ptr(float32(*structured.Temperature))
-		}
-		if structured.TopP != nil {
-			request.TopP = float32Ptr(float32(*structured.TopP))
-		}
-		if structured.MaxTokens != nil {
-			request.MaxTokens = intPtr(*structured.MaxTokens)
-		}
+		applyStructuredTextRequest(&request, cfg, structured)
 	}
 	return request
 }

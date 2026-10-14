@@ -114,24 +114,23 @@ func (cb *CircuitBreaker) RecordFailure(name string, err error) {
 	isUnsupportedModel := IsModelUnsupportedError(err)
 	isQuota := IsRateLimitError(err)
 
-	if isUnsupportedModel || isQuota || h.Failures >= MaxConsecutiveFailures {
-		if !h.Disabled {
-			h.Disabled = true
-			h.DisabledAt = h.LastFailure
-			if isUnsupportedModel {
-				h.CooldownUntil = h.LastFailure.Add(RateLimitCooldown)
-			} else {
-				h.CooldownUntil = cooldownUntilFromError(err, h.LastFailure)
-			}
-			if cb.callback != nil {
-				cb.callback(CircuitBreakerEvent{
-					Backend:   name,
-					EventType: "disabled",
-					Failures:  h.Failures,
-					IsQuota:   isQuota,
-				})
-			}
-		}
+	if h.Disabled || (!isUnsupportedModel && !isQuota && h.Failures < MaxConsecutiveFailures) {
+		return
+	}
+	h.Disabled = true
+	h.DisabledAt = h.LastFailure
+	if isUnsupportedModel {
+		h.CooldownUntil = h.LastFailure.Add(RateLimitCooldown)
+	} else {
+		h.CooldownUntil = cooldownUntilFromError(err, h.LastFailure)
+	}
+	if cb.callback != nil {
+		cb.callback(CircuitBreakerEvent{
+			Backend:   name,
+			EventType: "disabled",
+			Failures:  h.Failures,
+			IsQuota:   isQuota,
+		})
 	}
 }
 
