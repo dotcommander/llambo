@@ -75,7 +75,7 @@ func TestStructuredHistoryAndExactQueueModelReachWormhole(t *testing.T) {
 func TestKeyRotationVisitsEveryDistinctKey(t *testing.T) {
 	t.Parallel()
 	calls := 0
-	result, err := executeChatAttemptWithKeyRotation(context.Background(), "fixture", Config{}, "", "", func(string, chatRequestResult) (bool, error) { return true, nil }, func(context.Context, string, Config, string, string) (chatRequestResult, error) {
+	result, err := executeChatAttemptWithKeyRotation(context.Background(), chatAttempt{backendName: "fixture"}, func(string, chatRequestResult) (bool, error) { return true, nil }, func(context.Context, chatAttempt) (chatRequestResult, error) {
 		calls++
 		if calls == 3 {
 			return chatRequestResult{content: "ok", clientKey: "third"}, nil
@@ -211,11 +211,11 @@ func TestExactTargetConstrainsCanaryAndEveryFallback(t *testing.T) {
 		t.Fatalf("plan %+v", plan)
 	}
 	seen := make(map[string]bool)
-	_, err = coordinator.execute(context.Background(), plan, "", "", nil, func(_ context.Context, info providerInfo, _, _ string) (chatRequestResult, error) {
-		if info.name == "forbidden" || info.cfg.Model != "Exact" {
-			t.Fatalf("invalid fallback %+v", info)
+	_, err = coordinator.execute(context.Background(), plan, nil, func(_ context.Context, call chatAttempt) (chatRequestResult, error) {
+		if call.backendName == "forbidden" || call.cfg.Model != "Exact" {
+			t.Fatalf("invalid fallback %+v", call)
 		}
-		seen[info.name] = true
+		seen[call.backendName] = true
 		return chatRequestResult{}, errors.New("fixture failure")
 	})
 	if err == nil || len(seen) != 2 {
@@ -230,10 +230,10 @@ func TestCancellationStopsKeyRotationAndProviderFailover(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	calls := 0
-	_, err := executeChatAttemptWithKeyRotation(ctx, "first", Config{}, "", "", func(string, chatRequestResult) (bool, error) {
+	_, err := executeChatAttemptWithKeyRotation(ctx, chatAttempt{backendName: "first"}, func(string, chatRequestResult) (bool, error) {
 		t.Fatal("rotation after cancellation")
 		return false, nil
-	}, func(context.Context, string, Config, string, string) (chatRequestResult, error) {
+	}, func(context.Context, chatAttempt) (chatRequestResult, error) {
 		calls++
 		cancel()
 		return chatRequestResult{clientKey: "key"}, context.Canceled
@@ -285,9 +285,9 @@ func TestFallbackConsumerCancellationPreservesOriginalCause(t *testing.T) {
 	coordinator := executionCoordinator{oc: &OpenAIClients{CircuitBreaker: breaker}}
 	plan := chatExecutionPlan{selected: providerInfo{name: "primary"}, enabled: []providerInfo{{name: "primary"}, {name: "fallback"}}}
 	calls := 0
-	_, err := coordinator.executeStream(ctx, plan, "", "", nil, func(_ context.Context, info providerInfo, _, _ string, _ ChatStreamHandler) (chatRequestResult, bool, error) {
+	_, err := coordinator.executeStream(ctx, plan, nil, func(_ context.Context, call chatAttempt, _ ChatStreamHandler) (chatRequestResult, bool, error) {
 		calls++
-		if info.name == "primary" {
+		if call.backendName == "primary" {
 			return chatRequestResult{}, false, NewOpenAIError("unauthorized", 401, nil)
 		}
 		cancel()
@@ -306,7 +306,7 @@ func TestRateLimitAfterCancellationDoesNotRotateKey(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	calls, rotations := 0, 0
-	_, err := executeChatAttemptWithKeyRotation(ctx, "fixture", Config{}, "", "", func(string, chatRequestResult) (bool, error) { rotations++; return true, nil }, func(context.Context, string, Config, string, string) (chatRequestResult, error) {
+	_, err := executeChatAttemptWithKeyRotation(ctx, chatAttempt{backendName: "fixture"}, func(string, chatRequestResult) (bool, error) { rotations++; return true, nil }, func(context.Context, chatAttempt) (chatRequestResult, error) {
 		calls++
 		cancel()
 		return chatRequestResult{clientKey: "key"}, NewOpenAIError("rate limited", 429, nil)

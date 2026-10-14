@@ -219,7 +219,7 @@ func (cliOpts *invocationOptions) loadPingTargetsWithIO(cmd *commandIO) ([]pingT
 	if err != nil {
 		return nil, providers.RoutingConfig{}, err
 	}
-	targets := buildPingTargetsWithWriter(cmd.ErrOrStderr(), cfg.Providers, costMap, providers.NewBlocklist(cfg.Blocklist), effectiveMaxOutputCost, effectiveIncludeUnknownCost, cat)
+	targets := buildPingTargetsWithWriter(cmd.ErrOrStderr(), cfg.Providers, pingTargetFilter{costMap: costMap, blocklist: providers.NewBlocklist(cfg.Blocklist), maxOutputCost: effectiveMaxOutputCost, includeUnknown: effectiveIncludeUnknownCost, catalog: cat})
 	if len(targets) == 0 {
 		return nil, providers.RoutingConfig{}, errors.New("no enabled providers found")
 	}

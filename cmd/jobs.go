@@ -59,7 +59,7 @@ func (cliOpts *invocationOptions) runJobsRun(cmd *commandIO) error {
 
 	// Wait for completion
 	start := time.Now()
-	finalResp, err := waitForJobWithWriterContext(cmd.Context(), out, cliOpts.runServer, jobResp.JobID, cliOpts.runPoll, cliOpts.runTimeout)
+	finalResp, err := waitForJobWithWriterContext(cmd.Context(), out, cliOpts.runServer, jobResp.JobID, jobWaitOptions{pollInterval: cliOpts.runPoll, timeout: cliOpts.runTimeout})
 	if err != nil {
 		return fmt.Errorf("wait for job: %w", err)
 	}
@@ -175,10 +175,17 @@ func submitJobContext(ctx context.Context, serverURL string, requests []gateway.
 }
 
 func waitForJobContext(ctx context.Context, serverURL, jobID string, pollInterval, timeout time.Duration) (*gateway.JobResponse, error) {
-	return waitForJobWithWriterContext(ctx, os.Stdout, serverURL, jobID, pollInterval, timeout)
+	return waitForJobWithWriterContext(ctx, os.Stdout, serverURL, jobID, jobWaitOptions{pollInterval: pollInterval, timeout: timeout})
 }
 
-func waitForJobWithWriterContext(ctx context.Context, out io.Writer, serverURL, jobID string, pollInterval, timeout time.Duration) (*gateway.JobResponse, error) {
+// jobWaitOptions carries the polling cadence for waiting on a submitted job.
+type jobWaitOptions struct {
+	pollInterval time.Duration
+	timeout      time.Duration
+}
+
+func waitForJobWithWriterContext(ctx context.Context, out io.Writer, serverURL, jobID string, wait jobWaitOptions) (*gateway.JobResponse, error) {
+	pollInterval, timeout := wait.pollInterval, wait.timeout
 	deadline := time.Now().Add(timeout)
 	lastCompleted := -1
 

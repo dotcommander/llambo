@@ -55,9 +55,9 @@ func (cliOpts *invocationOptions) runPromptCommand(cmd *commandIO, args []string
 
 	var results []PromptResult
 	if run == nil {
-		results, err = cliOpts.executePromptAgainstSelectedModelsTo(cmd.Context(), cmd.ErrOrStderr(), promptText, sysPrompt, cliOpts.timeoutSeconds)
+		results, err = cliOpts.executePromptAgainstSelectedModelsTo(cmd.Context(), cmd.ErrOrStderr(), promptRequest{promptText: promptText, systemPrompt: sysPrompt, timeoutSecs: cliOpts.timeoutSeconds})
 	} else {
-		results, err = cliOpts.executePromptAgainstSelectedModelsWithRun(cmd.Context(), cmd.ErrOrStderr(), promptText, sysPrompt, cliOpts.timeoutSeconds, run)
+		results, err = cliOpts.executePromptAgainstSelectedModelsWithRun(cmd.Context(), cmd.ErrOrStderr(), promptRequest{promptText: promptText, systemPrompt: sysPrompt, timeoutSecs: cliOpts.timeoutSeconds}, run)
 	}
 	if err != nil {
 		return err
@@ -69,7 +69,7 @@ func (cliOpts *invocationOptions) runPromptCommand(cmd *commandIO, args []string
 	var control *PromptFusionControl
 	var controlErr error
 	if cliOpts.promptFuseControl && baseErr == nil {
-		control, controlErr = cliOpts.executePromptFusionControlWithRun(cmd.Context(), promptText, sysPrompt, cliOpts.timeoutSeconds, cliOpts.promptFuseModels, run)
+		control, controlErr = cliOpts.executePromptFusionControlWithRun(cmd.Context(), promptRequest{promptText: promptText, systemPrompt: sysPrompt, timeoutSecs: cliOpts.timeoutSeconds}, cliOpts.promptFuseModels, run)
 	}
 	if err := cmd.Context().Err(); err != nil {
 		return err
@@ -77,7 +77,7 @@ func (cliOpts *invocationOptions) runPromptCommand(cmd *commandIO, args []string
 	var fusion *PromptFusion
 	var fuseErr error
 	if cliOpts.promptFuse && baseErr == nil {
-		fusion, fuseErr = cliOpts.executePromptFusionResponseWithRun(cmd.Context(), promptText, sysPrompt, results, cliOpts.timeoutSeconds, cliOpts.promptFuseModels, run)
+		fusion, fuseErr = cliOpts.executePromptFusionResponseWithRun(cmd.Context(), promptRequest{promptText: promptText, systemPrompt: sysPrompt, timeoutSecs: cliOpts.timeoutSeconds}, results, cliOpts.promptFuseModels, run)
 	}
 
 	if err := cmd.Context().Err(); err != nil {
@@ -97,7 +97,7 @@ func (cliOpts *invocationOptions) runPromptCommand(cmd *commandIO, args []string
 	var outputErr error
 	// If output file is specified, write to file
 	if cliOpts.outputFile != "" {
-		if err := writeResultsToFile(cmd, promptText, results, control, fusion, cliOpts.outputFile); err != nil {
+		if err := writeResultsToFile(cmd, resultsOutput{promptText: promptText, results: results, control: control, fusion: fusion}, cliOpts.outputFile); err != nil {
 			outputErr = err
 			// Print error but continue to display results to stdout
 			fmt.Fprintf(cmd.ErrOrStderr(), "Error writing to file %s: %v\n", cliOpts.outputFile, err)
@@ -211,8 +211,16 @@ func checkAllFailed(results []PromptResult) error {
 	return nil
 }
 
+// resultsOutput bundles everything written by the markdown file exporter.
+type resultsOutput struct {
+	promptText string
+	results    []PromptResult
+	control    *PromptFusionControl
+	fusion     *PromptFusion
+}
+
 // writeResultsToFile writes the markdown results to a file
-func writeResultsToFile(_ *commandIO, promptText string, results []PromptResult, control *PromptFusionControl, fusion *PromptFusion, filePath string) error {
+func writeResultsToFile(_ *commandIO, out resultsOutput, filePath string) error {
 	// Create a buffer to capture the output
 	var buf bytes.Buffer
 
@@ -220,12 +228,12 @@ func writeResultsToFile(_ *commandIO, promptText string, results []PromptResult,
 	tempCmd := &commandIO{stdout: &buf, stderr: io.Discard}
 
 	// Generate markdown output to buffer
-	outputPromptResults(tempCmd, promptText, results)
-	if control != nil {
-		outputPromptFusionControl(tempCmd, control)
+	outputPromptResults(tempCmd, out.promptText, out.results)
+	if out.control != nil {
+		outputPromptFusionControl(tempCmd, out.control)
 	}
-	if fusion != nil {
-		outputPromptFusion(tempCmd, fusion)
+	if out.fusion != nil {
+		outputPromptFusion(tempCmd, out.fusion)
 	}
 
 	// Write buffer to file

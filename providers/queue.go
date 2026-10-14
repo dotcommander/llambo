@@ -103,7 +103,7 @@ func (q *BackendQueue) executeJob(ctx context.Context, job Job, plan chatExecuti
 	if job.coordinatorSnapshot != nil {
 		coordinator = *job.coordinatorSnapshot
 	}
-	outcome, err := coordinator.execute(ctx, plan, job.SystemPrompt, job.UserContent, nil, q.executeChatAttempt)
+	outcome, err := coordinator.execute(ctx, plan, nil, q.executeChatAttempt)
 	return Result{
 		ID:           job.ID,
 		Content:      outcome.result.content,
@@ -206,7 +206,8 @@ func (q *BackendQueue) ProcessStream(ctx context.Context, jobs <-chan Job, resul
 // chat sends one request to a backend with a bounded timeout derived
 // from parent. parent must be non-nil; the caller (chatRequest) always
 // has a context from the worker pool.
-func (q *BackendQueue) chat(parent context.Context, backend Backend, cfg Config, systemPrompt, userContent string) (chatRequestResult, error) {
+func (q *BackendQueue) chat(parent context.Context, call chatAttempt) (chatRequestResult, error) {
+	backend := Backend{Name: call.backendName, Model: call.cfg.Model}
 	ctx, cancel := context.WithTimeout(parent, DefaultRequestTimeout)
 	defer cancel()
 	start := time.Now()
@@ -223,19 +224,19 @@ func (q *BackendQueue) chat(parent context.Context, backend Backend, cfg Config,
 			if !ok {
 				return chatRequestResult{}, errors.New("executor does not support ordered requests")
 			}
-			response, err := executor.ExecuteStructuredChat(ctx, backend.Name, cfg, structured)
-			return finalizeChatRequest(backend.Name, cfg, start, response.Content, response.Usage, response.FinishReason, response.ToolCalls, err)
+			response, err := executor.ExecuteStructuredChat(ctx, backend.Name, call.cfg, structured)
+			return finalizeChatRequest(call, start, chatReply{content: response.Content, usage: response.Usage, finishReason: response.FinishReason, toolCalls: response.ToolCalls}, err)
 		}
-		content, err := q.executor.ExecuteChat(ctx, backend.Name, systemPrompt, userContent)
-		return finalizeChatRequest(backend.Name, cfg, start, content, nil, "", nil, err)
+		content, err := q.executor.ExecuteChat(ctx, backend.Name, call.systemPrompt, call.userContent)
+		return finalizeChatRequest(call, start, chatReply{content: content}, err)
 	}
 	lease, err := q.oc.leaseClientAfterAdmission(backend.Name)
 	if err != nil {
 		return chatRequestResult{}, fmt.Errorf("no client available for backend %q: %w", backend.Name, err)
 	}
 	defer lease.Release()
-	content, usage, finish, calls, identity, err := executeChatRequestWithIdentity(ctx, lease.Client(), cfg, systemPrompt, userContent, DefaultChatConfig)
-	result, err := finalizeChatRequest(backend.Name, cfg, start, content, usage, finish, calls, err)
+	reply, identity, err := executeChatRequestWithIdentity(ctx, lease.Client(), call, DefaultChatConfig)
+	result, err := finalizeChatRequest(call, start, reply, err)
 	result.clientKey = lease.keyForRotation()
 	result.clientGeneration = lease.generationForRotation()
 	result.actualProvider = identity.provider
@@ -254,17 +255,16 @@ func (q *BackendQueue) coordinator() executionCoordinator {
 	return newExecutionCoordinator(q.oc, q.configs, &q.counter)
 }
 
-func (q *BackendQueue) executeChatAttempt(ctx context.Context, info providerInfo, systemPrompt, userContent string) (chatRequestResult, error) {
-	return q.chatRequestWithKeyRotation(ctx, info.name, info.cfg, systemPrompt, userContent)
+func (q *BackendQueue) executeChatAttempt(ctx context.Context, call chatAttempt) (chatRequestResult, error) {
+	return q.chatRequestWithKeyRotation(ctx, call)
 }
 
-func (q *BackendQueue) chatRequestWithKeyRotation(ctx context.Context, backendName string, cfg Config, systemPrompt, userContent string) (chatRequestResult, error) {
-	return executeChatAttemptWithKeyRotation(ctx, backendName, cfg, systemPrompt, userContent, q.oc.rotateKeyForResult, q.chatRequest)
+func (q *BackendQueue) chatRequestWithKeyRotation(ctx context.Context, call chatAttempt) (chatRequestResult, error) {
+	return executeChatAttemptWithKeyRotation(ctx, call, q.oc.rotateKeyForResult, q.chatRequest)
 }
 
-func (q *BackendQueue) chatRequest(ctx context.Context, backendName string, cfg Config, systemPrompt, userContent string) (chatRequestResult, error) {
-	return q.chat(ctx, Backend{Name: backendName, Model: cfg.Model}, cfg, systemPrompt, userContent)
-
+func (q *BackendQueue) chatRequest(ctx context.Context, call chatAttempt) (chatRequestResult, error) {
+	return q.chat(ctx, call)
 }
 
 // WorkerCount returns total number of parallel workers across all backends

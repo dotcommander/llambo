@@ -144,7 +144,7 @@ func runLocalEvaluationCommandAt(io *commandIO, o *evalsLocalRunCommand, omlxURL
 			return fmt.Errorf("verify live TTS round-trip ASR model: %w", err)
 		}
 	}
-	executor, closeExecutor, err := newTypedLocalExecutor(io.ErrOrStderr(), o.Suite, o.Model, o.ReferenceModel, o.FeatureModel, omlxURL, o.OMLXSettings, o.ExclusiveOMLX, o.Timeout, verified, verifiedReference)
+	executor, closeExecutor, err := newTypedLocalExecutor(io.ErrOrStderr(), localExecutorSpec{suite: o.Suite, model: o.Model, referenceModel: o.ReferenceModel, featureModel: o.FeatureModel, baseURL: omlxURL, settingsPath: o.OMLXSettings, exclusiveApproved: o.ExclusiveOMLX, timeout: o.Timeout, verified: verified, verifiedReference: verifiedReference})
 	if err != nil {
 		return err
 	}

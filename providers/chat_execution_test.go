@@ -89,10 +89,7 @@ func TestExecuteChatAttemptWithKeyRotation_RetriesOnRateLimit(t *testing.T) {
 
 	result, err := executeChatAttemptWithKeyRotation(
 		ctx,
-		"openai",
-		Config{Model: "gpt-5-mini"},
-		"sys",
-		"user",
+		chatAttempt{backendName: "openai", cfg: Config{Model: "gpt-5-mini"}, systemPrompt: "sys", userContent: "user"},
 		func(provider string, result chatRequestResult) (bool, error) {
 			if provider != "openai" {
 				t.Fatalf("unexpected provider %q", provider)
@@ -103,7 +100,7 @@ func TestExecuteChatAttemptWithKeyRotation_RetriesOnRateLimit(t *testing.T) {
 			rotated++
 			return true, nil
 		},
-		func(context.Context, string, Config, string, string) (chatRequestResult, error) {
+		func(context.Context, chatAttempt) (chatRequestResult, error) {
 			calls++
 			if calls == 1 {
 				return chatRequestResult{}, errors.New("429 rate limit exceeded")
@@ -133,7 +130,7 @@ func TestFinalizeChatRequest(t *testing.T) {
 		usage := &LLMUsage{PromptTokens: 20, CompletionTokens: 10, TotalTokens: 30}
 		start := time.Now().Add(-25 * time.Millisecond)
 
-		result, err := finalizeChatRequest("openai", Config{Model: "gpt-5-mini"}, start, "hello", usage, "stop", nil, nil)
+		result, err := finalizeChatRequest(chatAttempt{backendName: "openai", cfg: Config{Model: "gpt-5-mini"}}, start, chatReply{content: "hello", usage: usage, finishReason: "stop"}, nil)
 		if err != nil {
 			t.Fatalf("expected success, got %v", err)
 		}
@@ -151,7 +148,7 @@ func TestFinalizeChatRequest(t *testing.T) {
 	t.Run("wraps backend errors and preserves duration", func(t *testing.T) {
 		t.Parallel()
 		start := time.Now().Add(-10 * time.Millisecond)
-		_, err := finalizeChatRequest("groq", Config{Model: "llama"}, start, "", nil, "", nil, errors.New("boom"))
+		_, err := finalizeChatRequest(chatAttempt{backendName: "groq", cfg: Config{Model: "llama"}}, start, chatReply{}, errors.New("boom"))
 		if err == nil {
 			t.Fatal("expected wrapped error")
 		}

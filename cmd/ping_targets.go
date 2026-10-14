@@ -23,11 +23,22 @@ func loadCatalogForPingFilter() (*catalog.Catalog, error) {
 	return cat, nil
 }
 
-func buildPingTargets(configs map[string]providers.Config, costMap map[string]costs.ModelCost, bl providers.Blocklist, maxOutputCost float64, includeUnknown bool, cat *catalog.Catalog) []pingTarget {
-	return buildPingTargetsWithWriter(io.Discard, configs, costMap, bl, maxOutputCost, includeUnknown, cat)
+// pingTargetFilter carries the catalog, pricing, and policy inputs used to
+// narrow configured providers down to ping targets.
+type pingTargetFilter struct {
+	costMap        map[string]costs.ModelCost
+	blocklist      providers.Blocklist
+	maxOutputCost  float64
+	includeUnknown bool
+	catalog        *catalog.Catalog
 }
 
-func buildPingTargetsWithWriter(errOut io.Writer, configs map[string]providers.Config, costMap map[string]costs.ModelCost, bl providers.Blocklist, maxOutputCost float64, includeUnknown bool, cat *catalog.Catalog) []pingTarget {
+func buildPingTargets(configs map[string]providers.Config, filter pingTargetFilter) []pingTarget {
+	return buildPingTargetsWithWriter(io.Discard, configs, filter)
+}
+
+func buildPingTargetsWithWriter(errOut io.Writer, configs map[string]providers.Config, filter pingTargetFilter) []pingTarget {
+	costMap, bl, maxOutputCost, includeUnknown, cat := filter.costMap, filter.blocklist, filter.maxOutputCost, filter.includeUnknown, filter.catalog
 	enabled := providers.FilterEnabledProviders(configs)
 	candidates := make([]pingTarget, 0, len(enabled))
 

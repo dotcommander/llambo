@@ -424,7 +424,7 @@ func TestOpenAIProvider_Failover_CallbackNotification(t *testing.T) {
 		plannedProvider: selected.name,
 	}
 	// This will fail since we have no real OpenAI clients
-	_, _ = provider.coordinator().execute(ctx, plan, "system", "user", provider.failoverCallback, provider.executeChatAttempt)
+	_, _ = provider.coordinator().execute(ctx, plan, provider.failoverCallback, provider.executeChatAttempt)
 
 	mu.Lock()
 	defer mu.Unlock()

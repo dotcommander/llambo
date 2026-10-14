@@ -125,7 +125,7 @@ func (p *OpenAIProvider) ChatStructuredWithInfoContext(ctx context.Context, r St
 	if err != nil {
 		return ChatResult{}, err
 	}
-	outcome, err := coordinator.execute(ctx, plan, system, user, p.failoverCallback, p.executeChatAttempt)
+	outcome, err := coordinator.execute(ctx, plan, p.failoverCallback, p.executeChatAttempt)
 	return p.chatResultFromOutcome(outcome), err
 }
 
@@ -142,7 +142,7 @@ func (p *OpenAIProvider) ChatStructuredStreamWithInfoContext(ctx context.Context
 	if err != nil {
 		return ChatResult{}, err
 	}
-	outcome, err := coordinator.executeStream(ctx, plan, system, user, onChunk, p.executeStreamAttempt)
+	outcome, err := coordinator.executeStream(ctx, plan, onChunk, p.executeStreamAttempt)
 	return p.chatResultFromOutcome(outcome), err
 }
 func (c executionCoordinator) withTarget(t ResolvedTarget) executionCoordinator {

@@ -66,7 +66,7 @@ func printModeStats(out io.Writer, mode string, stats simulationStats) {
 	}
 }
 
-func (cliOpts *invocationOptions) runRouteSimulate(cmd *commandIO, args []string) error {
+func (cliOpts *invocationOptions) runRouteSimulate(cmd *commandIO, _ []string) error {
 	out := cmd.OutOrStdout()
 	cfg, err := providers.LoadGlobalConfig()
 	if err != nil {

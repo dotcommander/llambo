@@ -148,10 +148,10 @@ func TestBuildBenchmarkTargets_MultiModelPerProvider(t *testing.T) {
 		},
 	}
 
-	targets := buildPingTargets(configs, map[string]costs.ModelCost{
+	targets := buildPingTargets(configs, pingTargetFilter{costMap: map[string]costs.ModelCost{
 		"openai:gpt-4o-mini": {InputPer1M: 0, OutputPer1M: 0, InputExplicit: true, OutputExplicit: true},
 		"openai:gpt-5-mini":  {InputPer1M: 1, OutputPer1M: 2, InputExplicit: true, OutputExplicit: true},
-	}, providers.Blocklist{}, 0, false, nil)
+	}})
 	if len(targets) != 3 {
 		t.Fatalf("expected 3 targets, got %d", len(targets))
 	}
@@ -181,7 +181,7 @@ func TestBuildPingTargets_Blocklist(t *testing.T) {
 	configs := map[string]providers.Config{
 		"openai": {Enabled: true, Priority: 1, Model: "gpt-4o-mini", Models: []string{"o3-mini"}},
 	}
-	targets := buildPingTargets(configs, nil, providers.NewBlocklist([]string{"OpenAI:o3-mini"}), 0, false, nil)
+	targets := buildPingTargets(configs, pingTargetFilter{blocklist: providers.NewBlocklist([]string{"OpenAI:o3-mini"})})
 	for _, tt := range targets {
 		if tt.Config.Model == "o3-mini" {
 			t.Fatalf("blocklisted model o3-mini must not be a ping target")
@@ -219,7 +219,7 @@ func TestBuildPingTargets_SkipsGeminiNonTextChatModels(t *testing.T) {
 		}},
 	}}
 
-	targets := buildPingTargets(configs, nil, providers.Blocklist{}, 0, false, cat)
+	targets := buildPingTargets(configs, pingTargetFilter{catalog: cat})
 	if len(targets) != 1 {
 		t.Fatalf("expected only text chat target, got %#v", targets)
 	}

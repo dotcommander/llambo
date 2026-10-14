@@ -25,7 +25,7 @@ func TestWaitForJobRejectsNonOKStatusImmediatelyWithBoundedDiagnostic(t *testing
 	}))
 	t.Cleanup(server.Close)
 
-	_, err := waitForJobWithWriterContext(context.Background(), &bytes.Buffer{}, server.URL, "job-1", time.Millisecond, time.Second)
+	_, err := waitForJobWithWriterContext(context.Background(), &bytes.Buffer{}, server.URL, "job-1", jobWaitOptions{pollInterval: time.Millisecond, timeout: time.Second})
 	if err == nil || !strings.Contains(err.Error(), "unexpected job status HTTP 503") {
 		t.Fatalf("waitForJobWithWriterContext() error = %v, want HTTP 503 diagnostic", err)
 	}
@@ -50,7 +50,7 @@ func TestWaitForJobPreservesSuccessfulTerminalResponse(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	var out bytes.Buffer
-	got, err := waitForJobWithWriterContext(context.Background(), &out, server.URL, want.JobID, time.Millisecond, time.Second)
+	got, err := waitForJobWithWriterContext(context.Background(), &out, server.URL, want.JobID, jobWaitOptions{pollInterval: time.Millisecond, timeout: time.Second})
 	if err != nil {
 		t.Fatalf("waitForJobWithWriterContext() error = %v", err)
 	}

@@ -88,30 +88,33 @@ func TestExtractContentFromTextResponse_ToolCallOnly(t *testing.T) {
 		}},
 	}
 
-	content, _, finish, toolCalls, err := extractContentFromTextResponse(resp, "gpt-4o")
+	reply, err := extractContentFromTextResponse(resp, "gpt-4o")
 	if err != nil {
 		t.Fatalf("expected no error for tool-call-only response, got %v", err)
 	}
-	if content != "" {
-		t.Fatalf("expected empty content, got %q", content)
+	if reply.content != "" {
+		t.Fatalf("expected empty content, got %q", reply.content)
 	}
-	if finish != "tool_calls" {
-		t.Fatalf("expected finish reason tool_calls, got %q", finish)
+	if reply.finishReason != "tool_calls" {
+		t.Fatalf("expected finish reason tool_calls, got %q", reply.finishReason)
 	}
-	if len(toolCalls) != 1 || toolCalls[0].ID != "call_1" || toolCalls[0].Name != "search" {
-		t.Fatalf("unexpected tool calls: %+v", toolCalls)
+	if len(reply.toolCalls) != 1 || reply.toolCalls[0].ID != "call_1" || reply.toolCalls[0].Name != "search" {
+		t.Fatalf("unexpected tool calls: %+v", reply.toolCalls)
 	}
 }
 
 func TestExtractContentFromTextResponsePreservesServedIdentity(t *testing.T) {
 	t.Parallel()
 	resp := &whtypes.TextResponse{Provider: "wire-provider", Model: "served-model", Text: "ok", FinishReason: whtypes.FinishReasonStop}
-	_, _, _, _, identity, err := extractContentFromTextResponseWithIdentity(resp, "requested-model")
+	reply, identity, err := extractContentFromTextResponseWithIdentity(resp, "requested-model")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if identity.provider != "wire-provider" || identity.model != "served-model" {
 		t.Fatalf("response identity = %#v", identity)
+	}
+	if reply.content != "ok" {
+		t.Fatalf("unexpected reply content %q", reply.content)
 	}
 }
 
@@ -400,19 +403,17 @@ func TestExecuteChatRequest_EmitsStructuredEntryExitLogs(t *testing.T) {
 		Usage:        &whtypes.Usage{PromptTokens: 3, CompletionTokens: 4, TotalTokens: 7},
 	}}
 
-	content, _, _, _, err := ExecuteChatRequest(
+	reply, _, err := executeChatRequestWithIdentity(
 		context.Background(),
 		client,
-		Config{Model: "test-model-1", ProviderType: "openai"},
-		"SENTINEL_SYSTEM_PROMPT",
-		"super-secret-user-prompt",
+		chatAttempt{cfg: Config{Model: "test-model-1", ProviderType: "openai"}, systemPrompt: "SENTINEL_SYSTEM_PROMPT", userContent: "super-secret-user-prompt"},
 		DefaultChatConfig,
 	)
 	if err != nil {
-		t.Fatalf("ExecuteChatRequest: %v", err)
+		t.Fatalf("executeChatRequestWithIdentity: %v", err)
 	}
-	if content != "hello" {
-		t.Fatalf("unexpected content: %q", content)
+	if reply.content != "hello" {
+		t.Fatalf("unexpected content: %q", reply.content)
 	}
 
 	logs := buf.String()

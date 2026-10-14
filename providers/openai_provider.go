@@ -129,7 +129,7 @@ func (p *OpenAIProvider) ChatWithInfoContext(ctx context.Context, systemPrompt, 
 	if err != nil {
 		return ChatResult{}, err
 	}
-	outcome, err := coordinator.execute(ctx, plan, systemPrompt, userContent, p.failoverCallback, p.executeChatAttempt)
+	outcome, err := coordinator.execute(ctx, plan, p.failoverCallback, p.executeChatAttempt)
 	if err != nil {
 		return ChatResult{}, err
 	}
@@ -143,7 +143,7 @@ func (p *OpenAIProvider) ChatStreamWithInfoContext(ctx context.Context, systemPr
 	if err != nil {
 		return ChatResult{}, err
 	}
-	outcome, err := coordinator.executeStream(ctx, plan, systemPrompt, userContent, onChunk, p.executeStreamAttempt)
+	outcome, err := coordinator.executeStream(ctx, plan, onChunk, p.executeStreamAttempt)
 	if err != nil {
 		return ChatResult{}, err
 	}
@@ -187,24 +187,24 @@ func (p *OpenAIProvider) coordinator() executionCoordinator {
 	return coordinator
 }
 
-func (p *OpenAIProvider) executeChatAttempt(ctx context.Context, info providerInfo, systemPrompt, userContent string) (chatRequestResult, error) {
-	return p.chatRequestWithKeyRotation(ctx, info.name, info.cfg, systemPrompt, userContent)
+func (p *OpenAIProvider) executeChatAttempt(ctx context.Context, call chatAttempt) (chatRequestResult, error) {
+	return p.chatRequestWithKeyRotation(ctx, call)
 }
 
-func (p *OpenAIProvider) executeStreamAttempt(ctx context.Context, info providerInfo, systemPrompt, userContent string, onChunk ChatStreamHandler) (chatRequestResult, bool, error) {
+func (p *OpenAIProvider) executeStreamAttempt(ctx context.Context, call chatAttempt, onChunk ChatStreamHandler) (chatRequestResult, bool, error) {
 	withMetadata := func(chunk ChatStreamChunk) error {
 		if chunk.Provider == "" {
-			chunk.Provider = info.name
+			chunk.Provider = call.backendName
 		}
 		if chunk.Model == "" {
-			chunk.Model = info.cfg.Model
+			chunk.Model = call.cfg.Model
 		}
 		if onChunk == nil {
 			return nil
 		}
 		return onChunk(chunk)
 	}
-	return p.chatStreamRequestWithKeyRotation(ctx, info.name, info.cfg, systemPrompt, userContent, withMetadata)
+	return p.chatStreamRequestWithKeyRotation(ctx, call, withMetadata)
 }
 
 func (p *OpenAIProvider) chatResultFromOutcome(outcome chatExecutionOutcome) ChatResult {
@@ -228,17 +228,17 @@ func (p *OpenAIProvider) chatResultFromOutcome(outcome chatExecutionOutcome) Cha
 }
 
 // chatRequestWithKeyRotation attempts a chat request, rotating keys on 429 errors
-func (p *OpenAIProvider) chatRequestWithKeyRotation(ctx context.Context, backendName string, cfg Config, systemPrompt, userContent string) (chatRequestResult, error) {
-	return executeChatAttemptWithKeyRotation(ctx, backendName, cfg, systemPrompt, userContent, p.rotateKeyWithErrorForResult, p.chatRequest)
+func (p *OpenAIProvider) chatRequestWithKeyRotation(ctx context.Context, call chatAttempt) (chatRequestResult, error) {
+	return executeChatAttemptWithKeyRotation(ctx, call, p.rotateKeyWithErrorForResult, p.chatRequest)
 }
 
-func (p *OpenAIProvider) chatStreamRequestWithKeyRotation(ctx context.Context, backendName string, cfg Config, systemPrompt, userContent string, onChunk ChatStreamHandler) (chatRequestResult, bool, error) {
+func (p *OpenAIProvider) chatStreamRequestWithKeyRotation(ctx context.Context, call chatAttempt, onChunk ChatStreamHandler) (chatRequestResult, bool, error) {
 	seen := make(map[string]bool)
 	for {
 		if err := ctx.Err(); err != nil {
 			return chatRequestResult{}, false, err
 		}
-		result, emitted, err := p.chatStreamRequest(ctx, backendName, cfg, systemPrompt, userContent, onChunk)
+		result, emitted, err := p.chatStreamRequest(ctx, call, onChunk)
 		if err != nil && !IsConsumerError(err) && ctx.Err() != nil {
 			return result, emitted, ctx.Err()
 		}
@@ -249,7 +249,7 @@ func (p *OpenAIProvider) chatStreamRequestWithKeyRotation(ctx context.Context, b
 			return result, emitted, err
 		}
 		seen[result.clientKey] = true
-		rotated, rotationErr := p.rotateKeyWithErrorForResult(backendName, result)
+		rotated, rotationErr := p.rotateKeyWithErrorForResult(call.backendName, result)
 		if rotationErr != nil {
 			return result, emitted, rotationErr
 		}
@@ -274,16 +274,16 @@ type chatRequestResult struct {
 }
 
 // chatRequest uses Chat Completions API with per-backend client
-func (p *OpenAIProvider) chatRequest(ctx context.Context, backendName string, cfg Config, systemPrompt, userContent string) (chatRequestResult, error) {
+func (p *OpenAIProvider) chatRequest(ctx context.Context, call chatAttempt) (chatRequestResult, error) {
 	start := time.Now()
-	lease, err := p.oc.acquireClient(ctx, backendName)
+	lease, err := p.oc.acquireClient(ctx, call.backendName)
 	if err != nil {
-		return finalizeChatRequest(backendName, cfg, start, "", nil, "", nil, err)
+		return finalizeChatRequest(call, start, chatReply{}, err)
 	}
-	defer p.oc.releaseAttempt(backendName, lease)
+	defer p.oc.releaseAttempt(call.backendName, lease)
 
-	content, usage, finishReason, toolCalls, identity, err := executeChatRequestWithIdentity(ctx, lease.Client(), cfg, systemPrompt, userContent, DefaultChatConfig)
-	result, err := finalizeChatRequest(backendName, cfg, start, content, usage, finishReason, toolCalls, err)
+	reply, identity, err := executeChatRequestWithIdentity(ctx, lease.Client(), call, DefaultChatConfig)
+	result, err := finalizeChatRequest(call, start, reply, err)
 	result.actualProvider = identity.provider
 	result.actualModel = identity.model
 	result.clientKey = lease.keyForRotation()
@@ -291,18 +291,17 @@ func (p *OpenAIProvider) chatRequest(ctx context.Context, backendName string, cf
 	return result, err
 }
 
-func (p *OpenAIProvider) chatStreamRequest(ctx context.Context, backendName string, cfg Config, systemPrompt, userContent string, onChunk ChatStreamHandler) (chatRequestResult, bool, error) {
+func (p *OpenAIProvider) chatStreamRequest(ctx context.Context, call chatAttempt, onChunk ChatStreamHandler) (chatRequestResult, bool, error) {
 	start := time.Now()
-	lease, err := p.oc.acquireClient(ctx, backendName)
+	lease, err := p.oc.acquireClient(ctx, call.backendName)
 	if err != nil {
-		var result chatRequestResult
-		result, err = finalizeChatRequest(backendName, cfg, start, "", nil, "", nil, err)
-		return result, false, err
+		result, finalizeErr := finalizeChatRequest(call, start, chatReply{}, err)
+		return result, false, finalizeErr
 	}
-	defer p.oc.releaseAttempt(backendName, lease)
+	defer p.oc.releaseAttempt(call.backendName, lease)
 
-	content, usage, finishReason, toolCalls, emitted, identity, err := executeChatStreamRequestWithIdentity(ctx, lease.Client(), cfg, systemPrompt, userContent, onChunk, DefaultChatConfig)
-	result, reqErr := finalizeChatRequest(backendName, cfg, start, content, usage, finishReason, toolCalls, err)
+	reply, emitted, identity, err := executeChatStreamRequestWithIdentity(ctx, lease.Client(), call, onChunk, DefaultChatConfig)
+	result, reqErr := finalizeChatRequest(call, start, reply, err)
 	result.actualProvider = identity.provider
 	result.actualModel = identity.model
 	result.clientKey = lease.keyForRotation()

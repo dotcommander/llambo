@@ -281,7 +281,7 @@ func TestExecutionCoordinatorWarnsWhenRouteEventWriteFails(t *testing.T) {
 		RouteEvents: NewRouteEventLogger(path),
 		logger:      slog.New(slog.NewJSONHandler(&logs, nil)),
 	}}
-	coordinator.logRouteOutcome(IntentChat, 1, "planned", "chosen", "model", nil, time.Millisecond, false, "failed", nil, false)
+	coordinator.logRouteOutcome(routeOutcome{intent: IntentChat, estimatedTokens: 1, plannedProvider: "planned", chosenProvider: "chosen", model: "model", duration: time.Millisecond, success: false, errMsg: "failed"})
 
 	assertWarningRecord(t, logs.Bytes(), "write route event failed", path)
 }

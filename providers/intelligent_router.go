@@ -181,7 +181,7 @@ func scoreCandidates(configs map[string]Config, healthy []Backend, routing Routi
 
 		fit := capabilityFit(cfg.Capabilities, intent)
 		runtimeQuality := runtimeQualityScore(m)
-		score, reason := applyModeScoreNormalized(mode, cfg.Quality, runtimeQuality, fit, latencyMs, cost, errorRate)
+		score, reason := applyModeScoreNormalized(mode, modeScoreInputs{quality: cfg.Quality, runtimeQuality: runtimeQuality, fit: fit, latencyMs: latencyMs, costUSD: cost, errorRate: errorRate})
 		scored = append(scored, CandidateScore{
 			Provider: b.Name,
 			Model:    b.Model,
@@ -249,24 +249,35 @@ func runtimeQualityScore(m ProviderRuntimeMetrics) float64 {
 	return m.QualityScore
 }
 
-func applyModeScoreNormalized(mode string, quality, runtimeQuality, fit, latencyMs, costUSD, errorRate float64) (float64, string) {
-	latencyScore := 1.0 / (1.0 + latencyMs/1000.0)
-	costScore := 1.0 / (1.0 + costUSD*1000.0)
-	reliability := 1.0 - errorRate
-	blendedQuality := quality*0.6 + runtimeQuality*0.4
+// modeScoreInputs carries the normalized per-candidate measurements that
+// routing-mode scoring blends into one score.
+type modeScoreInputs struct {
+	quality        float64
+	runtimeQuality float64
+	fit            float64
+	latencyMs      float64
+	costUSD        float64
+	errorRate      float64
+}
+
+func applyModeScoreNormalized(mode string, in modeScoreInputs) (float64, string) {
+	latencyScore := 1.0 / (1.0 + in.latencyMs/1000.0)
+	costScore := 1.0 / (1.0 + in.costUSD*1000.0)
+	reliability := 1.0 - in.errorRate
+	blendedQuality := in.quality*0.6 + in.runtimeQuality*0.4
 	reason := func(policy string) string {
 		return fmt.Sprintf("%s: quality=%.2f runtime_quality=%.2f fit=%.2f latency=%.0fms estimated_cost=$%.6f reliability=%.2f",
-			policy, quality, runtimeQuality, fit, latencyMs, costUSD, reliability)
+			policy, in.quality, in.runtimeQuality, in.fit, in.latencyMs, in.costUSD, reliability)
 	}
 
 	switch mode {
 	case string(RoutingModeFastest):
-		return 0.65*latencyScore + 0.15*reliability + 0.15*fit + 0.05*blendedQuality, reason("lowest latency weighted")
+		return 0.65*latencyScore + 0.15*reliability + 0.15*in.fit + 0.05*blendedQuality, reason("lowest latency weighted")
 	case string(RoutingModeCheapest):
-		return 0.65*costScore + 0.15*reliability + 0.15*fit + 0.05*blendedQuality, reason("lowest cost weighted")
+		return 0.65*costScore + 0.15*reliability + 0.15*in.fit + 0.05*blendedQuality, reason("lowest cost weighted")
 	case string(RoutingModeQuality):
-		return 0.55*blendedQuality + 0.25*fit + 0.20*reliability, reason("highest quality weighted")
+		return 0.55*blendedQuality + 0.25*in.fit + 0.20*reliability, reason("highest quality weighted")
 	default:
-		return 0.30*blendedQuality + 0.20*fit + 0.20*latencyScore + 0.15*costScore + 0.15*reliability, reason("balanced policy")
+		return 0.30*blendedQuality + 0.20*in.fit + 0.20*latencyScore + 0.15*costScore + 0.15*reliability, reason("balanced policy")
 	}
 }

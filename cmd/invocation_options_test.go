@@ -116,7 +116,7 @@ func TestPingCostFilterUsesCallOptionsOnce(t *testing.T) {
 		costs.Key("fixture", "expensive"): {InputExplicit: true, OutputExplicit: true, OutputPer1M: 3},
 	}
 	var out bytes.Buffer
-	targets := buildPingTargetsWithWriter(&out, configs, prices, providers.Blocklist{}, 2, false, nil)
+	targets := buildPingTargetsWithWriter(&out, configs, pingTargetFilter{costMap: prices, blocklist: providers.Blocklist{}, maxOutputCost: 2})
 	if len(targets) != 1 || targets[0].Config.Model != "cheap" {
 		t.Fatalf("wrong targets: %#v", targets)
 	}

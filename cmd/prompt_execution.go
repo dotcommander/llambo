@@ -14,7 +14,14 @@ import (
 	"github.com/dotcommander/llambo/providers"
 )
 
-func (cliOpts *invocationOptions) executePromptAgainstAllProvidersCore(ctx context.Context, errOut io.Writer, promptText, systemPrompt string, timeoutSecs int, run *promptRun) ([]PromptResult, error) {
+// promptRequest carries the prompt inputs shared by every execution path.
+type promptRequest struct {
+	promptText   string
+	systemPrompt string
+	timeoutSecs  int
+}
+
+func (cliOpts *invocationOptions) executePromptAgainstAllProvidersCore(ctx context.Context, errOut io.Writer, req promptRequest, run *promptRun) ([]PromptResult, error) {
 	// Load configuration
 	globalCfg, err := providers.LoadGlobalConfig()
 	if err != nil {
@@ -39,31 +46,32 @@ func (cliOpts *invocationOptions) executePromptAgainstAllProvidersCore(ctx conte
 	}
 
 	results := runOrderedParallel(enabled, func(index int, entry providers.ProviderEntry) PromptResult {
-		modelPrompt := cliOpts.promptTextForModel(promptText, systemPrompt, index, len(enabled), entry.Name, entry.Config.Model)
-		return executePromptForProviderWithRun(ctx, entry, modelPrompt, systemPrompt, timeoutSecs, run)
+		modelPrompt := cliOpts.promptTextForModel(req, draftSource{index: index, total: len(enabled), provider: entry.Name, model: entry.Config.Model})
+		return executePromptForProviderWithRun(ctx, entry, promptRequest{promptText: modelPrompt, systemPrompt: req.systemPrompt, timeoutSecs: req.timeoutSecs}, run)
 	})
 	return results, nil
 }
 
 func defaultExecutePromptAgainstAllProviders(promptText, systemPrompt string, timeoutSecs int) ([]PromptResult, error) {
-	return executePromptAgainstAllProvidersCore(context.Background(), os.Stderr, promptText, systemPrompt, timeoutSecs, nil)
+	return executePromptAgainstAllProvidersCore(context.Background(), os.Stderr, promptRequest{promptText: promptText, systemPrompt: systemPrompt, timeoutSecs: timeoutSecs}, nil)
 }
 
 var executePromptAgainstAllProviders = defaultExecutePromptAgainstAllProviders
 
-func (cliOpts *invocationOptions) executePromptAgainstAllProvidersTo(ctx context.Context, errOut io.Writer, promptText, systemPrompt string, timeoutSecs int) ([]PromptResult, error) {
+func (cliOpts *invocationOptions) executePromptAgainstAllProvidersTo(ctx context.Context, errOut io.Writer, req promptRequest) ([]PromptResult, error) {
 	if reflect.ValueOf(executePromptAgainstAllProviders).Pointer() != reflect.ValueOf(defaultExecutePromptAgainstAllProviders).Pointer() {
-		return executePromptAgainstAllProviders(promptText, systemPrompt, timeoutSecs)
+		return executePromptAgainstAllProviders(req.promptText, req.systemPrompt, req.timeoutSecs)
 	}
-	return cliOpts.executePromptAgainstAllProvidersCore(ctx, errOut, promptText, systemPrompt, timeoutSecs, nil)
+	return cliOpts.executePromptAgainstAllProvidersCore(ctx, errOut, req, nil)
 }
 
-func (cliOpts *invocationOptions) executePromptAgainstSelectedModelsCore(ctx context.Context, errOut io.Writer, promptText, systemPrompt string, timeoutSecs int, run *promptRun) ([]PromptResult, error) {
+func (cliOpts *invocationOptions) executePromptAgainstSelectedModelsCore(ctx context.Context, errOut io.Writer, req promptRequest, run *promptRun) ([]PromptResult, error) {
+	promptText, systemPrompt := req.promptText, req.systemPrompt
 	if cliOpts.promptModels == "" && cliOpts.promptProviders == "" && !cliOpts.promptFreeOnly && cliOpts.promptMaxOutputCost <= 0 {
 		if run == nil {
-			return cliOpts.executePromptAgainstAllProvidersTo(ctx, errOut, promptText, systemPrompt, timeoutSecs)
+			return cliOpts.executePromptAgainstAllProvidersTo(ctx, errOut, req)
 		}
-		return cliOpts.executePromptAgainstAllProvidersCore(ctx, errOut, promptText, systemPrompt, timeoutSecs, run)
+		return cliOpts.executePromptAgainstAllProvidersCore(ctx, errOut, req, run)
 	}
 	selector := cliOpts.promptModels
 	if selector == "" && cliOpts.promptFreeOnly {
@@ -105,8 +113,8 @@ func (cliOpts *invocationOptions) executePromptAgainstSelectedModelsCore(ctx con
 	}
 
 	results := runOrderedParallel(selected, func(index int, target catalog.ModelTarget) PromptResult {
-		modelPrompt := cliOpts.promptTextForModel(promptText, systemPrompt, index, len(selected), target.Provider, target.Model)
-		result := executePromptForProviderWithRun(ctx, providers.ProviderEntry{Name: target.Provider, Config: target.Config}, modelPrompt, systemPrompt, timeoutSecs, run)
+		modelPrompt := cliOpts.promptTextForModel(req, draftSource{index: index, total: len(selected), provider: target.Provider, model: target.Model})
+		result := executePromptForProviderWithRun(ctx, providers.ProviderEntry{Name: target.Provider, Config: target.Config}, promptRequest{promptText: modelPrompt, systemPrompt: req.systemPrompt, timeoutSecs: req.timeoutSecs}, run)
 		result.CostStatus = string(target.CostStatus)
 		result.InputCostPer1M = target.InputPer1M
 		result.OutputCostPer1M = target.OutputPer1M
@@ -118,38 +126,39 @@ func (cliOpts *invocationOptions) executePromptAgainstSelectedModelsCore(ctx con
 }
 
 func defaultExecutePromptAgainstSelectedModels(promptText, systemPrompt string, timeoutSecs int) ([]PromptResult, error) {
-	return executePromptAgainstSelectedModelsCore(context.Background(), os.Stderr, promptText, systemPrompt, timeoutSecs, nil)
+	return executePromptAgainstSelectedModelsCore(context.Background(), os.Stderr, promptRequest{promptText: promptText, systemPrompt: systemPrompt, timeoutSecs: timeoutSecs}, nil)
 }
 
 var executePromptAgainstSelectedModels = defaultExecutePromptAgainstSelectedModels
 
-func (cliOpts *invocationOptions) executePromptAgainstSelectedModelsTo(ctx context.Context, errOut io.Writer, promptText, systemPrompt string, timeoutSecs int) ([]PromptResult, error) {
+func (cliOpts *invocationOptions) executePromptAgainstSelectedModelsTo(ctx context.Context, errOut io.Writer, req promptRequest) ([]PromptResult, error) {
 	if reflect.ValueOf(executePromptAgainstSelectedModels).Pointer() != reflect.ValueOf(defaultExecutePromptAgainstSelectedModels).Pointer() {
-		return executePromptAgainstSelectedModels(promptText, systemPrompt, timeoutSecs)
+		return executePromptAgainstSelectedModels(req.promptText, req.systemPrompt, req.timeoutSecs)
 	}
-	return cliOpts.executePromptAgainstSelectedModelsCore(ctx, errOut, promptText, systemPrompt, timeoutSecs, nil)
+	return cliOpts.executePromptAgainstSelectedModelsCore(ctx, errOut, req, nil)
 }
 
-func (cliOpts *invocationOptions) executePromptAgainstSelectedModelsWithRun(ctx context.Context, errOut io.Writer, promptText, systemPrompt string, timeoutSecs int, run *promptRun) ([]PromptResult, error) {
+func (cliOpts *invocationOptions) executePromptAgainstSelectedModelsWithRun(ctx context.Context, errOut io.Writer, req promptRequest, run *promptRun) ([]PromptResult, error) {
 	if reflect.ValueOf(executePromptAgainstSelectedModels).Pointer() != reflect.ValueOf(defaultExecutePromptAgainstSelectedModels).Pointer() {
-		return executePromptAgainstSelectedModels(promptText, systemPrompt, timeoutSecs)
+		return executePromptAgainstSelectedModels(req.promptText, req.systemPrompt, req.timeoutSecs)
 	}
-	return cliOpts.executePromptAgainstSelectedModelsCore(ctx, errOut, promptText, systemPrompt, timeoutSecs, run)
+	return cliOpts.executePromptAgainstSelectedModelsCore(ctx, errOut, req, run)
 }
 
 // executePromptForProvider sends the prompt to a single provider
-func executePromptForProvider(entry providers.ProviderEntry, promptText, systemPrompt string, timeoutSecs int) PromptResult {
-	return executePromptForProviderContext(context.Background(), entry, promptText, systemPrompt, timeoutSecs)
+func executePromptForProvider(entry providers.ProviderEntry, req promptRequest) PromptResult {
+	return executePromptForProviderContext(context.Background(), entry, req)
 }
 
-func executePromptForProviderContext(parent context.Context, entry providers.ProviderEntry, promptText, systemPrompt string, timeoutSecs int) PromptResult {
-	return executePromptForProviderWithRun(parent, entry, promptText, systemPrompt, timeoutSecs, nil)
+func executePromptForProviderContext(parent context.Context, entry providers.ProviderEntry, req promptRequest) PromptResult {
+	return executePromptForProviderWithRun(parent, entry, req, nil)
 }
 
-func executePromptForProviderWithRun(parent context.Context, entry providers.ProviderEntry, promptText, systemPrompt string, timeoutSecs int, run *promptRun) PromptResult {
+func executePromptForProviderWithRun(parent context.Context, entry providers.ProviderEntry, req promptRequest, run *promptRun) PromptResult {
 	if run != nil {
-		return run.execute(parent, entry, promptText, systemPrompt, timeoutSecs)
+		return run.execute(parent, entry, req.promptText, req.systemPrompt, req.timeoutSecs)
 	}
+	promptText, systemPrompt, timeoutSecs := req.promptText, req.systemPrompt, req.timeoutSecs
 	start := time.Now()
 
 	// Create provider
@@ -194,15 +203,11 @@ func executePromptForProviderWithRun(parent context.Context, entry providers.Pro
 	}
 }
 
-// Scalar helpers retain their signatures with independent default options.
-func executePromptAgainstSelectedModelsWithRun(ctx context.Context, errOut io.Writer, promptText, systemPrompt string, timeoutSecs int, run *promptRun) ([]PromptResult, error) {
-	return defaultInvocationOptions().executePromptAgainstSelectedModelsWithRun(ctx, errOut, promptText, systemPrompt, timeoutSecs, run)
+// Package helpers use independent default options.
+func executePromptAgainstSelectedModelsCore(ctx context.Context, errOut io.Writer, req promptRequest, run *promptRun) ([]PromptResult, error) {
+	return defaultInvocationOptions().executePromptAgainstSelectedModelsCore(ctx, errOut, req, run)
 }
 
-func executePromptAgainstSelectedModelsCore(ctx context.Context, errOut io.Writer, promptText, systemPrompt string, timeoutSecs int, run *promptRun) ([]PromptResult, error) {
-	return defaultInvocationOptions().executePromptAgainstSelectedModelsCore(ctx, errOut, promptText, systemPrompt, timeoutSecs, run)
-}
-
-func executePromptAgainstAllProvidersCore(ctx context.Context, errOut io.Writer, promptText, systemPrompt string, timeoutSecs int, run *promptRun) ([]PromptResult, error) {
-	return defaultInvocationOptions().executePromptAgainstAllProvidersCore(ctx, errOut, promptText, systemPrompt, timeoutSecs, run)
+func executePromptAgainstAllProvidersCore(ctx context.Context, errOut io.Writer, req promptRequest, run *promptRun) ([]PromptResult, error) {
+	return defaultInvocationOptions().executePromptAgainstAllProvidersCore(ctx, errOut, req, run)
 }

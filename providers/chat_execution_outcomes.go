@@ -9,11 +9,11 @@ import (
 	"time"
 )
 
-func (c executionCoordinator) execute(ctx context.Context, plan chatExecutionPlan, systemPrompt, userContent string, failoverCallback FailoverCallback, request func(context.Context, providerInfo, string, string) (chatRequestResult, error)) (chatExecutionOutcome, error) {
-	result, err := request(ctx, plan.selected, systemPrompt, userContent)
+func (c executionCoordinator) execute(ctx context.Context, plan chatExecutionPlan, failoverCallback FailoverCallback, request func(context.Context, chatAttempt) (chatRequestResult, error)) (chatExecutionOutcome, error) {
+	result, err := request(ctx, plan.attemptFor(plan.selected))
 	outcome := chatExecutionOutcome{provider: plan.selected, result: result, decision: plan.decision}
 	if err == nil {
-		c.recordSuccessfulAttempt(plan, plan.selected, systemPrompt, userContent, result)
+		c.recordSuccessfulAttempt(plan, plan.selected, result)
 		c.checkCanaryAutoPromote(ctx)
 		return outcome, nil
 	}
@@ -39,10 +39,10 @@ func (c executionCoordinator) execute(ctx context.Context, plan chatExecutionPla
 			failoverCallback(FailoverEvent{FromBackend: plan.selected.name, ToBackend: info.name, ToModel: NormalizeModelName(info.cfg.Model)})
 		}
 
-		result, err = request(ctx, info, systemPrompt, userContent)
+		result, err = request(ctx, plan.attemptFor(info))
 		outcome = chatExecutionOutcome{provider: info, result: result, decision: plan.decision}
 		if err == nil {
-			c.recordSuccessfulAttempt(plan, info, systemPrompt, userContent, result)
+			c.recordSuccessfulAttempt(plan, info, result)
 			c.checkCanaryAutoPromote(ctx)
 			return outcome, nil
 		}
@@ -53,18 +53,18 @@ func (c executionCoordinator) execute(ctx context.Context, plan chatExecutionPla
 		errors = append(errors, fmt.Sprintf("%s: %v", info.name, err))
 	}
 
-	c.logRouteOutcome(plan.intent, plan.estimatedTokens, plan.plannedProvider, "", "", nil, 0, false, strings.Join(errors, "; "), plan.candidates, plan.isCanary)
+	c.logRouteOutcome(plan.failedRouteOutcome(strings.Join(errors, "; ")))
 	return outcome, fmt.Errorf("all providers failed: %s", strings.Join(errors, "; "))
 }
 
-func (c executionCoordinator) executeStream(ctx context.Context, plan chatExecutionPlan, systemPrompt, userContent string, onChunk ChatStreamHandler, request func(context.Context, providerInfo, string, string, ChatStreamHandler) (chatRequestResult, bool, error)) (chatExecutionOutcome, error) {
-	result, emitted, err := request(ctx, plan.selected, systemPrompt, userContent, onChunk)
+func (c executionCoordinator) executeStream(ctx context.Context, plan chatExecutionPlan, onChunk ChatStreamHandler, request func(context.Context, chatAttempt, ChatStreamHandler) (chatRequestResult, bool, error)) (chatExecutionOutcome, error) {
+	result, emitted, err := request(ctx, plan.attemptFor(plan.selected), onChunk)
 	outcome := chatExecutionOutcome{provider: plan.selected, result: result, decision: plan.decision}
 	if err == nil {
 		if result.finishReason == "" {
 			c.promotionIneligible = true
 		}
-		c.recordSuccessfulAttempt(plan, plan.selected, systemPrompt, userContent, result)
+		c.recordSuccessfulAttempt(plan, plan.selected, result)
 		if result.finishReason != "" {
 			c.checkCanaryAutoPromote(ctx)
 		}
@@ -80,7 +80,7 @@ func (c executionCoordinator) executeStream(ctx context.Context, plan chatExecut
 	}
 	errStrings := []string{fmt.Sprintf("%s: %v", plan.selected.name, err)}
 	if emitted {
-		c.logFailedStreamOutcome(plan.intent, plan.estimatedTokens, plan.plannedProvider, plan.selected.name, plan.selected.cfg.Model, result.usage, result.duration, false, strings.Join(errStrings, "; "), plan.candidates, plan.isCanary)
+		c.logFailedStreamOutcome(plan.routeOutcome(plan.selected.name, plan.selected.cfg.Model, result.usage, result.duration, strings.Join(errStrings, "; ")))
 		return outcome, fmt.Errorf("stream failed after emission: %w", err)
 	}
 
@@ -95,13 +95,13 @@ func (c executionCoordinator) executeStream(ctx context.Context, plan chatExecut
 		if c.failoverCallback != nil {
 			c.failoverCallback(FailoverEvent{FromBackend: outcome.provider.name, ToBackend: info.name, ToModel: info.cfg.Model, Error: err})
 		}
-		result, emitted, err = request(ctx, info, systemPrompt, userContent, onChunk)
+		result, emitted, err = request(ctx, plan.attemptFor(info), onChunk)
 		outcome = chatExecutionOutcome{provider: info, result: result, decision: plan.decision}
 		if err == nil {
 			if result.finishReason == "" {
 				c.promotionIneligible = true
 			}
-			c.recordSuccessfulAttempt(plan, info, systemPrompt, userContent, result)
+			c.recordSuccessfulAttempt(plan, info, result)
 			if result.finishReason != "" {
 				c.checkCanaryAutoPromote(ctx)
 			}
@@ -121,14 +121,53 @@ func (c executionCoordinator) executeStream(ctx context.Context, plan chatExecut
 		}
 	}
 
-	c.logFailedStreamOutcome(plan.intent, plan.estimatedTokens, plan.plannedProvider, "", "", nil, 0, false, strings.Join(errStrings, "; "), plan.candidates, plan.isCanary)
+	c.logFailedStreamOutcome(plan.failedRouteOutcome(strings.Join(errStrings, "; ")))
 	return outcome, fmt.Errorf("all providers failed: %s", strings.Join(errStrings, "; "))
 }
 
-func (c executionCoordinator) recordSuccessfulAttempt(plan chatExecutionPlan, info providerInfo, systemPrompt, userContent string, result chatRequestResult) {
+func (c executionCoordinator) recordSuccessfulAttempt(plan chatExecutionPlan, info providerInfo, result chatRequestResult) {
 	c.recordSuccess(info.name, result.clientKey, result.usage, result.duration)
-	c.recordQuality(info.name, systemPrompt, userContent, result.content, result.duration)
-	c.logRouteOutcome(plan.intent, plan.estimatedTokens, plan.plannedProvider, info.name, info.cfg.Model, result.usage, result.duration, true, "", plan.candidates, plan.isCanary && info.name == plan.selected.name)
+	c.recordQuality(info.name, plan.systemPrompt, plan.userContent, result.content, result.duration)
+	success := plan.routeOutcome(info.name, info.cfg.Model, result.usage, result.duration, "")
+	success.success = true
+	success.isCanary = plan.isCanary && info.name == plan.selected.name
+	c.logRouteOutcome(success)
+}
+
+// failedRouteOutcome derives the route-event record for a request where every
+// provider attempt failed.
+func (plan chatExecutionPlan) failedRouteOutcome(errMsg string) routeOutcome {
+	return plan.routeOutcome("", "", nil, 0, errMsg)
+}
+
+// routeOutcome captures the route-event attributes recorded for one outcome.
+type routeOutcome struct {
+	intent          RoutingIntent
+	estimatedTokens int
+	plannedProvider string
+	chosenProvider  string
+	model           string
+	usage           *LLMUsage
+	duration        time.Duration
+	success         bool
+	errMsg          string
+	candidates      []CandidateScore
+	isCanary        bool
+}
+
+func (plan chatExecutionPlan) routeOutcome(chosenProvider, model string, usage *LLMUsage, duration time.Duration, errMsg string) routeOutcome {
+	return routeOutcome{
+		intent:          plan.intent,
+		estimatedTokens: plan.estimatedTokens,
+		plannedProvider: plan.plannedProvider,
+		chosenProvider:  chosenProvider,
+		model:           model,
+		usage:           usage,
+		duration:        duration,
+		errMsg:          errMsg,
+		candidates:      plan.candidates,
+		isCanary:        plan.isCanary,
+	}
 }
 
 func (c executionCoordinator) recordSuccess(provider, key string, usage *LLMUsage, duration time.Duration) {
@@ -166,29 +205,29 @@ func (c executionCoordinator) recordQuality(provider, systemPrompt, userContent,
 	c.oc.RoutingMetrics.RecordQuality(provider, score)
 }
 
-func (c executionCoordinator) logRouteOutcome(intent RoutingIntent, estimatedTokens int, plannedProvider, chosenProvider, model string, usage *LLMUsage, duration time.Duration, success bool, errMsg string, candidates []CandidateScore, isCanary bool) {
+func (c executionCoordinator) logRouteOutcome(outcome routeOutcome) {
 	if c.oc.RouteEvents == nil {
 		return
 	}
 
 	cost := 0.0
-	if usage != nil && usage.Cost != nil {
-		cost = usage.Cost.TotalCost
+	if outcome.usage != nil && outcome.usage.Cost != nil {
+		cost = outcome.usage.Cost.TotalCost
 	}
 	err := c.oc.RouteEvents.Log(RouteEvent{
 		Mode:                c.routing.Mode,
 		PromotionIneligible: c.promotionIneligible,
-		Intent:              intent,
-		EstimatedTokens:     estimatedTokens,
-		PlannedProvider:     plannedProvider,
-		ChosenProvider:      chosenProvider,
-		Model:               model,
-		LatencyMs:           duration.Milliseconds(),
+		Intent:              outcome.intent,
+		EstimatedTokens:     outcome.estimatedTokens,
+		PlannedProvider:     outcome.plannedProvider,
+		ChosenProvider:      outcome.chosenProvider,
+		Model:               outcome.model,
+		LatencyMs:           outcome.duration.Milliseconds(),
 		CostUSD:             cost,
-		Success:             success,
-		Error:               errMsg,
-		Candidates:          candidates,
-		IsCanary:            isCanary,
+		Success:             outcome.success,
+		Error:               outcome.errMsg,
+		Candidates:          outcome.candidates,
+		IsCanary:            outcome.isCanary,
 	})
 	if err != nil {
 		logger := slog.Default()
@@ -199,7 +238,7 @@ func (c executionCoordinator) logRouteOutcome(intent RoutingIntent, estimatedTok
 	}
 }
 
-func (c executionCoordinator) logFailedStreamOutcome(intent RoutingIntent, estimatedTokens int, plannedProvider, chosenProvider, model string, usage *LLMUsage, duration time.Duration, success bool, errMsg string, candidates []CandidateScore, isCanary bool) {
+func (c executionCoordinator) logFailedStreamOutcome(outcome routeOutcome) {
 	c.promotionIneligible = true
-	c.logRouteOutcome(intent, estimatedTokens, plannedProvider, chosenProvider, model, usage, duration, success, errMsg, candidates, isCanary)
+	c.logRouteOutcome(outcome)
 }

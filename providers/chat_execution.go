@@ -11,10 +11,25 @@ type chatExecutionPlan struct {
 	enabled         []providerInfo
 	decision        *RouteDecision
 	plannedProvider string
+	systemPrompt    string
+	userContent     string
 	intent          RoutingIntent
 	estimatedTokens int
 	candidates      []CandidateScore
 	isCanary        bool
+}
+
+// attemptFor binds the plan's prompts to one provider for execution.
+func (plan chatExecutionPlan) attemptFor(info providerInfo) chatAttempt {
+	return chatAttempt{backendName: info.name, cfg: info.cfg, systemPrompt: plan.systemPrompt, userContent: plan.userContent}
+}
+
+// chatPlanningSnapshot carries the routing inputs collected for one prompt.
+type chatPlanningSnapshot struct {
+	enabled         []providerInfo
+	totalWeight     int
+	decision        *RouteDecision
+	estimatedTokens int
 }
 
 type chatExecutionOutcome struct {
@@ -45,11 +60,11 @@ func newExecutionCoordinator(oc *OpenAIClients, configs map[string]Config, count
 }
 
 func (c executionCoordinator) collectEnabledProviders() ([]providerInfo, int) {
-	enabled, totalWeight, _, _ := c.collectEnabledProvidersForPrompt("", "")
-	return enabled, totalWeight
+	snapshot := c.collectEnabledProvidersForPrompt("", "")
+	return snapshot.enabled, snapshot.totalWeight
 }
 
-func (c executionCoordinator) collectEnabledProvidersForPrompt(systemPrompt, userContent string) ([]providerInfo, int, *RouteDecision, int) {
+func (c executionCoordinator) collectEnabledProvidersForPrompt(systemPrompt, userContent string) chatPlanningSnapshot {
 	healthy := c.oc.GetHealthyBackends()
 	intent := DetectIntent(systemPrompt, userContent)
 	estimatedTokens := EstimatePromptTokens(systemPrompt, userContent)
@@ -77,7 +92,7 @@ func (c executionCoordinator) collectEnabledProvidersForPrompt(systemPrompt, use
 			enabled = append(enabled, providerInfo{name: b.Name, cfg: cfg, weight: weight})
 			totalWeight += weight
 		}
-		return enabled, totalWeight, decision, estimatedTokens
+		return chatPlanningSnapshot{enabled: enabled, totalWeight: totalWeight, decision: decision, estimatedTokens: estimatedTokens}
 	}
 
 	for _, candidate := range scored {
@@ -86,7 +101,7 @@ func (c executionCoordinator) collectEnabledProvidersForPrompt(systemPrompt, use
 		enabled = append(enabled, providerInfo{name: candidate.Provider, cfg: cfg, weight: weight})
 		totalWeight += weight
 	}
-	return enabled, totalWeight, decision, estimatedTokens
+	return chatPlanningSnapshot{enabled: enabled, totalWeight: totalWeight, decision: decision, estimatedTokens: estimatedTokens}
 }
 
 func (c executionCoordinator) collectConfiguredProviders() ([]providerInfo, int) {
@@ -151,7 +166,8 @@ func (c executionCoordinator) selectProvider(enabled []providerInfo, totalWeight
 }
 
 func (c executionCoordinator) plan(systemPrompt, userContent string, allowUnhealthyFallback bool) (chatExecutionPlan, error) {
-	enabled, totalWeight, decision, estimatedTokens := c.collectEnabledProvidersForPrompt(systemPrompt, userContent)
+	snapshot := c.collectEnabledProvidersForPrompt(systemPrompt, userContent)
+	enabled, totalWeight, decision, estimatedTokens := snapshot.enabled, snapshot.totalWeight, snapshot.decision, snapshot.estimatedTokens
 	if len(enabled) == 0 && allowUnhealthyFallback {
 		enabled, totalWeight = c.collectConfiguredProviders()
 		if decision == nil {
@@ -193,6 +209,8 @@ func (c executionCoordinator) plan(systemPrompt, userContent string, allowUnheal
 		enabled:         enabled,
 		decision:        decision,
 		plannedProvider: selected.name,
+		systemPrompt:    systemPrompt,
+		userContent:     userContent,
 		intent:          decision.Intent,
 		estimatedTokens: estimatedTokens,
 		candidates:      decisionCandidates(decision),

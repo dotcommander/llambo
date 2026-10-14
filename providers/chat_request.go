@@ -42,30 +42,16 @@ func decideChatRetry(err error, attempt, maxRetries int, usedNativeStops, emitte
 	return chatRetryAfterBackoff, wrapped
 }
 
-// ExecuteChatRequest sends a chat request through a wormhole provider with llambo-owned retry logic.
-// It handles parameter building, transient error retries, and usage/tool-call mapping.
-// Returns content, usage (may be nil), finish reason, tool calls (if any), and error.
-func ExecuteChatRequest(
-	ctx context.Context,
-	client whtypes.Provider,
-	cfg Config,
-	systemPrompt, userContent string,
-	reqConfig ChatRequestConfig,
-) (string, *LLMUsage, string, []ToolCall, error) {
-	content, usage, finishReason, toolCalls, _, err := executeChatRequestWithIdentity(ctx, client, cfg, systemPrompt, userContent, reqConfig)
-	return content, usage, finishReason, toolCalls, err
-}
-
 // executeChatRequestWithIdentity preserves the provider/model declared by
-// wormhole's response. The public compatibility wrapper above intentionally
+// wormhole's response. The public compatibility wrapper intentionally
 // retains the pre-existing return shape for non-evaluation callers.
 func executeChatRequestWithIdentity(
 	ctx context.Context,
 	client whtypes.Provider,
-	cfg Config,
-	systemPrompt, userContent string,
+	call chatAttempt,
 	reqConfig ChatRequestConfig,
-) (string, *LLMUsage, string, []ToolCall, chatResponseIdentity, error) {
+) (chatReply, chatResponseIdentity, error) {
+	cfg, systemPrompt, userContent := call.cfg, call.systemPrompt, call.userContent
 	request := buildTextRequest(ctx, cfg, systemPrompt, userContent)
 	usedNativeStops := len(request.Stop) > 0
 	if _, structured := ctx.Value(structuredRequestKey{}).(StructuredChatRequest); structured {
@@ -82,18 +68,15 @@ func executeChatRequestWithIdentity(
 		}
 		resp, err := client.Text(ctx, attemptRequest)
 		if err == nil {
-			var content string
-			var usage *LLMUsage
-			var finishReason string
-			var toolCalls []ToolCall
-			var identity chatResponseIdentity
-			content, usage, finishReason, toolCalls, identity, err = extractContentFromTextResponseWithIdentity(resp, cfg.Model)
+			reply, identity, extractErr := extractContentFromTextResponseWithIdentity(resp, cfg.Model)
+			reply.usage = usageOrEstimate(reply.usage, systemPrompt, userContent, reply.content)
+			err = extractErr
 			outcome := "success"
 			if err != nil {
 				outcome = "error"
 			}
 			chatLog().DebugContext(ctx, "provider chat request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", outcome)
-			return content, usageOrEstimate(usage, systemPrompt, userContent, content), finishReason, toolCalls, identity, err
+			return reply, identity, err
 		}
 
 		action, wrapped := decideChatRetry(err, attempt, reqConfig.MaxRetries, usedNativeStops, false)
@@ -110,36 +93,22 @@ func executeChatRequestWithIdentity(
 		}
 		if err = waitChatBackoff(ctx, reqConfig, attempt); err != nil {
 			chatLog().DebugContext(ctx, "provider chat request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "error")
-			return "", nil, "", nil, chatResponseIdentity{}, err
+			return chatReply{}, chatResponseIdentity{}, err
 		}
 	}
 
 	chatLog().DebugContext(ctx, "provider chat request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", reqConfig.MaxRetries, "outcome", "error")
-	return "", nil, "", nil, chatResponseIdentity{}, lastErr
-}
-
-// ExecuteChatStreamRequest sends a streaming chat request and forwards deltas.
-// Returns full content, usage, finish reason, tool calls, whether any chunk was emitted, and error.
-func ExecuteChatStreamRequest(
-	ctx context.Context,
-	client whtypes.Provider,
-	cfg Config,
-	systemPrompt, userContent string,
-	onChunk ChatStreamHandler,
-	reqConfig ChatRequestConfig,
-) (string, *LLMUsage, string, []ToolCall, bool, error) {
-	content, usage, finishReason, toolCalls, emitted, _, err := executeChatStreamRequestWithIdentity(ctx, client, cfg, systemPrompt, userContent, onChunk, reqConfig)
-	return content, usage, finishReason, toolCalls, emitted, err
+	return chatReply{}, chatResponseIdentity{}, lastErr
 }
 
 func executeChatStreamRequestWithIdentity(
 	ctx context.Context,
 	client whtypes.Provider,
-	cfg Config,
-	systemPrompt, userContent string,
+	call chatAttempt,
 	onChunk ChatStreamHandler,
 	reqConfig ChatRequestConfig,
-) (string, *LLMUsage, string, []ToolCall, bool, chatResponseIdentity, error) {
+) (chatReply, bool, chatResponseIdentity, error) {
+	cfg, systemPrompt, userContent := call.cfg, call.systemPrompt, call.userContent
 	request := buildTextRequest(ctx, cfg, systemPrompt, userContent)
 	usedNativeStops := len(request.Stop) > 0
 	if _, structured := ctx.Value(structuredRequestKey{}).(StructuredChatRequest); structured {
@@ -168,11 +137,11 @@ func executeChatStreamRequestWithIdentity(
 			lastErr = wrapped
 			if action == chatRetryStop {
 				chatLog().DebugContext(ctx, "provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "error")
-				return "", nil, "", nil, false, chatResponseIdentity{}, lastErr
+				return chatReply{}, false, chatResponseIdentity{}, lastErr
 			}
 			if err = waitChatBackoff(ctx, reqConfig, attempt); err != nil {
 				chatLog().DebugContext(ctx, "provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "error")
-				return "", nil, "", nil, false, chatResponseIdentity{}, err
+				return chatReply{}, false, chatResponseIdentity{}, err
 			}
 			continue
 		}
@@ -181,7 +150,7 @@ func executeChatStreamRequestWithIdentity(
 		cancel()
 		if err == nil {
 			chatLog().DebugContext(ctx, "provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "success")
-			return content, usageOrEstimate(usage, systemPrompt, userContent, content), finishReason, toolCalls, emitted, identity, nil
+			return chatReply{content: content, usage: usageOrEstimate(usage, systemPrompt, userContent, content), finishReason: finishReason, toolCalls: toolCalls}, emitted, identity, nil
 		}
 
 		action, wrapped := decideChatRetry(err, attempt, reqConfig.MaxRetries, usedNativeStops, emitted)
@@ -195,14 +164,14 @@ func executeChatStreamRequestWithIdentity(
 		lastErr = wrapped
 		if action == chatRetryStop {
 			chatLog().DebugContext(ctx, "provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "error")
-			return "", nil, "", nil, emitted, chatResponseIdentity{}, lastErr
+			return chatReply{}, emitted, chatResponseIdentity{}, lastErr
 		}
 		if err := waitChatBackoff(ctx, reqConfig, attempt); err != nil {
 			chatLog().DebugContext(ctx, "provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "error")
-			return "", nil, "", nil, emitted, chatResponseIdentity{}, err
+			return chatReply{}, emitted, chatResponseIdentity{}, err
 		}
 	}
 
 	chatLog().DebugContext(ctx, "provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", reqConfig.MaxRetries, "outcome", "error")
-	return "", nil, "", nil, false, chatResponseIdentity{}, lastErr
+	return chatReply{}, false, chatResponseIdentity{}, lastErr
 }

@@ -85,7 +85,22 @@ func (c *commandToolChatClient) Close() {
 	}
 }
 
-func newTypedLocalExecutor(errOut io.Writer, suite evals.LocalSuite, model, referenceModel, featureModel, baseURL, settingsPath string, exclusiveApproved bool, timeout time.Duration, verified, verifiedReference string) (evals.LocalExecutor, func(), error) {
+// localExecutorSpec describes the executor wiring for one local suite run.
+type localExecutorSpec struct {
+	suite             evals.LocalSuite
+	model             string
+	referenceModel    string
+	featureModel      string
+	baseURL           string
+	settingsPath      string
+	exclusiveApproved bool
+	timeout           time.Duration
+	verified          string
+	verifiedReference string
+}
+
+func newTypedLocalExecutor(errOut io.Writer, spec localExecutorSpec) (evals.LocalExecutor, func(), error) {
+	suite, model, referenceModel, featureModel, baseURL, settingsPath, exclusiveApproved, timeout, verified, verifiedReference := spec.suite, spec.model, spec.referenceModel, spec.featureModel, spec.baseURL, spec.settingsPath, spec.exclusiveApproved, spec.timeout, spec.verified, spec.verifiedReference
 	switch suite {
 	case evals.LocalSuiteTools:
 		client, err := newCommandToolChatClient(errOut, model, timeout)

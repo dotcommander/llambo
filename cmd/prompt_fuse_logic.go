@@ -97,11 +97,19 @@ func tokenSet(text string) map[string]struct{} {
 	return set
 }
 
-func (cliOpts *invocationOptions) promptTextForModel(promptText, systemPrompt string, index, total int, provider, model string) string {
+// draftSource identifies one draft contributor in the fusion fan-out.
+type draftSource struct {
+	index    int
+	total    int
+	provider string
+	model    string
+}
+
+func (cliOpts *invocationOptions) promptTextForModel(req promptRequest, source draftSource) string {
 	if !cliOpts.promptFuse {
-		return promptText
+		return req.promptText
 	}
-	return buildFusionDraftPrompt(promptText, systemPrompt, index, total, provider, model)
+	return buildFusionDraftPrompt(req, source)
 }
 
 func (cliOpts *invocationOptions) resolveFirstFusionTarget(selector string) (catalog.ModelTarget, error) {
@@ -177,8 +185,10 @@ func buildFusionPrompt(promptText, systemPrompt string, results []PromptResult) 
 	return strings.TrimSpace(b.String())
 }
 
-func buildFusionDraftPrompt(promptText, systemPrompt string, index, total int, provider, model string) string {
-	lens := fusionDraftLenses[lensIndex(index)]
+func buildFusionDraftPrompt(req promptRequest, source draftSource) string {
+	promptText, systemPrompt := req.promptText, req.systemPrompt
+	lens := fusionDraftLenses[lensIndex(source.index)]
+	total := source.total
 	if total <= 0 {
 		total = 1
 	}
@@ -188,10 +198,10 @@ func buildFusionDraftPrompt(promptText, systemPrompt string, index, total int, p
 	if strings.TrimSpace(systemPrompt) != "" {
 		fmt.Fprintf(&b, "Original system prompt:\n%s\n\n", strings.TrimSpace(systemPrompt))
 	}
-	fmt.Fprintf(&b, "You are draft contributor %d of %d in a merge-fuse workflow.\n", index+1, total)
+	fmt.Fprintf(&b, "You are draft contributor %d of %d in a merge-fuse workflow.\n", source.index+1, total)
 	fmt.Fprintf(&b, "Assigned lens: %s.\n", lens)
-	if strings.TrimSpace(provider) != "" || strings.TrimSpace(model) != "" {
-		fmt.Fprintf(&b, "This draft source: %s/%s.\n", strings.TrimSpace(provider), strings.TrimSpace(model))
+	if strings.TrimSpace(source.provider) != "" || strings.TrimSpace(source.model) != "" {
+		fmt.Fprintf(&b, "This draft source: %s/%s.\n", strings.TrimSpace(source.provider), strings.TrimSpace(source.model))
 	}
 	b.WriteString("\nYour job is to add distinct value for a later fusion model, not to converge on the obvious shortest answer.\n\n")
 	b.WriteString("Draft rules:\n")
@@ -212,8 +222,4 @@ func lensIndex(index int) int {
 		index = -index
 	}
 	return index % len(fusionDraftLenses)
-}
-
-func promptTextForModel(promptText, systemPrompt string, index, total int, provider, model string) string {
-	return defaultInvocationOptions().promptTextForModel(promptText, systemPrompt, index, total, provider, model)
 }

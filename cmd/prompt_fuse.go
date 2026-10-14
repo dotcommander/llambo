@@ -45,7 +45,8 @@ type PromptFusionControl struct {
 	Result         PromptResult
 }
 
-func (cliOpts *invocationOptions) executePromptFusionControlCore(ctx context.Context, promptText, systemPrompt string, timeoutSecs int, selector string, run *promptRun) (*PromptFusionControl, error) {
+func (cliOpts *invocationOptions) executePromptFusionControlCore(ctx context.Context, req promptRequest, selector string, run *promptRun) (*PromptFusionControl, error) {
+	promptText, systemPrompt, timeoutSecs := req.promptText, req.systemPrompt, req.timeoutSecs
 	target, err := cliOpts.resolveFirstFusionTarget(selector)
 	if err != nil {
 		return nil, err
@@ -53,9 +54,7 @@ func (cliOpts *invocationOptions) executePromptFusionControlCore(ctx context.Con
 	result := executePromptForProviderWithRun(
 		ctx,
 		providers.ProviderEntry{Name: target.Provider, Config: target.Config},
-		promptText,
-		systemPrompt,
-		timeoutSecs,
+		promptRequest{promptText: promptText, systemPrompt: systemPrompt, timeoutSecs: timeoutSecs},
 		run,
 	)
 	result.CostStatus = string(target.CostStatus)
@@ -76,19 +75,20 @@ func (cliOpts *invocationOptions) executePromptFusionControlCore(ctx context.Con
 }
 
 func defaultExecutePromptFusionControl(promptText, systemPrompt string, timeoutSecs int, selector string) (*PromptFusionControl, error) {
-	return executePromptFusionControlCore(context.Background(), promptText, systemPrompt, timeoutSecs, selector, nil)
+	return executePromptFusionControlCore(context.Background(), promptRequest{promptText: promptText, systemPrompt: systemPrompt, timeoutSecs: timeoutSecs}, selector, nil)
 }
 
 var executePromptFusionControl = defaultExecutePromptFusionControl
 
-func (cliOpts *invocationOptions) executePromptFusionControlWithRun(ctx context.Context, promptText, systemPrompt string, timeoutSecs int, selector string, run *promptRun) (*PromptFusionControl, error) {
+func (cliOpts *invocationOptions) executePromptFusionControlWithRun(ctx context.Context, req promptRequest, selector string, run *promptRun) (*PromptFusionControl, error) {
 	if reflect.ValueOf(executePromptFusionControl).Pointer() != reflect.ValueOf(defaultExecutePromptFusionControl).Pointer() {
-		return executePromptFusionControl(promptText, systemPrompt, timeoutSecs, selector)
+		return executePromptFusionControl(req.promptText, req.systemPrompt, req.timeoutSecs, selector)
 	}
-	return cliOpts.executePromptFusionControlCore(ctx, promptText, systemPrompt, timeoutSecs, selector, run)
+	return cliOpts.executePromptFusionControlCore(ctx, req, selector, run)
 }
 
-func (cliOpts *invocationOptions) executePromptFusionResponseCore(ctx context.Context, promptText, systemPrompt string, results []PromptResult, timeoutSecs int, selector string, run *promptRun) (*PromptFusion, error) {
+func (cliOpts *invocationOptions) executePromptFusionResponseCore(ctx context.Context, req promptRequest, results []PromptResult, selector string, run *promptRun) (*PromptFusion, error) {
+	promptText, systemPrompt, timeoutSecs := req.promptText, req.systemPrompt, req.timeoutSecs
 	successful := successfulPromptResults(results)
 	if len(successful) == 0 {
 		return nil, errors.New("cannot fuse responses: no successful model responses")
@@ -103,9 +103,7 @@ func (cliOpts *invocationOptions) executePromptFusionResponseCore(ctx context.Co
 	result := executePromptForProviderWithRun(
 		ctx,
 		providers.ProviderEntry{Name: target.Provider, Config: target.Config},
-		fusionPrompt,
-		defaultFusionSystemPrompt,
-		timeoutSecs,
+		promptRequest{promptText: fusionPrompt, systemPrompt: defaultFusionSystemPrompt, timeoutSecs: timeoutSecs},
 		run,
 	)
 	result.CostStatus = string(target.CostStatus)
@@ -128,23 +126,16 @@ func (cliOpts *invocationOptions) executePromptFusionResponseCore(ctx context.Co
 }
 
 func defaultExecutePromptFusionResponse(promptText, systemPrompt string, results []PromptResult, timeoutSecs int, selector string) (*PromptFusion, error) {
-	return executePromptFusionResponseCore(context.Background(), promptText, systemPrompt, results, timeoutSecs, selector, nil)
+	return executePromptFusionResponseCore(context.Background(), promptRequest{promptText: promptText, systemPrompt: systemPrompt, timeoutSecs: timeoutSecs}, results, selector, nil)
 }
 
 var executePromptFusionResponse = defaultExecutePromptFusionResponse
 
-func (cliOpts *invocationOptions) executePromptFusionResponseContext(ctx context.Context, promptText, systemPrompt string, results []PromptResult, timeoutSecs int, selector string) (*PromptFusion, error) {
+func (cliOpts *invocationOptions) executePromptFusionResponseWithRun(ctx context.Context, req promptRequest, results []PromptResult, selector string, run *promptRun) (*PromptFusion, error) {
 	if reflect.ValueOf(executePromptFusionResponse).Pointer() != reflect.ValueOf(defaultExecutePromptFusionResponse).Pointer() {
-		return executePromptFusionResponse(promptText, systemPrompt, results, timeoutSecs, selector)
+		return executePromptFusionResponse(req.promptText, req.systemPrompt, results, req.timeoutSecs, selector)
 	}
-	return cliOpts.executePromptFusionResponseCore(ctx, promptText, systemPrompt, results, timeoutSecs, selector, nil)
-}
-
-func (cliOpts *invocationOptions) executePromptFusionResponseWithRun(ctx context.Context, promptText, systemPrompt string, results []PromptResult, timeoutSecs int, selector string, run *promptRun) (*PromptFusion, error) {
-	if reflect.ValueOf(executePromptFusionResponse).Pointer() != reflect.ValueOf(defaultExecutePromptFusionResponse).Pointer() {
-		return executePromptFusionResponse(promptText, systemPrompt, results, timeoutSecs, selector)
-	}
-	return cliOpts.executePromptFusionResponseCore(ctx, promptText, systemPrompt, results, timeoutSecs, selector, run)
+	return cliOpts.executePromptFusionResponseCore(ctx, req, results, selector, run)
 }
 
 func outputPromptFusionControl(cmd *commandIO, control *PromptFusionControl) {
@@ -225,23 +216,11 @@ func outputPromptFusion(cmd *commandIO, fusion *PromptFusion) {
 	fmt.Fprintf(out, "%s\n", fusion.Result.Response)
 }
 
-// Scalar helpers retain their signatures with independent default options.
-func executePromptFusionResponseWithRun(ctx context.Context, promptText, systemPrompt string, results []PromptResult, timeoutSecs int, selector string, run *promptRun) (*PromptFusion, error) {
-	return defaultInvocationOptions().executePromptFusionResponseWithRun(ctx, promptText, systemPrompt, results, timeoutSecs, selector, run)
+// Package helpers use independent default options.
+func executePromptFusionResponseCore(ctx context.Context, req promptRequest, results []PromptResult, selector string, run *promptRun) (*PromptFusion, error) {
+	return defaultInvocationOptions().executePromptFusionResponseCore(ctx, req, results, selector, run)
 }
 
-func executePromptFusionResponseContext(ctx context.Context, promptText, systemPrompt string, results []PromptResult, timeoutSecs int, selector string) (*PromptFusion, error) {
-	return defaultInvocationOptions().executePromptFusionResponseContext(ctx, promptText, systemPrompt, results, timeoutSecs, selector)
-}
-
-func executePromptFusionResponseCore(ctx context.Context, promptText, systemPrompt string, results []PromptResult, timeoutSecs int, selector string, run *promptRun) (*PromptFusion, error) {
-	return defaultInvocationOptions().executePromptFusionResponseCore(ctx, promptText, systemPrompt, results, timeoutSecs, selector, run)
-}
-
-func executePromptFusionControlWithRun(ctx context.Context, promptText, systemPrompt string, timeoutSecs int, selector string, run *promptRun) (*PromptFusionControl, error) {
-	return defaultInvocationOptions().executePromptFusionControlWithRun(ctx, promptText, systemPrompt, timeoutSecs, selector, run)
-}
-
-func executePromptFusionControlCore(ctx context.Context, promptText, systemPrompt string, timeoutSecs int, selector string, run *promptRun) (*PromptFusionControl, error) {
-	return defaultInvocationOptions().executePromptFusionControlCore(ctx, promptText, systemPrompt, timeoutSecs, selector, run)
+func executePromptFusionControlCore(ctx context.Context, req promptRequest, selector string, run *promptRun) (*PromptFusionControl, error) {
+	return defaultInvocationOptions().executePromptFusionControlCore(ctx, req, selector, run)
 }

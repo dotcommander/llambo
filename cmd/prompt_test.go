@@ -253,7 +253,7 @@ func TestBuildFusionPrompt_IncludesOriginalPromptAndSuccessfulResponses(t *testi
 }
 
 func TestBuildFusionDraftPrompt_EncouragesDistinctDraftMaterial(t *testing.T) {
-	got := buildFusionDraftPrompt("Give me a launch plan.", "Be practical.", 1, 6, "nvidia", "model-b")
+	got := buildFusionDraftPrompt(promptRequest{promptText: "Give me a launch plan.", systemPrompt: "Be practical.", timeoutSecs: 30}, draftSource{index: 1, total: 6, provider: "nvidia", model: "model-b"})
 
 	assert.Contains(t, got, "Original user prompt:")
 	assert.Contains(t, got, "Give me a launch plan.")
@@ -319,12 +319,12 @@ func TestComputeFusionConsensus_LabelsDraftAgreement(t *testing.T) {
 func TestPromptTextForModel_OnlyWrapsWhenFuseEnabled(t *testing.T) {
 	legacyTestOptions := invocationOptions{modelsGrouped: true, timeoutSeconds: 60, promptFuseModels: defaultPromptFuseModels}
 	legacyTestOptions.promptFuse = false
-	require.Equal(t, "plain prompt", legacyTestOptions.promptTextForModel("plain prompt", "system", 0, 2, "p", "m"))
+	require.Equal(t, "plain prompt", legacyTestOptions.promptTextForModel(promptRequest{promptText: "plain prompt", systemPrompt: "system", timeoutSecs: 30}, draftSource{index: 0, total: 2, provider: "p", model: "m"}))
 
 	legacyTestOptions.promptFuse = true
 	t.Cleanup(func() { legacyTestOptions.promptFuse = false })
 
-	got := legacyTestOptions.promptTextForModel("plain prompt", "system", 0, 2, "p", "m")
+	got := legacyTestOptions.promptTextForModel(promptRequest{promptText: "plain prompt", systemPrompt: "system", timeoutSecs: 30}, draftSource{index: 0, total: 2, provider: "p", model: "m"})
 	assert.Contains(t, got, "plain prompt")
 	assert.Contains(t, got, "draft contributor 1 of 2")
 	assert.Contains(t, got, "Assigned lens:")
@@ -1291,7 +1291,7 @@ func TestExecutePromptForProvider_Structure(t *testing.T) {
 	}
 
 	// This will fail with auth error but verifies structure
-	result := executePromptForProvider(entry, "test prompt", "You are a helpful assistant.", 60)
+	result := executePromptForProvider(entry, promptRequest{promptText: "test prompt", systemPrompt: "You are a helpful assistant.", timeoutSecs: 60})
 
 	assert.Equal(t, "test-provider", result.Provider)
 	assert.NotZero(t, result.Latency)

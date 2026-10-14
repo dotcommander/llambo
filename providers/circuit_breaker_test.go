@@ -488,11 +488,11 @@ func TestKeyClientInitFailureDoesNotTripBreaker(t *testing.T) {
 	rotateKey := func(string, chatRequestResult) (bool, error) {
 		return false, fmt.Errorf("%w: openai: dial fail", ErrKeyClientInit)
 	}
-	request := func(ctx context.Context, _ string, _ Config, _ string, _ string) (chatRequestResult, error) {
+	request := func(context.Context, chatAttempt) (chatRequestResult, error) {
 		return chatRequestResult{}, rateLimitErr
 	}
 
-	_, err := executeChatAttemptWithKeyRotation(context.Background(), backend, Config{}, "sys", "user", rotateKey, request)
+	_, err := executeChatAttemptWithKeyRotation(context.Background(), chatAttempt{backendName: backend, systemPrompt: "sys", userContent: "user"}, rotateKey, request)
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrKeyClientInit)
 
