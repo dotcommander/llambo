@@ -261,7 +261,7 @@ func resolveWritingModels(modelSelectors []string, judgeSelector string, judgeMa
 			costMap[key] = value
 		}
 	}
-	catPath, err := catalog.CatalogPath()
+	catPath, err := catalog.Path()
 	if err != nil {
 		return nil, evals.WritingModelSpec{}, nil, err
 	}

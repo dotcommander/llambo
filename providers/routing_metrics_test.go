@@ -169,7 +169,7 @@ func TestRoutingMetricsStore_LoadWarnsWhenQuarantineFails(t *testing.T) {
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
 	renameErr := errors.New("forced quarantine rename failure")
-	store, err := newRoutingMetricsStore(path, logger, func(string, string) error {
+	store, err := openRoutingMetricsStore(path, logger, func(string, string) error {
 		return renameErr
 	})
 	if err != nil {

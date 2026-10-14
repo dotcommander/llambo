@@ -43,7 +43,7 @@ func Update(ctx context.Context, path string, mutate func(*Catalog) error) error
 	if err != nil {
 		return err
 	}
-	lock, err := os.OpenFile(path+".lock", os.O_CREATE|os.O_RDWR, 0o600)
+	lock, err := os.OpenFile(path+".lock", os.O_CREATE|os.O_RDWR, 0o600) //nolint:gosec // user-supplied local CLI path by design
 	if err != nil {
 		return fmt.Errorf("open catalog lock: %w", err)
 	}
@@ -109,7 +109,7 @@ func publishCatalog(path string, cat *Catalog, beforePublish func() error) error
 	published := false
 	defer func() {
 		if !published {
-			_ = os.Remove(tmpPath)
+			_ = os.Remove(tmpPath) //nolint:gosec // user-supplied local CLI path by design
 		}
 	}()
 	if err := tmp.Chmod(0o644); err != nil {
@@ -135,7 +135,7 @@ func publishCatalog(path string, cat *Catalog, beforePublish func() error) error
 			return err
 		}
 	}
-	if err := os.Rename(tmpPath, path); err != nil {
+	if err := os.Rename(tmpPath, path); err != nil { //nolint:gosec // user-supplied local CLI path by design
 		return fmt.Errorf("publish catalog: %w", err)
 	}
 	published = true
@@ -146,7 +146,7 @@ func publishCatalog(path string, cat *Catalog, beforePublish func() error) error
 }
 
 func syncCatalogDir(dir string) error {
-	d, err := os.Open(dir)
+	d, err := os.Open(dir) //nolint:gosec // user-supplied local CLI path by design
 	if err != nil {
 		return err
 	}

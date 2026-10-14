@@ -161,10 +161,10 @@ func preserveEvaluationSourceCaches(cacheDir string, names []string, now time.Ti
 			return nil, fmt.Errorf("read previous %s cache: %w", name, err)
 		}
 		backup := WritingEvidenceSourceBackupPath(cacheDir, name, now)
-		if err := os.MkdirAll(filepath.Dir(backup), 0o755); err != nil {
+		if err = os.MkdirAll(filepath.Dir(backup), 0o750); err != nil { //nolint:gosec // reviewed directory mode
 			return nil, fmt.Errorf("create source backup directory: %w", err)
 		}
-		if err := os.WriteFile(backup, data, 0o600); err != nil {
+		if err = os.WriteFile(backup, data, 0o600); err != nil { //nolint:gosec // user-supplied local CLI path by design
 			return nil, fmt.Errorf("preserve previous %s cache: %w", name, err)
 		}
 		backups = append(backups, backup)
@@ -258,7 +258,7 @@ func RefreshLLMStatsStatsV1Source(ctx context.Context, opts Options) (SourceStat
 	backup := ""
 	if _, err := os.Stat(cachePath); err == nil {
 		backup = LLMStatsStatsV1SourceBackupPath(opts.CacheDir, opts.Now())
-		if err := os.MkdirAll(filepath.Dir(backup), 0o755); err != nil {
+		if err = os.MkdirAll(filepath.Dir(backup), 0o750); err != nil { //nolint:gosec // reviewed directory mode
 			return SourceStatus{}, "", fmt.Errorf("create LLM Stats backup directory: %w", err)
 		}
 		var data []byte
@@ -266,7 +266,7 @@ func RefreshLLMStatsStatsV1Source(ctx context.Context, opts Options) (SourceStat
 		if err != nil {
 			return SourceStatus{}, "", fmt.Errorf("read previous LLM Stats cache: %w", err)
 		}
-		if err := os.WriteFile(backup, data, 0o600); err != nil {
+		if err = os.WriteFile(backup, data, 0o600); err != nil { //nolint:gosec // user-supplied local CLI path by design
 			return SourceStatus{}, "", fmt.Errorf("preserve previous LLM Stats cache: %w", err)
 		}
 	} else if !os.IsNotExist(err) {
@@ -285,6 +285,8 @@ func WritingEvidenceSourceBackupPath(cacheDir, name string, now time.Time) strin
 	return filepath.Join(cacheDir, "backups", now.UTC().Format("20060102T150405.000000000"), name+".json")
 }
 
+// LLMStatsStatsV1SourceBackupPath returns the timestamped predecessor cache
+// backup location.
 func LLMStatsStatsV1SourceBackupPath(cacheDir string, now time.Time) string {
 	return filepath.Join(cacheDir, "backups", now.UTC().Format("20060102T150405.000000000"), "llm-stats.json")
 }

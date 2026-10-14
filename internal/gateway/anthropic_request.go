@@ -255,7 +255,7 @@ func anthropicJSONOverrides(req AnthropicMessagesRequest) map[string]any {
 	return out
 }
 
-func buildAnthropicPrompts(msgs []Message) (string, string) {
+func buildAnthropicPrompts(msgs []Message) (system, user string) {
 	return extractMessagesCore(msgs, true, true)
 }
 

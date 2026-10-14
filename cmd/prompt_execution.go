@@ -87,7 +87,7 @@ func (cliOpts *invocationOptions) executePromptAgainstSelectedModelsCore(ctx con
 	if err != nil {
 		return nil, fmt.Errorf("load model costs: %w", err)
 	}
-	catPath, err := catalog.CatalogPath()
+	catPath, err := catalog.Path()
 	if err != nil {
 		return nil, err
 	}

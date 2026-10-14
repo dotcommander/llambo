@@ -17,8 +17,10 @@ import (
 	"time"
 )
 
+// LocalSuite names one sealed local evaluation suite.
 type LocalSuite string
 
+// Suite identifiers for local evaluations.
 const (
 	LocalSuiteTools        LocalSuite = "tools"
 	LocalSuiteASR          LocalSuite = "asr"
@@ -28,6 +30,7 @@ const (
 	localEvalSchemaVersion            = 1
 )
 
+// Valid reports whether the suite is one of the supported identifiers.
 func (s LocalSuite) Valid() bool {
 	switch s {
 	case LocalSuiteTools, LocalSuiteASR, LocalSuiteTTS, LocalSuiteEmbeddings, LocalSuiteAcceleration:
@@ -44,6 +47,8 @@ type LocalInputManifest struct {
 	Cases   []json.RawMessage `json:"cases"`
 }
 
+// LoadLocalInputManifest reads and structurally validates a sealed local
+// evaluation input, returning the manifest and the input file digest.
 func LoadLocalInputManifest(path string, suite LocalSuite) (LocalInputManifest, string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -219,12 +224,15 @@ func validateLocalFixtureCardinality(in LocalInputManifest, decoded []any) error
 	return nil
 }
 
+// LocalPricing is the explicit per-million pricing required before any
+// provider call.
 type LocalPricing struct {
 	InputPer1M  float64 `json:"input_per_1m"`
 	OutputPer1M float64 `json:"output_per_1m"`
 	Known       bool    `json:"known"`
 }
 
+// Validate enforces known, finite, non-negative pricing.
 func (p LocalPricing) Validate() error {
 	if !p.Known || math.IsNaN(p.InputPer1M) || math.IsNaN(p.OutputPer1M) || math.IsInf(p.InputPer1M, 0) || math.IsInf(p.OutputPer1M, 0) || p.InputPer1M < 0 || p.OutputPer1M < 0 {
 		return errors.New("known non-negative pricing is required")
@@ -232,6 +240,8 @@ func (p LocalPricing) Validate() error {
 	return nil
 }
 
+// LocalRunIdentity seals the preconditions of a local run: suite, input
+// digest, model selectors, and budget bounds.
 type LocalRunIdentity struct {
 	Suite           LocalSuite   `json:"suite"`
 	SuiteVersion    string       `json:"suite_version"`
@@ -245,6 +255,9 @@ type LocalRunIdentity struct {
 	Pricing         LocalPricing `json:"pricing"`
 	LocalUseCase    string       `json:"local_use_case,omitempty"`
 }
+
+// LocalRunManifest is the durable start marker for a local run, keyed by a
+// hash of its identity.
 type LocalRunManifest struct {
 	SchemaVersion int              `json:"schema_version"`
 	RunID         string           `json:"run_id"`
@@ -269,17 +282,22 @@ func NewLocalRunManifest(inputPath, inputHash string, in LocalInputManifest, mod
 	m.RunID = hex.EncodeToString(h[:8])
 	return m, nil
 }
+
+// LocalRunIdentityHash returns the full hex digest of the manifest identity.
 func LocalRunIdentityHash(m LocalRunManifest) string {
 	b, _ := json.Marshal(m.Identity)
 	h := sha256.Sum256(b)
 	return hex.EncodeToString(h[:])
 }
 
+// SealLocalRunUseCase binds a use-case label into the identity and rederives
+// the run ID.
 func SealLocalRunUseCase(m *LocalRunManifest, useCase string) {
 	m.Identity.LocalUseCase = strings.TrimSpace(useCase)
 	m.RunID = LocalRunIdentityHash(*m)[:16]
 }
 
+// LocalCall is one ledgered provider call with served identity and usage.
 type LocalCall struct {
 	CaseID         string          `json:"case_id"`
 	RequestedModel string          `json:"requested_model"`
@@ -339,6 +357,7 @@ func ObservedLocalCost(pricing LocalPricing, calls []LocalCall) (*float64, error
 	return &observed, nil
 }
 
+// LocalReport is the scored outcome of a local run.
 type LocalReport struct {
 	RunID           string             `json:"run_id"`
 	Suite           LocalSuite         `json:"suite"`
@@ -351,6 +370,8 @@ type LocalReport struct {
 	ObservedCostUSD float64            `json:"observed_cost_usd"`
 	Errors          []string           `json:"errors,omitempty"`
 }
+
+// LocalReceipt is the sealed completion proof with artifact digests.
 type LocalReceipt struct {
 	SchemaVersion   int               `json:"schema_version"`
 	RunID           string            `json:"run_id"`
@@ -383,7 +404,7 @@ func ensureNewLocalOutput(path string, manifest LocalRunManifest) error {
 	if path == "" || filepath.Clean(path) == "." {
 		return errors.New("--output-dir must be explicit")
 	}
-	if err := os.MkdirAll(path, 0o755); err != nil {
+	if err := os.MkdirAll(path, 0o750); err != nil { //nolint:gosec // reviewed directory mode
 		return err
 	}
 	existing, err := os.ReadFile(filepath.Join(path, manifestJSON))

@@ -91,6 +91,7 @@ type ModelMetadata struct {
 	Benchmarks                 map[string]any    `json:"benchmarks,omitempty"`
 }
 
+// ModelPricing holds human-readable per-modality price labels.
 type ModelPricing struct {
 	Prompt            string `json:"prompt,omitempty"`
 	Completion        string `json:"completion,omitempty"`
@@ -102,6 +103,7 @@ type ModelPricing struct {
 	InputCacheWrite   string `json:"input_cache_write,omitempty"`
 }
 
+// ModelArchitecture records modalities and tokenizer facts for a model.
 type ModelArchitecture struct {
 	Modality         string   `json:"modality,omitempty"`
 	InputModalities  []string `json:"input_modalities,omitempty"`
@@ -110,12 +112,14 @@ type ModelArchitecture struct {
 	InstructType     string   `json:"instruct_type,omitempty"`
 }
 
+// ModelTopProvider records the top provider's context and moderation facts.
 type ModelTopProvider struct {
 	ContextLength       int  `json:"context_length,omitempty"`
 	MaxCompletionTokens int  `json:"max_completion_tokens,omitempty"`
 	IsModerated         bool `json:"is_moderated,omitempty"`
 }
 
+// QualityEvidence is one imported quality observation for a task.
 type QualityEvidence struct {
 	Score     float64   `json:"score"`
 	Source    string    `json:"source,omitempty"`
@@ -149,8 +153,8 @@ type PingState struct {
 	CheckedAt            time.Time `json:"checked_at"`
 }
 
-// CatalogPath returns ~/.config/llambo/catalog.json (platform-equivalent via $HOME).
-func CatalogPath() (string, error) {
+// Path returns ~/.config/llambo/catalog.json (platform-equivalent via $HOME).
+func Path() (string, error) {
 	home := os.Getenv("HOME")
 	if home == "" {
 		return "", errors.New("HOME env var not set")
@@ -161,7 +165,7 @@ func CatalogPath() (string, error) {
 // Load reads catalog.json. A missing file returns an empty initialized Catalog (not an error).
 // Bad JSON returns an error.
 func Load(path string) (*Catalog, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // user-supplied local CLI path by design
 	if err != nil {
 		if os.IsNotExist(err) {
 			return &Catalog{

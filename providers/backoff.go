@@ -14,7 +14,7 @@ var backoffJitter = func(slot time.Duration) time.Duration {
 	if slot <= 0 {
 		return 0
 	}
-	return time.Duration(rand.Int64N(int64(slot)))
+	return time.Duration(rand.Int64N(int64(slot))) //nolint:gosec // jitter source, not cryptographic
 }
 
 // backoffDelay returns an AWS "full jitter" exponential backoff for the given

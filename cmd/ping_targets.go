@@ -12,7 +12,7 @@ import (
 )
 
 func loadCatalogForPingFilter() (*catalog.Catalog, error) {
-	catPath, err := catalog.CatalogPath()
+	catPath, err := catalog.Path()
 	if err != nil {
 		return nil, err
 	}

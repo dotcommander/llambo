@@ -49,6 +49,7 @@ type CoverageCampaign struct {
 	InactiveOrNew []CoverageCampaignNote `json:"inactive_or_new,omitempty"`
 }
 
+// CoverageCampaignCell is one model/category coverage cell with status.
 type CoverageCampaignCell struct {
 	ModelKey            string `json:"model_key"`
 	Category            string `json:"category"`
@@ -57,6 +58,7 @@ type CoverageCampaignCell struct {
 	LastCheckedRevision string `json:"last_checked_revision,omitempty"`
 }
 
+// CoverageCampaignNote explains one inactive or new model.
 type CoverageCampaignNote struct {
 	Key    string `json:"key"`
 	Reason string `json:"reason"`

@@ -17,21 +17,34 @@ const (
 // not make source, factual, semantic, or promotion claims.
 type ProseScreenAdapter struct{}
 
-func (ProseScreenAdapter) ID() string            { return "prose-screen" }
-func (ProseScreenAdapter) Version() string       { return "prose-screen-v2" }
+// ID returns the adapter identifier.
+func (ProseScreenAdapter) ID() string { return "prose-screen" }
+
+// Version returns the adapter contract version.
+func (ProseScreenAdapter) Version() string { return "prose-screen-v2" }
+
+// ScoreIdentity returns the sealed score identity for pre-screen runs.
 func (ProseScreenAdapter) ScoreIdentity() string { return "prose-screen/v2-pre-screen-only" }
+
+// GenerationSettings pins deterministic generation for screening.
 func (ProseScreenAdapter) GenerationSettings() WritingGenerationSettings {
 	return WritingGenerationSettings{Temperature: 0, TemperatureSet: true}
 }
+
+// Iterations forces a single iteration for screening.
 func (ProseScreenAdapter) Iterations(requested int) (int, error) {
 	return singleWritingIteration("prose-screen", requested)
 }
+
+// JudgePromptVersion returns the pinned judge prompt version.
 func (ProseScreenAdapter) JudgePromptVersion() string { return ProseEvaluationPromptVersion }
 func (ProseScreenAdapter) buildRunReport(report WritingRunReport, generations []WritingGenerationRecord, judgments []WritingJudgmentRecord) WritingRunReport {
 	report.PreScreenOnly = true
 	return buildProseScreenRunReport(report, generations, judgments)
 }
 
+// ValidateRecord verifies the normalized prompt matches the sealed source
+// record and its public task and reader profile.
 func (a ProseScreenAdapter) ValidateRecord(record WritingPromptRecord) error {
 	object, err := proseScreenSourceObject(record.SourceRecord)
 	if err != nil {
@@ -48,6 +61,8 @@ func (a ProseScreenAdapter) ValidateRecord(record WritingPromptRecord) error {
 	}
 	return nil
 }
+
+// Criteria returns the six fixed screening criteria.
 func (ProseScreenAdapter) Criteria(WritingPromptRecord) ([]WritingCriterion, error) {
 	return proseScreenCriteria(), nil
 }
@@ -64,7 +79,7 @@ func proseScreenCriteria() []WritingCriterion {
 
 // BuildJudgmentPrompt and ParseJudgment let the sealed writing runner preserve
 // the v2 raw judgment while using the prose-specific strict decoder.
-func (a ProseScreenAdapter) BuildJudgmentPrompt(record WritingPromptRecord, response string, _ []WritingCriterion) (string, string, error) {
+func (a ProseScreenAdapter) BuildJudgmentPrompt(record WritingPromptRecord, response string, _ []WritingCriterion) (prompt, note string, err error) {
 	input, err := a.input(record, response)
 	if err != nil {
 		return "", "", err
@@ -75,6 +90,9 @@ func (a ProseScreenAdapter) BuildJudgmentPrompt(record WritingPromptRecord, resp
 	}
 	return request.SystemPrompt, string(request.UserPayload), nil
 }
+
+// JudgmentSettings pins deterministic judge generation with the Gemini
+// projected response schema.
 func (ProseScreenAdapter) JudgmentSettings(WritingRunManifest) (WritingGenerationSettings, error) {
 	projected, err := projectGeminiProseSchema(ProseEvaluationSchema())
 	if err != nil {
@@ -86,6 +104,8 @@ func (ProseScreenAdapter) JudgmentSettings(WritingRunManifest) (WritingGeneratio
 	}
 	return WritingGenerationSettings{Temperature: 0, TemperatureSet: true, ExtraBody: map[string]any{"generationConfig": map[string]any{"responseMimeType": applicationJSON, "responseSchema": schema}}}, nil
 }
+
+// ParseJudgment strictly decodes the judge response via the prose decoder.
 func (a ProseScreenAdapter) ParseJudgment(raw, response string, _ []WritingCriterion) ([]WritingCriterionJudgment, error) {
 	evaluation, err := DecodeProseEvaluation([]byte(raw), response)
 	if err != nil {

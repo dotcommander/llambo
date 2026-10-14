@@ -20,7 +20,7 @@ import (
 func TestModelsListHelpDescribesInstantPath(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	var out, errOut bytes.Buffer
-	if err := execute(context.Background(), []string{"models", "list", "--help"}, &out, &errOut); err != nil {
+	if err := executeRoot(context.Background(), []string{"models", "list", "--help"}, &out, &errOut); err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
@@ -60,7 +60,7 @@ func TestModelsListSkipsProviderAPIsByDefault(t *testing.T) {
 	t.Cleanup(func() { providers.SetConfigFile(oldConfig) })
 
 	var out, errOut bytes.Buffer
-	if err := execute(context.Background(), []string{"--config", configPath, "models", "list"}, &out, &errOut); err != nil {
+	if err := executeRoot(context.Background(), []string{"--config", configPath, "models", "list"}, &out, &errOut); err != nil {
 		t.Fatal(err)
 	}
 	if calls != 0 {
@@ -110,7 +110,7 @@ func TestModelsListAvailableCanTargetOneProvider(t *testing.T) {
 	t.Cleanup(func() { providers.SetConfigFile(oldConfig) })
 
 	var out, errOut bytes.Buffer
-	if err := execute(context.Background(), []string{
+	if err := executeRoot(context.Background(), []string{
 		"--config", configPath, "models", "list", "--available", "-P", "omlx", "--timeout-seconds", "1",
 	}, &out, &errOut); err != nil {
 		t.Fatal(err)
@@ -293,7 +293,7 @@ func TestModelsListMetricsUsesCatalogWithoutProviderCalls(t *testing.T) {
 	}
 
 	var out, errOut bytes.Buffer
-	if err := execute(context.Background(), []string{"--config", configPath, "models", "list"}, &out, &errOut); err != nil {
+	if err := executeRoot(context.Background(), []string{"--config", configPath, "models", "list"}, &out, &errOut); err != nil {
 		t.Fatal(err)
 	}
 	if calls != 0 {
@@ -306,7 +306,7 @@ func TestModelsListMetricsUsesCatalogWithoutProviderCalls(t *testing.T) {
 	}
 
 	var csvOut bytes.Buffer
-	if err := execute(context.Background(), []string{"--config", configPath, "models", "list", "--metrics", "--csv"}, &csvOut, &errOut); err != nil {
+	if err := executeRoot(context.Background(), []string{"--config", configPath, "models", "list", "--metrics", "--csv"}, &csvOut, &errOut); err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{"provider,enabled,model,primary,llambo_score,llambo_provenance,task_score,speed,latency,output_cost_per_1m_usd", "writing 98.0/100", "$2"} {
@@ -359,7 +359,7 @@ func TestModelsListIncludesCatalogOnlyScoredModels(t *testing.T) {
 	}
 
 	var out, errOut bytes.Buffer
-	if err := execute(context.Background(), []string{"--config", configPath, "models", "list"}, &out, &errOut); err != nil {
+	if err := executeRoot(context.Background(), []string{"--config", configPath, "models", "list"}, &out, &errOut); err != nil {
 		t.Fatal(err)
 	}
 	if calls != 0 {

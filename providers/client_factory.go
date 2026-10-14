@@ -66,7 +66,7 @@ func (oc *OpenAIClients) Cleanup() {
 		}
 	}
 	if oc.RouteEvents != nil {
-		if err := oc.RouteEvents.close(); err != nil {
+		if err := oc.RouteEvents.closeFile(); err != nil {
 			oc.loggerOrDefault().Warn("close route event log failed", "path", oc.RouteEvents.path, "error", err)
 		}
 	}
@@ -121,10 +121,10 @@ func (oc *OpenAIClients) RotateKeyWithError(provider string) (bool, error) {
 	if oc.KeyRotator == nil {
 		return false, nil
 	}
-	return oc.rotateKeyWithError(provider, oc.KeyRotator.GetKey(provider))
+	return oc.rotateKeyExcluding(provider, oc.KeyRotator.GetKey(provider))
 }
 
-func (oc *OpenAIClients) rotateKeyWithError(provider, usedKey string) (bool, error) {
+func (oc *OpenAIClients) rotateKeyExcluding(provider, usedKey string) (bool, error) {
 	return oc.rotateLeasedKeyWithError(provider, usedKey, nil)
 }
 

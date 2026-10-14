@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -215,7 +214,7 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 		next.ServeHTTP(wrapped, r)
 
 		// Log request
-		slog.InfoContext(r.Context(), "request", "method", r.Method, "path", r.URL.Path, "status", wrapped.status, "duration", time.Since(start).Round(time.Millisecond))
+		wireLog().InfoContext(r.Context(), "request", "method", r.Method, "path", r.URL.Path, "status", wrapped.status, "duration", time.Since(start).Round(time.Millisecond))
 	})
 }
 

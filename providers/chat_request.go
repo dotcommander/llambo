@@ -2,7 +2,6 @@ package providers
 
 import (
 	"context"
-	"log/slog"
 	"time"
 
 	whtypes "github.com/garyblankenship/wormhole/v3/types"
@@ -73,7 +72,7 @@ func executeChatRequestWithIdentity(
 		usedNativeStops = false
 	}
 	start := time.Now()
-	slog.DebugContext(ctx, "provider chat request: entry", "provider", cfg.GetProviderType(), "model", cfg.Model)
+	chatLog().DebugContext(ctx, "provider chat request: entry", "provider", cfg.GetProviderType(), "model", cfg.Model)
 
 	var lastErr error
 	for attempt := 0; attempt <= reqConfig.MaxRetries; attempt++ {
@@ -93,7 +92,7 @@ func executeChatRequestWithIdentity(
 			if err != nil {
 				outcome = "error"
 			}
-			slog.DebugContext(ctx, "provider chat request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", outcome)
+			chatLog().DebugContext(ctx, "provider chat request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", outcome)
 			return content, usageOrEstimate(usage, systemPrompt, userContent, content), finishReason, toolCalls, identity, err
 		}
 
@@ -110,12 +109,12 @@ func executeChatRequestWithIdentity(
 			break
 		}
 		if err = waitChatBackoff(ctx, reqConfig, attempt); err != nil {
-			slog.DebugContext(ctx, "provider chat request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "error")
+			chatLog().DebugContext(ctx, "provider chat request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "error")
 			return "", nil, "", nil, chatResponseIdentity{}, err
 		}
 	}
 
-	slog.DebugContext(ctx, "provider chat request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", reqConfig.MaxRetries, "outcome", "error")
+	chatLog().DebugContext(ctx, "provider chat request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", reqConfig.MaxRetries, "outcome", "error")
 	return "", nil, "", nil, chatResponseIdentity{}, lastErr
 }
 
@@ -147,7 +146,7 @@ func executeChatStreamRequestWithIdentity(
 		usedNativeStops = false
 	}
 	start := time.Now()
-	slog.DebugContext(ctx, "provider chat stream request: entry", "provider", cfg.GetProviderType(), "model", cfg.Model)
+	chatLog().DebugContext(ctx, "provider chat stream request: entry", "provider", cfg.GetProviderType(), "model", cfg.Model)
 
 	var lastErr error
 	for attempt := 0; attempt <= reqConfig.MaxRetries; attempt++ {
@@ -168,11 +167,11 @@ func executeChatStreamRequestWithIdentity(
 			}
 			lastErr = wrapped
 			if action == chatRetryStop {
-				slog.DebugContext(ctx, "provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "error")
+				chatLog().DebugContext(ctx, "provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "error")
 				return "", nil, "", nil, false, chatResponseIdentity{}, lastErr
 			}
 			if err = waitChatBackoff(ctx, reqConfig, attempt); err != nil {
-				slog.DebugContext(ctx, "provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "error")
+				chatLog().DebugContext(ctx, "provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "error")
 				return "", nil, "", nil, false, chatResponseIdentity{}, err
 			}
 			continue
@@ -181,7 +180,7 @@ func executeChatStreamRequestWithIdentity(
 		content, usage, finishReason, toolCalls, emitted, identity, err := consumeTextStream(stream, cfg.Model, onChunk)
 		cancel()
 		if err == nil {
-			slog.DebugContext(ctx, "provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "success")
+			chatLog().DebugContext(ctx, "provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "success")
 			return content, usageOrEstimate(usage, systemPrompt, userContent, content), finishReason, toolCalls, emitted, identity, nil
 		}
 
@@ -195,15 +194,15 @@ func executeChatStreamRequestWithIdentity(
 
 		lastErr = wrapped
 		if action == chatRetryStop {
-			slog.DebugContext(ctx, "provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "error")
+			chatLog().DebugContext(ctx, "provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "error")
 			return "", nil, "", nil, emitted, chatResponseIdentity{}, lastErr
 		}
 		if err := waitChatBackoff(ctx, reqConfig, attempt); err != nil {
-			slog.DebugContext(ctx, "provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "error")
+			chatLog().DebugContext(ctx, "provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "error")
 			return "", nil, "", nil, emitted, chatResponseIdentity{}, err
 		}
 	}
 
-	slog.DebugContext(ctx, "provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", reqConfig.MaxRetries, "outcome", "error")
+	chatLog().DebugContext(ctx, "provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", reqConfig.MaxRetries, "outcome", "error")
 	return "", nil, "", nil, false, chatResponseIdentity{}, lastErr
 }

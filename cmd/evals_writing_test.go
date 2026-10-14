@@ -64,7 +64,7 @@ func TestEncodeWritingCatalog(t *testing.T) {
 
 func TestExecuteWritingCatalog(t *testing.T) {
 	var out, errOut bytes.Buffer
-	if err := execute(context.Background(), []string{"evals", "writing", "--format", "json"}, &out, &errOut); err != nil {
+	if err := executeRoot(context.Background(), []string{"evals", "writing", "--format", "json"}, &out, &errOut); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), `"benchmarks"`) || !strings.Contains(out.String(), "DeepSeek-V4.1-Flash") {
@@ -98,7 +98,7 @@ func TestEncodeWritingPromptRecords(t *testing.T) {
 
 func TestWritingPromptExportRequiresRefresh(t *testing.T) {
 	var out, errOut bytes.Buffer
-	err := execute(context.Background(), []string{"evals", "writing", "--export-prompts", "/tmp/writing-prompts.jsonl"}, &out, &errOut)
+	err := executeRoot(context.Background(), []string{"evals", "writing", "--export-prompts", "/tmp/writing-prompts.jsonl"}, &out, &errOut)
 	if err == nil || !strings.Contains(err.Error(), "requires --refresh") {
 		t.Fatalf("unexpected export validation error: %v", err)
 	}
@@ -106,7 +106,7 @@ func TestWritingPromptExportRequiresRefresh(t *testing.T) {
 
 func TestWritingModelDiscoveryRequiresRefresh(t *testing.T) {
 	var out, errOut bytes.Buffer
-	err := execute(context.Background(), []string{"evals", "writing", "--discover-open-models"}, &out, &errOut)
+	err := executeRoot(context.Background(), []string{"evals", "writing", "--discover-open-models"}, &out, &errOut)
 	if err == nil || !strings.Contains(err.Error(), "requires --refresh") {
 		t.Fatalf("unexpected discovery validation error: %v", err)
 	}

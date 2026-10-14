@@ -21,7 +21,7 @@ func runProviders(cmd *commandIO, args []string) error {
 		return err
 	}
 
-	catPath, err := catalog.CatalogPath()
+	catPath, err := catalog.Path()
 	if err != nil {
 		return err
 	}
@@ -77,7 +77,7 @@ func runProvidersRefresh(cmd *commandIO, args []string, opts catalog.RefreshOpti
 		return err
 	}
 
-	catPath, err := catalog.CatalogPath()
+	catPath, err := catalog.Path()
 	if err != nil {
 		return err
 	}

@@ -20,8 +20,10 @@ const SourceRegistryVersion = "LLAMBO-6-sources-v6"
 // CategoryFormulaVersion identifies the installed LLAMBO category formula.
 const CategoryFormulaVersion = "LLAMBO-9-category"
 
+// SourceClass classifies an eval source's evidence role.
 type SourceClass string
 
+// Source class values in decreasing evidence strength.
 const (
 	SourceOwnerResult      SourceClass = "owner_result"
 	SourceFirstPartyResult SourceClass = "first_party_result"
@@ -31,6 +33,7 @@ const (
 	SourceDefinitionOnly   SourceClass = "definition_only"
 )
 
+// SourceRegistration is one reviewed source admission entry.
 type SourceRegistration struct {
 	ID       string      `json:"id"`
 	Class    SourceClass `json:"class"`
@@ -64,6 +67,7 @@ var sourceRegistryV3 = []SourceRegistration{
 	{lfm25A1BSourceID, SourceFirstPartyResult, true, true},
 }
 
+// SourceRegistry returns the reviewed source admission registry.
 func SourceRegistry() []SourceRegistration {
 	return append([]SourceRegistration(nil), sourceRegistryV3...)
 }
@@ -91,6 +95,7 @@ type BenchmarkRegistration struct {
 	CompatibleRevision string `json:"compatible_revision"`
 }
 
+// BenchmarkRegistry returns the reviewed benchmark admission registry.
 func BenchmarkRegistry() []BenchmarkRegistration {
 	entries := make([]BenchmarkRegistration, 0)
 	for _, category := range categorySpecs {
@@ -112,6 +117,8 @@ func BenchmarkRegistry() []BenchmarkRegistration {
 	return entries
 }
 
+// IsReviewedBenchmark reports whether a benchmark is admitted for a
+// capability category and family.
 func IsReviewedBenchmark(category, family, benchmark string) bool {
 	for _, entry := range BenchmarkRegistry() {
 		if entry.Category == category && entry.Family == family && entry.Benchmark == benchmark {
@@ -121,6 +128,8 @@ func IsReviewedBenchmark(category, family, benchmark string) bool {
 	return false
 }
 
+// Observation is one normalized benchmark observation row with full
+// provenance.
 type Observation struct {
 	SourceID         string      `json:"source_id"`
 	SourceRevision   string      `json:"source_revision"`
@@ -142,6 +151,7 @@ type Observation struct {
 	SourceClass      SourceClass `json:"source_class"`
 }
 
+// Validate checks an observation's required fields and score bounds.
 func (o Observation) Validate() error {
 	for name, value := range map[string]string{"source_id": o.SourceID, "source_revision": o.SourceRevision, "source_sha256": o.SourceSHA256, benchmark1: o.Benchmark, "benchmark_version": o.BenchmarkVersion, "cohort": o.Cohort, "model_id": o.ModelID, "unit": o.Unit, "direction": o.Direction, "methodology": o.Methodology, "evidence_grade": o.EvidenceGrade, "provenance_locator": o.Locator} {
 		if strings.TrimSpace(value) == "" {
@@ -163,6 +173,7 @@ func (o Observation) Validate() error {
 	return nil
 }
 
+// DecodeObservationsJSONL decodes bounded JSONL observations rows.
 func DecodeObservationsJSONL(r io.Reader, maxRowBytes int) ([]Observation, error) {
 	if maxRowBytes <= 0 {
 		maxRowBytes = 1 << 20
@@ -205,6 +216,7 @@ func observationLess(left, right Observation) bool {
 	return string(leftJSON) < string(rightJSON)
 }
 
+// SealBytes returns the hex SHA-256 digest of a byte slice.
 func SealBytes(data []byte) string {
 	digest := sha256.Sum256(data)
 	return hex.EncodeToString(digest[:])

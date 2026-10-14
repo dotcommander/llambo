@@ -251,6 +251,7 @@ func generationByKey(records []WritingGenerationRecord, key string) WritingGener
 	return WritingGenerationRecord{}
 }
 
+// RenderWritingRunMarkdown renders a writing run report as Markdown.
 func RenderWritingRunMarkdown(report WritingRunReport) string {
 	var out strings.Builder
 	out.WriteString("# Local writing evaluation\n\n")

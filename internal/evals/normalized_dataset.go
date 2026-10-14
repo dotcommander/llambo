@@ -12,8 +12,11 @@ import (
 	"time"
 )
 
+// NormalizedDatasetSchemaVersion identifies the normalized evals dataset layout.
 const NormalizedDatasetSchemaVersion = "llambo-normalized-evals-v1"
 
+// NormalizedDatasetManifest describes one emitted dataset: versions, row
+// counts, and per-artifact digests.
 type NormalizedDatasetManifest struct {
 	SchemaVersion         string                               `json:"schema_version"`
 	GeneratedAt           time.Time                            `json:"generated_at"`
@@ -25,11 +28,14 @@ type NormalizedDatasetManifest struct {
 	Artifacts             map[string]NormalizedDatasetArtifact `json:"artifacts"`
 }
 
+// NormalizedDatasetArtifact records the digest and row count of one
+// dataset artifact file.
 type NormalizedDatasetArtifact struct {
 	SHA256 string `json:"sha256"`
 	Rows   int    `json:"rows"`
 }
 
+// NormalizedSourceRecord is the provenance row for one eval source.
 type NormalizedSourceRecord struct {
 	SourceID           string    `json:"source_id"`
 	Name               string    `json:"name"`
@@ -51,6 +57,8 @@ type NormalizedSourceRecord struct {
 	Roles              []string  `json:"roles"`
 }
 
+// NormalizedModelRecord is the canonical model row with identity resolution
+// and projection markers.
 type NormalizedModelRecord struct {
 	Key           string          `json:"key"`
 	Name          string          `json:"name"`
@@ -63,6 +71,8 @@ type NormalizedModelRecord struct {
 	Projection    *ProjectionInfo `json:"projection,omitempty"`
 }
 
+// NormalizedModelIdentityRecord maps one source model to its canonical
+// identity with match classification.
 type NormalizedModelIdentityRecord struct {
 	SourceID           string        `json:"source_id"`
 	SourceModelKey     string        `json:"source_model_key"`
@@ -73,6 +83,8 @@ type NormalizedModelIdentityRecord struct {
 	IdentityMatch      IdentityMatch `json:"identity_match"`
 }
 
+// NormalizedObservationMirror credits a duplicate observation that one
+// selected row mirrors.
 type NormalizedObservationMirror struct {
 	SourceID       string `json:"source_id"`
 	SourceClass    string `json:"source_class,omitempty"`
@@ -82,6 +94,8 @@ type NormalizedObservationMirror struct {
 	EvidenceGrade  string `json:"evidence_grade,omitempty"`
 }
 
+// NormalizedSourceObservationRecord is one admitted benchmark observation
+// with full selection, provenance, and admission metadata.
 type NormalizedSourceObservationRecord struct {
 	SemanticFingerprint    string                        `json:"semantic_fingerprint"`
 	SourceID               string                        `json:"source_id"`
@@ -117,6 +131,7 @@ type NormalizedSourceObservationRecord struct {
 	AffectsCapability      bool                          `json:"affects_capability"`
 }
 
+// NormalizedScoreRecord is one published capability score row.
 type NormalizedScoreRecord struct {
 	Category         string   `json:"category"`
 	EditorialRank    int      `json:"editorial_rank"`
@@ -135,6 +150,8 @@ type NormalizedScoreRecord struct {
 	WinnerStatus     string   `json:"winner_status,omitempty"`
 }
 
+// NormalizedScoreContributionRecord explains one benchmark's contribution to a
+// capability score, including weights and multipliers.
 type NormalizedScoreContributionRecord struct {
 	Category           string   `json:"category"`
 	ModelKey           string   `json:"model_key"`
@@ -155,6 +172,7 @@ type NormalizedScoreContributionRecord struct {
 	EffectiveWeight    float64  `json:"effective_weight,omitempty"`
 }
 
+// NormalizedOperationalMetricRecord is one speed or latency observation.
 type NormalizedOperationalMetricRecord struct {
 	SourceID          string   `json:"source_id"`
 	ModelKey          string   `json:"model_key"`
@@ -164,6 +182,8 @@ type NormalizedOperationalMetricRecord struct {
 	AffectsCapability bool     `json:"affects_capability"`
 }
 
+// NormalizedProjectionRecord documents one reviewed local projection applied
+// after canonical scoring.
 type NormalizedProjectionRecord struct {
 	ArtifactKey     string  `json:"artifact_key"`
 	SourceKey       string  `json:"source_key"`
@@ -173,6 +193,8 @@ type NormalizedProjectionRecord struct {
 	ScoreMultiplier float64 `json:"score_multiplier"`
 }
 
+// NormalizedFrozenCohortRecord seals the reference population behind a
+// benchmark's percentile mapping.
 type NormalizedFrozenCohortRecord struct {
 	Benchmark  string    `json:"benchmark"`
 	Revision   string    `json:"revision"`
@@ -181,6 +203,8 @@ type NormalizedFrozenCohortRecord struct {
 	SourceIDs  []string  `json:"source_ids"`
 }
 
+// NormalizedDriftDiagnosticRecord flags source drift between the reference
+// and current dataset.
 type NormalizedDriftDiagnosticRecord struct {
 	SourceID             string `json:"source_id,omitempty"`
 	Kind                 string `json:"kind"`
@@ -189,6 +213,8 @@ type NormalizedDriftDiagnosticRecord struct {
 	CurrentFingerprint   string `json:"current_fingerprint,omitempty"`
 }
 
+// WriteNormalizedDataset emits the normalized evals dataset as JSONL
+// artifacts and returns its manifest.
 func WriteNormalizedDataset(result Result, report Report, outputDir string) (*NormalizedDatasetManifest, error) {
 	dataset := buildNormalizedDataset(result, report)
 	files := map[string][]byte{}
@@ -266,7 +292,7 @@ func writeNormalizedDatasetDirectory(outputDir string, files map[string][]byte) 
 		return fmt.Errorf("inspect normalized dataset output directory: %w", err)
 	}
 	parent := filepath.Dir(clean)
-	if err := os.MkdirAll(parent, 0o755); err != nil {
+	if err := os.MkdirAll(parent, 0o750); err != nil { //nolint:gosec // reviewed directory mode
 		return fmt.Errorf("create normalized dataset parent: %w", err)
 	}
 	temp, err := os.MkdirTemp(parent, "."+filepath.Base(clean)+"-*")

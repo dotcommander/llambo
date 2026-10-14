@@ -14,6 +14,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// DecodeObservationsParquet decodes bounded Parquet observation bytes.
 func DecodeObservationsParquet(data []byte, maxBytes int64) ([]Observation, error) {
 	if maxBytes <= 0 {
 		maxBytes = maxSourceBody
@@ -34,7 +35,7 @@ func DecodeObservationsParquet(data []byte, maxBytes int64) ([]Observation, erro
 }
 
 func RebuildObservationIndex(ctx context.Context, path string, observations []Observation) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil { //nolint:gosec // reviewed directory mode
 		return err
 	}
 	tmp := path + ".tmp"
@@ -104,6 +105,7 @@ provenance_locator TEXT NOT NULL, source_class TEXT NOT NULL) STRICT`); err != n
 	return nil
 }
 
+// EncodeObservationsJSONL renders observations as JSONL bytes.
 func EncodeObservationsJSONL(observations []Observation) ([]byte, error) {
 	rows := append([]Observation(nil), observations...)
 	sort.Slice(rows, func(i, j int) bool {

@@ -85,10 +85,10 @@ func writeDefaultRoutePreferences(path string) error {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("stat route preferences: %w", err)
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil { //nolint:gosec // reviewed directory mode
 		return fmt.Errorf("create route preferences dir: %w", err)
 	}
-	if err := os.WriteFile(path, defaultRoutePreferencesYAML, 0o644); err != nil {
+	if err := os.WriteFile(path, defaultRoutePreferencesYAML, 0o600); err != nil { //nolint:gosec // reviewed file mode
 		return fmt.Errorf("write route preferences: %w", err)
 	}
 	return nil
@@ -171,7 +171,7 @@ func routeFallbackMode(prefs routePreferenceSet) string {
 	return providers.NormalizeRoutingMode(prefs.FallbackMode)
 }
 
-func findConfiguredRouteModel(configs map[string]providers.Config, provider, model string) (string, string) {
+func findConfiguredRouteModel(configs map[string]providers.Config, provider, model string) (foundProvider, foundModel string) {
 	for name, cfg := range configs {
 		if !strings.EqualFold(providers.BaseProviderName(name, cfg.Model), provider) {
 			continue

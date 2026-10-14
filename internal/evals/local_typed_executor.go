@@ -6,11 +6,13 @@ import (
 	"errors"
 )
 
+// ToolLocalExecutor adapts tool-use cases to the local run contract.
 type ToolLocalExecutor struct {
 	Client              ToolChatClient
 	VerifiedServedModel string
 }
 
+// ExecuteLocal decodes and evaluates one tool case.
 func (e ToolLocalExecutor) ExecuteLocal(ctx context.Context, manifest LocalRunManifest, raw json.RawMessage) (LocalCall, error) {
 	var c ToolCase
 	if err := json.Unmarshal(raw, &c); err != nil {
@@ -24,8 +26,10 @@ func (e ToolLocalExecutor) ExecuteLocal(ctx context.Context, manifest LocalRunMa
 	return call, err
 }
 
+// EmbeddingLocalExecutor adapts embedding cases to the local run contract.
 type EmbeddingLocalExecutor struct{ Adapter OMLXEmbeddingAdapter }
 
+// ExecuteLocal decodes and evaluates one embedding case.
 func (e EmbeddingLocalExecutor) ExecuteLocal(ctx context.Context, manifest LocalRunManifest, raw json.RawMessage) (LocalCall, error) {
 	var c EmbeddingCase
 	if err := json.Unmarshal(raw, &c); err != nil {
@@ -45,8 +49,10 @@ func (e EmbeddingLocalExecutor) ExecuteLocal(ctx context.Context, manifest Local
 	return LocalCall{ServedModel: result.ServedModel, Output: output}, nil
 }
 
+// ASRLocalExecutor adapts speech-recognition cases to the local run contract.
 type ASRLocalExecutor struct{ Adapter OMLXAudioAdapter }
 
+// ExecuteLocal decodes and evaluates one ASR case.
 func (e ASRLocalExecutor) ExecuteLocal(ctx context.Context, manifest LocalRunManifest, raw json.RawMessage) (LocalCall, error) {
 	var c ASRCase
 	if err := json.Unmarshal(raw, &c); err != nil {
@@ -66,11 +72,13 @@ func (e ASRLocalExecutor) ExecuteLocal(ctx context.Context, manifest LocalRunMan
 	return LocalCall{ServedModel: result.ServedModel, Output: output}, nil
 }
 
+// TTSLocalExecutor adapts speech-synthesis cases to the local run contract.
 type TTSLocalExecutor struct {
 	Adapter   OMLXAudioAdapter
 	RoundTrip TTSRoundTripper
 }
 
+// ExecuteLocal decodes and evaluates one TTS case.
 func (e TTSLocalExecutor) ExecuteLocal(ctx context.Context, manifest LocalRunManifest, raw json.RawMessage) (LocalCall, error) {
 	var c TTSCase
 	if err := json.Unmarshal(raw, &c); err != nil {
@@ -93,8 +101,11 @@ func (e TTSLocalExecutor) ExecuteLocal(ctx context.Context, manifest LocalRunMan
 	return LocalCall{ServedModel: result.ServedModel, Output: output}, nil
 }
 
+// UnsupportedAccelerationExecutor rejects acceleration cases until a local
+// executor exists.
 type UnsupportedAccelerationExecutor struct{}
 
+// ExecuteLocal always fails: acceleration has no local executor yet.
 func (UnsupportedAccelerationExecutor) ExecuteLocal(context.Context, LocalRunManifest, json.RawMessage) (LocalCall, error) {
 	return LocalCall{}, errors.New("acceleration execution requires a separately authorized exclusive OMLX settings window")
 }

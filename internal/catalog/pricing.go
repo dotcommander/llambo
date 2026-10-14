@@ -14,6 +14,7 @@ const (
 	free1 = "free"
 )
 
+// PriceLabel renders a human-readable price description for a model.
 func PriceLabel(status CostStatus, input, output float64) string {
 	switch status {
 	case CostFree:
@@ -27,11 +28,13 @@ func PriceLabel(status CostStatus, input, output float64) string {
 	}
 }
 
-func CostForModel(costMap map[string]costs.ModelCost, providerName, modelID string) (CostStatus, float64, float64) {
+// CostForModel returns the pricing status and per-million rates for a model.
+func CostForModel(costMap map[string]costs.ModelCost, providerName, modelID string) (status CostStatus, inputPer1M, outputPer1M float64) {
 	return modelCostStatus(costMap, providerName, modelID)
 }
 
-func CostForEntry(costMap map[string]costs.ModelCost, providerName, modelID string, entry *ModelEntry) (CostStatus, float64, float64) {
+// CostForEntry is CostForModel honoring a catalog entry's pinned pricing.
+func CostForEntry(costMap map[string]costs.ModelCost, providerName, modelID string, entry *ModelEntry) (status CostStatus, inputPer1M, outputPer1M float64) {
 	return modelCostStatusForEntry(costMap, providerName, modelID, entry)
 }
 
@@ -55,11 +58,11 @@ func costAllowed(status CostStatus, output float64, opts SelectorOptions) bool {
 	return CostWithinCap(status, output, opts.MaxOutputCost, opts.IncludeUnknownCost)
 }
 
-func modelCostStatus(costMap map[string]costs.ModelCost, providerName, modelID string) (CostStatus, float64, float64) {
+func modelCostStatus(costMap map[string]costs.ModelCost, providerName, modelID string) (status CostStatus, inputPer1M, outputPer1M float64) {
 	return modelCostStatusForEntry(costMap, providerName, modelID, nil)
 }
 
-func modelCostStatusForEntry(costMap map[string]costs.ModelCost, providerName, modelID string, entry *ModelEntry) (CostStatus, float64, float64) {
+func modelCostStatusForEntry(costMap map[string]costs.ModelCost, providerName, modelID string, entry *ModelEntry) (status CostStatus, inputPer1M, outputPer1M float64) {
 	mc, ok := costMap[costs.Key(providerName, modelID)]
 	if ok && mc.InputExplicit && mc.OutputExplicit && validPrice(mc.InputPer1M) && validPrice(mc.OutputPer1M) {
 		if mc.InputPer1M == 0 && mc.OutputPer1M == 0 {

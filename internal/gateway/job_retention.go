@@ -6,6 +6,7 @@ import (
 	"time"
 )
 
+// SetRetentionLimits caps how many finished jobs and bytes are retained.
 func (m *JobManager) SetRetentionLimits(count int, bytes int64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -61,6 +62,8 @@ func (m *JobManager) enforceRetentionLocked(cutoff time.Time) int {
 	}
 	return removed
 }
+
+// CancelJobStatus cancels a job and returns it with an HTTP status code.
 func (m *JobManager) CancelJobStatus(id string) (*Job, int) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

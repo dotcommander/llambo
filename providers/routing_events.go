@@ -40,6 +40,7 @@ type RouteEventLogger struct {
 	logger *slog.Logger
 }
 
+// NewRouteEventLogger opens the append-only route event log.
 func NewRouteEventLogger(path string) *RouteEventLogger {
 	if path == "" {
 		return nil
@@ -47,6 +48,7 @@ func NewRouteEventLogger(path string) *RouteEventLogger {
 	return &RouteEventLogger{path: path, logger: slog.Default()}
 }
 
+// Log appends one route event under lock.
 func (l *RouteEventLogger) Log(event RouteEvent) error {
 	if l == nil || l.path == "" {
 		return nil
@@ -59,7 +61,7 @@ func (l *RouteEventLogger) Log(event RouteEvent) error {
 	}
 
 	if l.file == nil {
-		if err := os.MkdirAll(filepath.Dir(l.path), 0755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(l.path), 0750); err != nil {
 			return err
 		}
 		f, err := os.OpenFile(l.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
@@ -79,8 +81,9 @@ func (l *RouteEventLogger) Log(event RouteEvent) error {
 	return nil
 }
 
+// Close flushes and closes the event log, logging failures.
 func (l *RouteEventLogger) Close() {
-	if err := l.close(); err != nil {
+	if err := l.closeFile(); err != nil {
 		logger := l.logger
 		if logger == nil {
 			logger = slog.Default()
@@ -89,7 +92,7 @@ func (l *RouteEventLogger) Close() {
 	}
 }
 
-func (l *RouteEventLogger) close() error {
+func (l *RouteEventLogger) closeFile() error {
 	if l == nil {
 		return nil
 	}
@@ -103,6 +106,7 @@ func (l *RouteEventLogger) close() error {
 	return nil
 }
 
+// ReadRouteEvents loads all events from an event log file.
 func ReadRouteEvents(path string) ([]RouteEvent, error) {
 	if path == "" {
 		return nil, errors.New("route events path is empty")

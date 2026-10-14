@@ -23,6 +23,8 @@ const sourceResearchLedgerContentDigest = "e6d3f68bf9eb440c9c18b1925da5242ff2a47
 // of this immutable input rather than silently changing blocked coverage.
 const sourceResearchLedgerDigest = "f4bdcdb4225ef831c3ee2cace73443dd85a2685dfe189d2c97c5220d7dc1b437"
 
+// SourceResearchLedger is the embedded, digest-pinned research evidence for
+// coverage campaigns.
 type SourceResearchLedger struct {
 	SchemaVersion string              `json:"schema_version"`
 	TargetVersion string              `json:"target_version"`
@@ -32,6 +34,7 @@ type SourceResearchLedger struct {
 	ScopedNulls   []ScopedNullReceipt `json:"scoped_null_receipts"`
 }
 
+// ResearchSource is one reviewed evidence source with locator and revision.
 type ResearchSource struct {
 	ID            string    `json:"id"`
 	Locator       string    `json:"locator"`
@@ -48,6 +51,8 @@ type ResearchSource struct {
 	Status        string    `json:"status"`
 }
 
+// ResearchClaim states one evidence conclusion with its supporting sources
+// and change condition.
 type ResearchClaim struct {
 	ID               string   `json:"id"`
 	Claim            string   `json:"claim"`
@@ -58,6 +63,7 @@ type ResearchClaim struct {
 	ChangeCondition  string   `json:"change_condition"`
 }
 
+// ResearchSearch records one executed search and its outcome.
 type ResearchSearch struct {
 	ID                string   `json:"id"`
 	SourceClass       string   `json:"source_class"`
@@ -68,6 +74,8 @@ type ResearchSearch struct {
 	NextSearchDiffers string   `json:"next_search_differs"`
 }
 
+// ScopedNullReceipt documents why a model/category cell legitimately has no
+// observation.
 type ScopedNullReceipt struct {
 	ModelKey             string   `json:"model_key"`
 	Category             string   `json:"category"`
@@ -105,6 +113,8 @@ func LoadSourceResearchLedger() (SourceResearchLedger, error) {
 	return ledger, nil
 }
 
+// DecodeSourceResearchLedger strictly decodes ledger bytes against the
+// campaign manifest.
 func DecodeSourceResearchLedger(data []byte, manifest coverageCampaignManifest) (SourceResearchLedger, error) {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
@@ -183,6 +193,7 @@ func ValidateCoverageCampaignResearchLedger(ledger SourceResearchLedger, campaig
 	return err
 }
 
+// CanonicalSourceResearchLedger renders the ledger in stable canonical JSON.
 func CanonicalSourceResearchLedger(ledger SourceResearchLedger) ([]byte, error) {
 	normalized := cloneSourceResearchLedger(ledger)
 	normalizeSourceResearchLedger(&normalized)
@@ -216,6 +227,7 @@ func cloneSourceResearchLedger(ledger SourceResearchLedger) SourceResearchLedger
 	return clone
 }
 
+// SourceResearchLedgerDigest returns the canonical ledger's SHA-256 digest.
 func SourceResearchLedgerDigest(ledger SourceResearchLedger) (string, error) {
 	data, err := CanonicalSourceResearchLedger(ledger)
 	if err != nil {

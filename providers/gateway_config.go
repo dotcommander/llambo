@@ -8,6 +8,7 @@ import (
 	"strings"
 )
 
+// Gateway default limits.
 const (
 	DefaultMaxActiveJobs     = 64
 	DefaultMaxRequestsPerJob = 500
@@ -42,6 +43,7 @@ func (g GatewayConfig) ResolveAuthToken() (string, error) {
 	return g.AuthToken, nil
 }
 
+// ApplyDefaults fills unset gateway fields with defaults.
 func (g *GatewayConfig) ApplyDefaults() {
 	if g.MaxRetainedJobs == 0 {
 		g.MaxRetainedJobs = 1000
@@ -82,6 +84,7 @@ type RoutingConfig struct {
 	Canary           *CanaryConfig      `json:"canary,omitempty"`
 }
 
+// ApplyDefaults normalizes routing mode and paths.
 func (r *RoutingConfig) ApplyDefaults() {
 	r.Mode = NormalizeRoutingMode(r.Mode)
 	if r.MetricsPath == "" {

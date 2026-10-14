@@ -295,7 +295,7 @@ func getBytesWithBearer(ctx context.Context, client *http.Client, endpoint, bear
 }
 
 func writeSealed(path string, data []byte) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil { //nolint:gosec // reviewed directory mode
 		return err
 	}
 	if existing, err := os.ReadFile(path); err == nil {

@@ -69,7 +69,7 @@ func loadModelsDev(path string) (map[string]ModelCost, error) {
 
 // loadAll merges models.dev pricing (primary) with the CSV (override): a CSV key
 // replaces the models.dev entry wholesale. Either source missing is non-fatal.
-func loadAll(modelsDevPath, csvPath string) (map[string]ModelCost, error) {
+func mergePricing(modelsDevPath, csvPath string) (map[string]ModelCost, error) {
 	base, err := loadModelsDev(modelsDevPath)
 	if err != nil {
 		return nil, err
@@ -94,5 +94,5 @@ func loadAll(modelsDevPath, csvPath string) (map[string]ModelCost, error) {
 // LoadAll loads pricing from the default models.dev file (primary) overlaid with
 // the default CSV (manual overrides).
 func LoadAll() (map[string]ModelCost, error) {
-	return loadAll(ModelsDevPath(), DefaultPath())
+	return mergePricing(ModelsDevPath(), DefaultPath())
 }

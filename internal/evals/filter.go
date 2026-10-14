@@ -2,6 +2,7 @@ package evals
 
 import "math"
 
+// EligibilityDiagnostics explains score-filter eligibility effects.
 type EligibilityDiagnostics struct {
 	MinScore         float64 `json:"min_score"`
 	ScoreCategory    string  `json:"score_category,omitempty"`
@@ -15,8 +16,9 @@ type EligibilityDiagnostics struct {
 	UnknownPriceKept int     `json:"unknown_output_price_kept"`
 }
 
-// ApplyEligibility filters only a named capability. Score filtering is invalid
-// for speed/price because those remain operational measures.
+// ApplyCategoryEligibility reports whether a named capability category is
+// eligible for score filtering. Speed and price are excluded because they
+// remain operational measures rather than capability scores.
 func ApplyCategoryEligibility(report *Report, category string, minScore, maxOutputPrice float64) {
 	if report == nil || (minScore < 0 && maxOutputPrice < 0) {
 		return

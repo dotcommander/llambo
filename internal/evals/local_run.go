@@ -24,15 +24,20 @@ const reportMd = "report.md"
 
 const manifestJSON = "manifest.json"
 
+// IdentityTracker enforces that every call serves the exact requested model
+// and that aliases resolve stably.
 type IdentityTracker struct {
 	requested string
 	alias     bool
 	served    string
 }
 
+// NewIdentityTracker classifies the requested selector as alias or exact.
 func NewIdentityTracker(requested string) *IdentityTracker {
 	return &IdentityTracker{requested: requested, alias: strings.Contains(requested, "@preset/") || strings.HasSuffix(requested, "-latest") || strings.HasSuffix(requested, "/local-model")}
 }
+
+// Record validates one served identity against the request.
 func (t *IdentityTracker) Record(served string) error {
 	served = strings.TrimSpace(served)
 	provider, model, ok := strings.Cut(served, "/")
@@ -55,6 +60,8 @@ func (t *IdentityTracker) Record(served string) error {
 	t.served = served
 	return nil
 }
+
+// Served returns the distinct served identities, or nil.
 func (t *IdentityTracker) Served() []string {
 	if t.served == "" {
 		return nil
@@ -62,9 +69,12 @@ func (t *IdentityTracker) Served() []string {
 	return []string{t.served}
 }
 
+// LocalExecutor executes one sealed case for a suite.
 type LocalExecutor interface {
 	ExecuteLocal(context.Context, LocalRunManifest, json.RawMessage) (LocalCall, error)
 }
+
+// LocalRunPlan is the provider-free plan for a local run.
 type LocalRunPlan struct {
 	RunID                  string     `json:"run_id"`
 	Suite                  LocalSuite `json:"suite"`
@@ -73,6 +83,8 @@ type LocalRunPlan struct {
 	WorstCaseCostUSD       float64    `json:"worst_case_cost_usd"`
 }
 
+// PlanLocalRun verifies the manifest matches the sealed input and computes
+// worst-case call counts and cost.
 func PlanLocalRun(m LocalRunManifest, in LocalInputManifest) (LocalRunPlan, error) {
 	if m.Identity.Suite != in.Suite || m.Identity.SuiteVersion != in.Version || m.Identity.Limit < 1 || m.Identity.Limit > len(in.Cases) {
 		return LocalRunPlan{}, errors.New("manifest does not match sealed input")
@@ -107,6 +119,8 @@ func PlanLocalRun(m LocalRunManifest, in LocalInputManifest) (LocalRunPlan, erro
 	return plan, nil
 }
 
+// RunLocalEvaluation executes all planned cases, enforcing identity, budget,
+// and ledger durability.
 func RunLocalEvaluation(ctx context.Context, m LocalRunManifest, in LocalInputManifest, exec LocalExecutor) ([]LocalCall, error) {
 	if exec == nil {
 		return nil, errors.New("local executor is required")
@@ -177,7 +191,7 @@ func WriteLocalRunArtifacts(dir string, m LocalRunManifest, calls []LocalCall, r
 		return LocalReceipt{}, err
 	}
 	md := fmt.Sprintf("# Local evaluation %s\n\nStatus: %s\n\nScore (%s): %.6f\n", m.RunID, report.Status, report.ScoreIdentity, report.Score)
-	if err := os.WriteFile(filepath.Join(dir, reportMd), []byte(md), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, reportMd), []byte(md), 0o600); err != nil { //nolint:gosec // reviewed file mode
 		return LocalReceipt{}, err
 	}
 	hashes := map[string]string{}
@@ -200,7 +214,7 @@ func writeJSON(path string, v any) error {
 		return e
 	}
 	b = append(b, '\n')
-	return os.WriteFile(path, b, 0o644)
+	return os.WriteFile(path, b, 0o600) //nolint:gosec // reviewed file mode
 }
 func writeCalls(path string, calls []LocalCall) error {
 	f, e := os.Create(path)
@@ -220,6 +234,9 @@ func writeCalls(path string, calls []LocalCall) error {
 	}
 	return w.Flush()
 }
+
+// VerifyLocalReceipt checks a completed run directory's sealed receipt
+// against its artifacts.
 func VerifyLocalReceipt(dir string) error {
 	b, e := os.ReadFile(filepath.Join(dir, "receipt.json"))
 	if e != nil {
@@ -241,11 +258,14 @@ func VerifyLocalReceipt(dir string) error {
 // HTTPJSONLocalExecutor is deliberately generic: an endpoint receives the raw
 // sealed case and returns a LocalCall-shaped JSON object. Provider adapters can
 // be layered above it without allowing the local runner to infer protocols.
+// HTTPJSONLocalExecutor executes cases by posting their raw JSON to a chat
+// completion endpoint.
 type HTTPJSONLocalExecutor struct {
 	Endpoint string
 	Client   *http.Client
 }
 
+// ExecuteLocal posts one sealed case and ledgers the response.
 func (e HTTPJSONLocalExecutor) ExecuteLocal(ctx context.Context, _ LocalRunManifest, input json.RawMessage) (LocalCall, error) {
 	req, e2 := http.NewRequestWithContext(ctx, http.MethodPost, e.Endpoint, strings.NewReader(string(input)))
 	if e2 != nil {

@@ -39,7 +39,7 @@ func (s *Server) prepareChat(req *ChatCompletionRequest) error {
 	}
 	req.target = target
 	req.structured = request
-	req.reasoning = reasoning
+	req.nativeReasoning = reasoning
 	return nil
 }
 func structuredRequest(req ChatCompletionRequest) (providers.StructuredChatRequest, error) {

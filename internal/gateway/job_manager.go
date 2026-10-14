@@ -136,17 +136,17 @@ func (m *JobManager) WaitForDrain(ctx context.Context) error {
 // cancellation does NOT cancel the job — batch jobs intentionally
 // outlive the HTTP request that submits them. Use CancelJob to cancel.
 func (m *JobManager) CreateJob(parent context.Context, requests []JobRequest, systemPrompt string) *Job {
-	job, _ := m.createJob(parent, requests, systemPrompt, false)
+	job, _ := m.createJobChecked(parent, requests, systemPrompt, false)
 	return job
 }
 
 // CreateJobIfCapacity creates a new job when admission capacity allows it.
 // See CreateJob for the parent-context contract.
 func (m *JobManager) CreateJobIfCapacity(parent context.Context, requests []JobRequest, systemPrompt string) (*Job, error) {
-	return m.createJob(parent, requests, systemPrompt, true)
+	return m.createJobChecked(parent, requests, systemPrompt, true)
 }
 
-func (m *JobManager) createJob(parent context.Context, requests []JobRequest, systemPrompt string, enforceCapacity bool) (*Job, error) {
+func (m *JobManager) createJobChecked(parent context.Context, requests []JobRequest, systemPrompt string, enforceCapacity bool) (*Job, error) {
 	return m.createTargetJob(parent, requests, systemPrompt, enforceCapacity, providers.ResolvedTarget{})
 }
 func (m *JobManager) createTargetJob(parent context.Context, requests []JobRequest, systemPrompt string, enforceCapacity bool, target providers.ResolvedTarget) (*Job, error) {
@@ -222,7 +222,7 @@ func (m *JobManager) GetJob(id string) *Job {
 // Use CancelJobAndWait when callers need the slot fully released before
 // proceeding.
 func (m *JobManager) CancelJob(id string) bool {
-	_, ok := m.cancelJob(id)
+	_, ok := m.cancelJobDrain(id)
 	return ok
 }
 
@@ -234,7 +234,7 @@ func (m *JobManager) CancelJob(id string) bool {
 //   - (false, nil) when the job does not exist or is not cancellable.
 //   - (true, ctx.Err()) when cancel succeeded but the wait exceeded ctx.
 func (m *JobManager) CancelJobAndWait(ctx context.Context, id string) (bool, error) {
-	done, ok := m.cancelJob(id)
+	done, ok := m.cancelJobDrain(id)
 	if !ok {
 		return false, nil
 	}
@@ -249,7 +249,7 @@ func (m *JobManager) CancelJobAndWait(ctx context.Context, id string) (bool, err
 // cancelJob is the shared implementation behind CancelJob and
 // CancelJobAndWait. It returns the job.done channel so callers can wait
 // for processJob to finish draining if they need to.
-func (m *JobManager) cancelJob(id string) (<-chan struct{}, bool) {
+func (m *JobManager) cancelJobDrain(id string) (<-chan struct{}, bool) {
 	m.mu.RLock()
 	job, ok := m.jobs[id]
 	m.mu.RUnlock()

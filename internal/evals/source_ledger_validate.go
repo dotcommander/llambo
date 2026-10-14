@@ -24,6 +24,8 @@ var (
 	secretLikeLedgerData = regexp.MustCompile(`(?i)(?:\b(?:api[_ -]?key|authorization|bearer|password|secret)\b|\bsk-[a-z0-9_-]{8,}\b|\bghp_[a-z0-9]{20,}\b)`)
 )
 
+// ValidateSourceResearchLedger checks the ledger against the campaign
+// manifest's admitted sources and claims.
 func ValidateSourceResearchLedger(ledger *SourceResearchLedger, manifest coverageCampaignManifest) error {
 	if ledger == nil {
 		return errors.New("source research ledger is nil")

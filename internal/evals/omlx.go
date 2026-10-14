@@ -16,6 +16,7 @@ import (
 
 const omlxResponseLimit = 2 << 20
 
+// OMLXDiscovery records the live local server inventory probe.
 type OMLXDiscovery struct {
 	Endpoint string
 	Models   []string
@@ -23,6 +24,7 @@ type OMLXDiscovery struct {
 	Attempts []string
 }
 
+// OMLXDiagnostics reports the local evaluation environment state.
 type OMLXDiagnostics struct {
 	Status                 string   `json:"status"`
 	Endpoint               string   `json:"endpoint,omitempty"`
@@ -146,10 +148,7 @@ func ValidateOMLXLoopbackBaseURL(baseURL string) error {
 }
 
 func normalizeOMLXBaseURL(baseURL string) (string, error) {
-	baseURL = strings.TrimSpace(strings.TrimRight(baseURL, "/"))
-	if strings.HasSuffix(baseURL, "/v1") {
-		baseURL = strings.TrimSuffix(baseURL, "/v1")
-	}
+	baseURL = strings.TrimSuffix(strings.TrimSpace(strings.TrimRight(baseURL, "/")), "/v1")
 	parsed, err := url.Parse(baseURL)
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
 		return "", fmt.Errorf("invalid OMLX base URL %q", baseURL)
@@ -184,7 +183,7 @@ func fetchOMLXJSON(ctx context.Context, client *http.Client, endpoint, apiKey st
 	return body, nil
 }
 
-func parseOMLXAdmin(body []byte) ([]string, []string, error) {
+func parseOMLXAdmin(body []byte) (models, failures []string, err error) {
 	var payload struct {
 		Models []struct {
 			ID        string `json:"id"`
@@ -216,7 +215,7 @@ func parseOMLXAdmin(body []byte) ([]string, []string, error) {
 	return sortedUnique(models), sortedUnique(excluded), nil
 }
 
-func parseOMLXFallback(body []byte) ([]string, []string, error) {
+func parseOMLXFallback(body []byte) (models, failures []string, err error) {
 	var payload struct {
 		Data []struct {
 			ID string `json:"id"`

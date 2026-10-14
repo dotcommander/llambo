@@ -34,11 +34,11 @@ func TestPromptRepeatedInvocationOwnsOptions(t *testing.T) {
 	}
 	var out bytes.Buffer
 	file := filepath.Join(t.TempDir(), "first.md")
-	if err := execute(context.Background(), []string{"prompt", "--system", "first system", "--timeout", "7", "--output", file, "first"}, &out, &out); err != nil {
+	if err := executeRoot(context.Background(), []string{"prompt", "--system", "first system", "--timeout", "7", "--output", file, "first"}, &out, &out); err != nil {
 		t.Fatal(err)
 	}
 	out.Reset()
-	if err := execute(context.Background(), []string{"prompt", "second"}, &out, &out); err != nil {
+	if err := executeRoot(context.Background(), []string{"prompt", "second"}, &out, &out); err != nil {
 		t.Fatal(err)
 	}
 	if len(systems) != 2 || systems[0] != "first system" || systems[1] != "You are a helpful assistant." || timeouts[0] != 7 || timeouts[1] != 60 {
@@ -64,7 +64,7 @@ func TestPromptCancellationStopsFusionAndOutput(t *testing.T) {
 	}
 	var out bytes.Buffer
 	path := filepath.Join(t.TempDir(), "canceled.md")
-	err := execute(ctx, []string{"prompt", "--fuse", "--output", path, "prompt"}, &out, &out)
+	err := executeRoot(ctx, []string{"prompt", "--fuse", "--output", path, "prompt"}, &out, &out)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("got %v", err)
 	}
@@ -87,7 +87,7 @@ func TestPromptJoinsOutputAndFusionErrors(t *testing.T) {
 	executePromptFusionResponse = func(_, _ string, _ []PromptResult, _ int, _ string) (*PromptFusion, error) { return nil, sentinel }
 	var out bytes.Buffer
 	path := filepath.Join(t.TempDir(), "missing", "result.md")
-	err := execute(context.Background(), []string{"prompt", "--fuse", "--output", path, "prompt"}, &out, &out)
+	err := executeRoot(context.Background(), []string{"prompt", "--fuse", "--output", path, "prompt"}, &out, &out)
 	if !errors.Is(err, sentinel) || !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("joined error lost identity: %v", err)
 	}
@@ -156,7 +156,7 @@ func TestFusionRejectsNonChatSelection(t *testing.T) {
 	t.Cleanup(func() { providers.SetConfigFile(old) })
 	path := writeModelsTestConfig(t, `{"default_provider":"fixture","providers":{"fixture":{"enabled":true,"base_url":"http://127.0.0.1:1","model":"embed","requires_key":false}}}`)
 	providers.SetConfigFile(path)
-	catPath, err := catalog.CatalogPath()
+	catPath, err := catalog.Path()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -211,7 +211,7 @@ func TestDiscoverFreeUsesItsOwnPromptAndContext(t *testing.T) {
 	defer cancel()
 	result := make(chan error, 1)
 	go func() {
-		result <- execute(ctx, []string{"models", "discover-free", "-P", "fixture"}, io.Discard, io.Discard)
+		result <- executeRoot(ctx, []string{"models", "discover-free", "-P", "fixture"}, io.Discard, io.Discard)
 	}()
 	select {
 	case prompt := <-entered:

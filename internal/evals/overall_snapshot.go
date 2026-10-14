@@ -43,6 +43,7 @@ type scoreSnapshotDecode struct {
 	PriorFormulaVersions []string `json:"prior_formula_versions,omitempty"`
 }
 
+// OMLXScoreSnapshotPath returns the persisted score snapshot location.
 func OMLXScoreSnapshotPath() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -51,6 +52,7 @@ func OMLXScoreSnapshotPath() (string, error) {
 	return filepath.Join(home, ".config", "llambo", "llambo-scores.json"), nil
 }
 
+// LoadOMLXScoreSnapshot loads the snapshot; a missing file returns nil.
 func LoadOMLXScoreSnapshot(path string) (*OMLXScoreSnapshot, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -84,8 +86,9 @@ func LoadOMLXScoreSnapshot(path string) (*OMLXScoreSnapshot, error) {
 	return &snapshot, nil
 }
 
+// SaveOMLXScoreSnapshot normalizes and persists the score snapshot.
 func SaveOMLXScoreSnapshot(path string, snapshot OMLXScoreSnapshot) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil { //nolint:gosec // reviewed directory mode
 		return fmt.Errorf("create LLAMBO score directory: %w", err)
 	}
 	snapshot.SchemaVersion = OMLXScoreSnapshotVersion
@@ -128,6 +131,7 @@ func SaveOMLXScoreSnapshot(path string, snapshot OMLXScoreSnapshot) error {
 	return nil
 }
 
+// NewOMLXScoreSnapshot derives a snapshot from a scored report.
 func NewOMLXScoreSnapshot(report Report, inventory []string, endpoint string, generatedAt time.Time) OMLXScoreSnapshot {
 	inventory = sortedSnapshotInventory(inventory)
 	scores := make(map[string]map[string]*LlamboScore, len(inventory))
@@ -145,6 +149,7 @@ func NewOMLXScoreSnapshot(report Report, inventory []string, endpoint string, ge
 	return OMLXScoreSnapshot{SchemaVersion: OMLXScoreSnapshotVersion, GeneratedAt: generatedAt.UTC(), FormulaVersion: CategoryFormulaVersion, PopulationFingerprint: fingerprint, Inventory: inventory, Endpoint: strings.TrimSpace(endpoint), CategoryScores: scores}
 }
 
+// Contains reports whether the snapshot's inventory covers a model.
 func (snapshot *OMLXScoreSnapshot) Contains(model string) bool {
 	if snapshot == nil {
 		return false

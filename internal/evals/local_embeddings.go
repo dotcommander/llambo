@@ -26,6 +26,7 @@ type OMLXEmbeddingAdapter struct {
 	VerifiedServedModel string
 }
 
+// EmbeddingEvaluation is the scored outcome of one embedding case.
 type EmbeddingEvaluation struct {
 	ServedModel string
 	Documents   map[string][]float64
@@ -172,6 +173,8 @@ func indexedEmbeddingVectors(data []struct {
 	return vectors, nil
 }
 
+// EmbeddingCosineScores computes cosine similarity between query and document
+// vectors.
 func EmbeddingCosineScores(documents, queries map[string][]float64) (map[string]map[string]float64, error) {
 	if len(documents) == 0 || len(queries) == 0 {
 		return nil, errors.New("documents and queries are required")

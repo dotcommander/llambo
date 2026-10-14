@@ -202,7 +202,7 @@ func fetchArtificialAnalysis(ctx context.Context, opts Options) (sourceSnapshot,
 		if page == 1 {
 			version = envelope.IndexVersion
 		} else if envelope.IndexVersion != version {
-			return sourceSnapshot{}, errors.New("Artificial Analysis index version changed during pagination")
+			return sourceSnapshot{}, errors.New("artificial analysis index version changed during pagination")
 		}
 		for _, row := range envelope.Data {
 			key := row.Slug
@@ -215,7 +215,7 @@ func fetchArtificialAnalysis(ctx context.Context, opts Options) (sourceSnapshot,
 			break
 		}
 		if page >= 100 {
-			return sourceSnapshot{}, errors.New("Artificial Analysis pagination exceeded 100 pages")
+			return sourceSnapshot{}, errors.New("artificial analysis pagination exceeded 100 pages")
 		}
 	}
 	return sourceSnapshot{Models: models, AAVersion: version}, nil

@@ -5,16 +5,27 @@ import (
 	"strings"
 )
 
+// EQCreativeLocalRubricAdapter adapts EQBench creative prompts to a local
+// rubric judge.
 type EQCreativeLocalRubricAdapter struct{}
 
-func (EQCreativeLocalRubricAdapter) ID() string      { return eqbenchCreativeV3 }
+// ID returns the adapter's source identifier.
+func (EQCreativeLocalRubricAdapter) ID() string { return eqbenchCreativeV3 }
+
+// Version returns the adapter contract version.
 func (EQCreativeLocalRubricAdapter) Version() string { return "eqbench-creative-v3-local-rubric-v1" }
+
+// ScoreIdentity returns the sealed score identity.
 func (EQCreativeLocalRubricAdapter) ScoreIdentity() string {
 	return "eqbench-creative-v3/local-rubric"
 }
+
+// GenerationSettings pins deterministic generation.
 func (EQCreativeLocalRubricAdapter) GenerationSettings() WritingGenerationSettings {
 	return WritingGenerationSettings{Temperature: 0.7, TemperatureSet: true, ExtraBody: map[string]any{"min_p": 0.1}}
 }
+
+// Iterations forces the rubric's fixed iteration count.
 func (EQCreativeLocalRubricAdapter) Iterations(requested int) (int, error) {
 	if requested == 0 {
 		return 3, nil
@@ -25,6 +36,7 @@ func (EQCreativeLocalRubricAdapter) Iterations(requested int) (int, error) {
 	return requested, nil
 }
 
+// ValidateRecord verifies the record against the sealed EQBench source.
 func (a EQCreativeLocalRubricAdapter) ValidateRecord(record WritingPromptRecord) error {
 	object, err := sourceObject(record.SourceRecord)
 	if err != nil {
@@ -40,6 +52,7 @@ func (a EQCreativeLocalRubricAdapter) ValidateRecord(record WritingPromptRecord)
 	return nil
 }
 
+// Criteria returns the fixed rubric criteria.
 func (EQCreativeLocalRubricAdapter) Criteria(WritingPromptRecord) ([]WritingCriterion, error) {
 	return []WritingCriterion{
 		{ID: "creativity", Description: "Originality, imaginative choices, and avoidance of generic or derivative phrasing."},

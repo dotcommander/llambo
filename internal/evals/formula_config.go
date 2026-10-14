@@ -115,6 +115,7 @@ var operationalMetrics = []metricSpec{
 
 var externalMetrics = operationalMetrics
 
+// SupportedRankingProfiles lists the valid ranking profile names.
 func SupportedRankingProfiles() []string {
 	return []string{agents1, coding1, instructionFollowing, longContext, matrix1, price1, reasoning1, speed1, writing1}
 }
@@ -126,7 +127,7 @@ func isSupportedProfile(name string) bool {
 	}
 	return false
 }
-func isCapabilityCategory(name string) bool {
+func validCapabilityCategory(name string) bool {
 	for _, category := range categorySpecs {
 		if name == category.name {
 			return true
@@ -134,7 +135,9 @@ func isCapabilityCategory(name string) bool {
 	}
 	return false
 }
-func IsCapabilityCategory(name string) bool { return isCapabilityCategory(name) }
+
+// IsCapabilityCategory reports whether a name is a valid capability category.
+func IsCapabilityCategory(name string) bool { return validCapabilityCategory(name) }
 
 func aaValue(getter func(*ArtificialMetrics) *float64) func(Model) (*float64, bool) {
 	return func(model Model) (*float64, bool) {

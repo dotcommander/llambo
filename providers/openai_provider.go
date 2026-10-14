@@ -88,10 +88,12 @@ func (p *OpenAIProvider) SetFailoverCallback(callback FailoverCallback) {
 	p.failoverCallback = callback
 }
 
+// Name returns the provider's configured name.
 func (p *OpenAIProvider) Name() string {
 	return openai1
 }
 
+// MaxTokens returns the provider's completion token limit.
 func (p *OpenAIProvider) MaxTokens() int {
 	return p.maxTokens
 }
@@ -317,6 +319,7 @@ func (p *OpenAIProvider) GetOpenAIClients() *OpenAIClients {
 	return p.oc
 }
 
+// Shutdown closes all provider clients.
 func (p *OpenAIProvider) Shutdown() {
 	p.oc.Cleanup()
 }

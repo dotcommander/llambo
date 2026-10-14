@@ -55,7 +55,7 @@ func (cliOpts *invocationOptions) runModels(cmd *commandIO, args []string) error
 	var costMap map[string]costs.ModelCost
 	var scoreSnapshot *evals.OMLXScoreSnapshot
 	if cliOpts.modelsMetrics {
-		catPath, err := catalog.CatalogPath()
+		catPath, err := catalog.Path()
 		if err != nil {
 			return err
 		}
@@ -159,19 +159,20 @@ func (cliOpts *invocationOptions) runModels(cmd *commandIO, args []string) error
 		return nil
 	}
 
-	if cliOpts.modelsGrouped && !cliOpts.modelsMetrics {
+	switch {
+	case cliOpts.modelsGrouped && !cliOpts.modelsMetrics:
 		fmt.Fprintf(out, "%-12s %-8s %s\n", "PROVIDER", "ENABLED", "MODELS")
 		fmt.Fprintln(out, "--------------------------------------------------------------------------------")
 		for _, grouped := range groupRows(rows) {
 			fmt.Fprintf(out, "%-12s %-8t %s\n", grouped.Provider, grouped.Enabled, strings.Join(grouped.Models, ", "))
 		}
-	} else if cliOpts.modelsMetrics {
+	case cliOpts.modelsMetrics:
 		fmt.Fprintf(out, "%-12s %-8s %-18s %-30s %-22s %-14s %-12s %-14s %s\n", "PROVIDER", "ENABLED", "LLAMBO SCORE", "LLAMBO PROVENANCE", "TASK SCORE", "SPEED", "LATENCY", "OUTPUT $/1M", "MODEL")
 		fmt.Fprintln(out, strings.Repeat("-", 236))
 		for _, row := range rows {
 			fmt.Fprintf(out, "%-12s %-8t %-18s %-30s %-22s %-14s %-12s %-14s %s\n", row.Provider, row.Enabled, row.LlamboScore, row.LlamboProvenance, row.TaskScore, row.Speed, row.Latency, row.OutputCost, row.Model)
 		}
-	} else {
+	default:
 		fmt.Fprintf(out, "%-12s %-8s %-8s %s\n", "PROVIDER", "ENABLED", "PRIMARY", "MODEL")
 		fmt.Fprintln(out, "--------------------------------------------------------------------------------")
 		for _, row := range rows {

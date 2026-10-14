@@ -10,8 +10,10 @@ import (
 	"strings"
 )
 
+// EQBenchCreativeCommit pins the reviewed EQBench creative data revision.
 const EQBenchCreativeCommit = "bf21868fd5dc4c48480e01ae354079eb1cec13fb"
 
+// EQBenchCreativeScore is one creative-writing benchmark observation.
 type EQBenchCreativeScore struct {
 	Model        string          `json:"model"`
 	Organization string          `json:"organization,omitempty"`

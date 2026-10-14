@@ -12,16 +12,20 @@ func (f toolClientFunc) ToolChat(ctx context.Context, request ToolChatRequest) (
 	return f(ctx, request)
 }
 
+type localTraceKeyT string
+
+const localTraceKey localTraceKeyT = "trace"
+
 func TestEvaluateToolCaseRecordsExactIdentityAndCanonicalArguments(t *testing.T) {
 	t.Parallel()
 	expected := ToolCall{Name: "weather", Arguments: json.RawMessage(`{"city":"Richmond","units":"f"}`)}
 	client := toolClientFunc(func(ctx context.Context, request ToolChatRequest) (ToolChatResponse, error) {
-		if request.Model != "groq/groq/compound" || ctx.Value("trace") != "sealed" {
+		if request.Model != "groq/groq/compound" || ctx.Value(localTraceKey) != "sealed" {
 			t.Fatal("request/context was not propagated")
 		}
 		return ToolChatResponse{Provider: "groq", Model: "groq/compound", ToolCalls: []ToolCall{{Name: "weather", Arguments: json.RawMessage(`{"units":"f","city":"Richmond"}`)}}, Usage: ToolChatUsage{InputTokens: 3, OutputTokens: 2}}, nil
 	})
-	call, pass, err := EvaluateToolCase(context.WithValue(context.Background(), "trace", "sealed"), client, ToolEvaluationRequest{Case: ToolCase{ID: "required", Expected: &expected}, Chat: ToolChatRequest{Model: "groq/groq/compound"}})
+	call, pass, err := EvaluateToolCase(context.WithValue(context.Background(), localTraceKey, "sealed"), client, ToolEvaluationRequest{Case: ToolCase{ID: "required", Expected: &expected}, Chat: ToolChatRequest{Model: "groq/groq/compound"}})
 	if err != nil || !pass {
 		t.Fatalf("EvaluateToolCase = pass %v, err %v", pass, err)
 	}

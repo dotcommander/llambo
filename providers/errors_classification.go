@@ -11,6 +11,7 @@ import (
 // ErrorCategory classifies errors for handling decisions
 type ErrorCategory int
 
+// Error categories used for retry and breaker decisions.
 const (
 	UnknownError ErrorCategory = iota
 	TransientError

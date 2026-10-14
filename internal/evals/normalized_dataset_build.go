@@ -132,10 +132,10 @@ func buildNormalizedDataset(result Result, report Report) normalizedDataset {
 	return dataset
 }
 
-func normalizedCanonicalIndexes(rows []ReportModel) (map[string]ReportModel, map[string][]ReportModel, map[string][]ReportModel) {
-	byKey := make(map[string]ReportModel, len(rows))
-	byIdentity := make(map[string][]ReportModel)
-	byName := make(map[string][]ReportModel)
+func normalizedCanonicalIndexes(rows []ReportModel) (byKey map[string]ReportModel, byIdentity, byName map[string][]ReportModel) {
+	byKey = make(map[string]ReportModel, len(rows))
+	byIdentity = make(map[string][]ReportModel)
+	byName = make(map[string][]ReportModel)
 	for _, row := range rows {
 		byKey[row.Key] = row
 		if identity, ok := externalIdentity(Model{Key: row.Key, Name: row.Name, Organization: row.Organization}); ok {
@@ -539,7 +539,7 @@ func normalizedAddFrozenCohort(target map[string]NormalizedFrozenCohortRecord, r
 	target[key] = cohort
 }
 
-func normalizedCohortKey(benchmark, revision string) (string, string) {
+func normalizedCohortKey(benchmark, revision string) (cohort, family string) {
 	if _, targeted := frozenLLMStatsCohortPopulations[benchmark]; targeted {
 		return benchmark + "\x00sealed-artifact", "sealed-artifact:" + llmStatsFrozenCohortsArtifactDigest
 	}

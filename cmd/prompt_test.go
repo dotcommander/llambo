@@ -34,7 +34,7 @@ func (c *testRootCommand) Execute() error {
 	if stderr == nil {
 		stderr = io.Discard
 	}
-	return execute(context.Background(), c.args, stdout, stderr)
+	return executeRoot(context.Background(), c.args, stdout, stderr)
 }
 
 var (

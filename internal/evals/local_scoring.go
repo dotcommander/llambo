@@ -13,35 +13,51 @@ import (
 	"unicode"
 )
 
+// ToolCall is one function invocation observed in a tool-use response.
 type ToolCall struct {
 	Name      string          `json:"name"`
 	Arguments json.RawMessage `json:"arguments"`
 }
+
+// ASRCase is one speech-recognition fixture: reference transcript plus the
+// sealed WAV input and its digest.
 type ASRCase struct {
 	ID         string `json:"id"`
 	Transcript string `json:"transcript"`
 	WAVPath    string `json:"wav_path"`
 	WAVSHA256  string `json:"wav_sha256"`
 }
+
+// TTSCase is one text-to-speech generation prompt.
 type TTSCase struct {
 	ID     string `json:"id"`
 	Prompt string `json:"prompt"`
 }
+
+// EmbeddingCase is one retrieval fixture holding documents and queries.
 type EmbeddingCase struct {
 	ID        string           `json:"id"`
 	Documents []EmbeddingText  `json:"documents"`
 	Queries   []EmbeddingQuery `json:"queries"`
 }
+
+// EmbeddingText is one indexed document in an embedding case.
 type EmbeddingText struct{ ID, Text string }
+
+// EmbeddingQuery is one query with its relevant document IDs.
 type EmbeddingQuery struct {
 	ID, Text string
 	Relevant []string `json:"relevant"`
 }
+
+// AccelerationCase is one speculative-decoding probe with its oracle answer.
 type AccelerationCase struct {
 	ID     string `json:"id"`
 	Prompt string `json:"prompt"`
 	Oracle string `json:"oracle"`
 }
+
+// ToolCase is one tool-use evaluation case with optional expected call.
 type ToolCase struct {
 	ID       string           `json:"id"`
 	Prompt   string           `json:"prompt"`
@@ -50,6 +66,8 @@ type ToolCase struct {
 	Calls    []ToolCall       `json:"calls"`
 }
 
+// ScoreToolCase reports whether the observed tool calls satisfy the case
+// expectation.
 func ScoreToolCase(c ToolCase) (bool, error) {
 	if c.ID == "" {
 		return false, errors.New("tool case id is required")
@@ -70,6 +88,8 @@ func ScoreToolCase(c ToolCase) (bool, error) {
 	}
 	return bytes.Equal(a, b), nil
 }
+
+// ScoreTools returns the pass fraction across tool-use cases.
 func ScoreTools(cases []ToolCase) (float64, error) {
 	if len(cases) == 0 {
 		return 0, errors.New("no tool cases")
@@ -87,14 +107,19 @@ func ScoreTools(cases []ToolCase) (float64, error) {
 	return 100 * float64(pass) / float64(len(cases)), nil
 }
 
+// NormalizeTranscript canonicalizes a transcript for error-rate comparison.
 func NormalizeTranscript(s string) string {
 	return strings.Join(strings.FieldsFunc(strings.ToLower(s), func(r rune) bool { return unicode.IsPunct(r) || unicode.IsSpace(r) }), " ")
 }
+
+// WordErrorRate computes WER as edit distance over reference word count.
 func WordErrorRate(reference, hypothesis string) float64 {
 	r := strings.Fields(NormalizeTranscript(reference))
 	h := strings.Fields(NormalizeTranscript(hypothesis))
 	return float64(editDistance(r, h)) / float64(max(1, len(r)))
 }
+
+// CharErrorRate computes CER as edit distance over reference rune count.
 func CharErrorRate(reference, hypothesis string) float64 {
 	r := []rune(strings.ReplaceAll(NormalizeTranscript(reference), " ", ""))
 	h := []rune(strings.ReplaceAll(NormalizeTranscript(hypothesis), " ", ""))
@@ -121,6 +146,7 @@ func editDistance[T comparable](a, b []T) int {
 	return d[len(b)]
 }
 
+// WAVMetadata describes a validated WAV payload.
 type WAVMetadata struct {
 	SampleRate      uint32
 	Channels        uint16
@@ -139,7 +165,7 @@ func ValidateWAV(data []byte) (WAVMetadata, error) {
 		id := string(data[p : p+4])
 		n := int(binary.LittleEndian.Uint32(data[p+4 : p+8]))
 		p += 8
-		if n < 0 || p+n > len(data) {
+		if n < 0 || n > len(data) || p+n > len(data) {
 			return WAVMetadata{}, errors.New("invalid WAV chunk")
 		}
 		chunk := data[p : p+n]
@@ -153,7 +179,7 @@ func ValidateWAV(data []byte) (WAVMetadata, error) {
 			f.BitsPerSample = binary.LittleEndian.Uint16(chunk[14:16])
 			foundFmt = true
 		case "data":
-			f.DataBytes = uint32(n)
+			f.DataBytes = uint32(n) //nolint:gosec // bounded by construction
 			foundData = true
 		}
 		p += n
@@ -172,6 +198,7 @@ func ValidateWAV(data []byte) (WAVMetadata, error) {
 	return f, nil
 }
 
+// RetrievalQuery is one ranked-retrieval query with relevance judgments.
 type RetrievalQuery struct {
 	ID       string   `json:"id"`
 	Relevant []string `json:"relevant"`
@@ -236,17 +263,22 @@ func rankScores(m map[string]float64) []string {
 	return ids
 }
 
+// PairedResult is one observed answer in an acceleration A/B pair.
 type PairedResult struct {
 	AnswerCorrect   bool    `json:"answer_correct"`
 	LatencyMS       float64 `json:"latency_ms"`
 	TokensPerSecond float64 `json:"tokens_per_second"`
 }
+
+// PairedScore compares off/on acceleration arms as pass-rate and speed ratios.
 type PairedScore struct {
 	PassRate             float64 `json:"pass_rate"`
 	LatencyRatio         float64 `json:"latency_ratio"`
 	TokensPerSecondRatio float64 `json:"tokens_per_second_ratio"`
 }
 
+// ScorePaired computes paired acceleration deltas between MTP-off and MTP-on
+// arms.
 func ScorePaired(off, on []PairedResult) (PairedScore, error) {
 	if len(off) == 0 || len(off) != len(on) {
 		return PairedScore{}, errors.New("paired results must be nonempty and equal length")
@@ -415,11 +447,12 @@ func ScoreLocalCalls(m LocalRunManifest, calls []LocalCall) (LocalReport, error)
 	}
 	if m.Identity.Suite == LocalSuiteTTS {
 		report.Metrics["technical_validity"] = 1
-		if ttsRoundTripCases == 0 {
+		switch {
+		case ttsRoundTripCases == 0:
 			report.ScoreIdentity = "tts/technical-validity-only"
-		} else if ttsRoundTripCases != len(scores) {
+		case ttsRoundTripCases != len(scores):
 			return report, fmt.Errorf("TTS round-trip intelligibility is incomplete: %d of %d cases", ttsRoundTripCases, len(scores))
-		} else {
+		default:
 			report.Metrics["intelligibility_wer"] /= float64(ttsRoundTripCases)
 			report.ScoreIdentity = "tts/technical-validity+roundtrip-intelligibility"
 		}

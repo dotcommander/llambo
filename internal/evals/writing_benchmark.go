@@ -9,6 +9,8 @@ import (
 	"strings"
 )
 
+// WritingBenchmarkAdapter is the contract each writing benchmark adapter
+// implements for the sealed runner.
 type WritingBenchmarkAdapter interface {
 	ID() string
 	Version() string
@@ -40,6 +42,7 @@ type writingJudgmentSettingsAdapter interface {
 	JudgmentSettings(WritingRunManifest) (WritingGenerationSettings, error)
 }
 
+// WritingAdapter resolves an adapter by benchmark identifier.
 func WritingAdapter(id string) (WritingBenchmarkAdapter, error) {
 	switch strings.ToLower(strings.TrimSpace(id)) {
 	case writingbench1:
@@ -53,7 +56,7 @@ func WritingAdapter(id string) (WritingBenchmarkAdapter, error) {
 	}
 }
 
-func buildWritingAdapterJudgmentPrompt(adapter WritingBenchmarkAdapter, record WritingPromptRecord, response string, criteria []WritingCriterion) (string, string, error) {
+func buildWritingAdapterJudgmentPrompt(adapter WritingBenchmarkAdapter, record WritingPromptRecord, response string, criteria []WritingCriterion) (prompt, note string, err error) {
 	if specialized, ok := adapter.(writingJudgmentAdapter); ok {
 		return specialized.BuildJudgmentPrompt(record, response, criteria)
 	}
@@ -78,6 +81,8 @@ func writingAdapterJudgmentSettings(adapter WritingBenchmarkAdapter, manifest Wr
 	return CombinedWritingJudgeSettings(manifest.Identity.JudgeThinkingLevel)
 }
 
+// ValidateWritingPromptRecords validates every record against its adapter
+// before any provider call.
 func ValidateWritingPromptRecords(records []WritingPromptRecord, adapter WritingBenchmarkAdapter) error {
 	if len(records) == 0 {
 		return errors.New("writing prompt input is empty")
@@ -101,7 +106,8 @@ func ValidateWritingPromptRecords(records []WritingPromptRecord, adapter Writing
 	return nil
 }
 
-func BuildWritingJudgePrompt(record WritingPromptRecord, response string, criterion WritingCriterion) (string, string) {
+// BuildWritingJudgePrompt assembles the single-criterion judge prompt.
+func BuildWritingJudgePrompt(record WritingPromptRecord, response string, criterion WritingCriterion) (prompt, note string) {
 	user := strings.NewReplacer(
 		"{{PROMPT}}", record.Prompt,
 		"{{RESPONSE}}", response,
@@ -111,7 +117,8 @@ func BuildWritingJudgePrompt(record WritingPromptRecord, response string, criter
 	return strings.TrimSpace(writingJudgeSystemPrompt), strings.TrimSpace(user)
 }
 
-func BuildCombinedWritingJudgePrompt(record WritingPromptRecord, response string, criteria []WritingCriterion) (string, string, error) {
+// BuildCombinedWritingJudgePrompt assembles the multi-criterion judge prompt.
+func BuildCombinedWritingJudgePrompt(record WritingPromptRecord, response string, criteria []WritingCriterion) (prompt, note string, err error) {
 	encoded, err := json.Marshal(criteria)
 	if err != nil {
 		return "", "", fmt.Errorf("encode writing criteria: %w", err)
@@ -124,6 +131,8 @@ func BuildCombinedWritingJudgePrompt(record WritingPromptRecord, response string
 	return strings.TrimSpace(writingCombinedJudgeSystemPrompt), strings.TrimSpace(user), nil
 }
 
+// ParseCombinedWritingJudgment strictly decodes a multi-criterion judge
+// response.
 func ParseCombinedWritingJudgment(raw string, criteria []WritingCriterion) ([]WritingCriterionJudgment, error) {
 	var value struct {
 		Results []struct {
@@ -170,6 +179,8 @@ func ParseCombinedWritingJudgment(raw string, criteria []WritingCriterion) ([]Wr
 	return out, nil
 }
 
+// CombinedWritingJudgeSettings builds judge generation settings with the
+// requested thinking level.
 func CombinedWritingJudgeSettings(thinkingLevel string) (WritingGenerationSettings, error) {
 	var schema map[string]any
 	if err := json.Unmarshal(writingCombinedJudgeSchema, &schema); err != nil {
@@ -196,6 +207,7 @@ func writingJudgeThinkingLevel(model string) string {
 	return medium1
 }
 
+// ParseWritingJudgment decodes a single-criterion score and reason.
 func ParseWritingJudgment(raw string) (int, string, error) {
 	var value struct {
 		Score  int    `json:"score"`

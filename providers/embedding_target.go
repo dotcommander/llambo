@@ -10,12 +10,14 @@ import (
 	"github.com/garyblankenship/wormhole/v3/types"
 )
 
+// EmbeddingResult carries embeddings and their token accounting.
 type EmbeddingResult struct {
 	Vectors  [][]float32
 	Provider string
 	Model    string
 }
 
+// EmbedResolved embeds texts against a resolved target model.
 func (e *OpenAIEmbedding) EmbedResolved(ctx context.Context, texts []string, target ResolvedTarget) (EmbeddingResult, error) {
 	if err := e.ValidateEmbeddingTarget(target); err != nil {
 		return EmbeddingResult{}, err
@@ -75,6 +77,7 @@ func embeddingPriority(cfg Config) int {
 	return cfg.Priority
 }
 
+// ValidateEmbeddingTarget checks the resolved target is embeddable.
 func (e *OpenAIEmbedding) ValidateEmbeddingTarget(target ResolvedTarget) error {
 	if target.Model() == "" {
 		switch e.configs[e.providerName].GetProviderType() {

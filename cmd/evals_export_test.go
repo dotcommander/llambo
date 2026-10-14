@@ -10,7 +10,7 @@ import (
 
 func TestEvalsNormalizedExportHelpAndNetworkBoundary(t *testing.T) {
 	var out, errOut bytes.Buffer
-	if err := execute(context.Background(), []string{"evals", "export", "normalized", "--help"}, &out, &errOut); err != nil {
+	if err := executeRoot(context.Background(), []string{"evals", "export", "normalized", "--help"}, &out, &errOut); err != nil {
 		t.Fatal(err)
 	}
 	help := out.String()
@@ -26,7 +26,7 @@ func TestEvalsNormalizedExportHelpAndNetworkBoundary(t *testing.T) {
 		"live-omlx":                    {"--live-omlx"},
 	} {
 		var rejectedOut, rejectedErr bytes.Buffer
-		err := execute(context.Background(), append([]string{"evals", "export", "normalized"}, append(args, "--output-dir", filepath.Join(t.TempDir(), "dataset"))...), &rejectedOut, &rejectedErr)
+		err := executeRoot(context.Background(), append([]string{"evals", "export", "normalized"}, append(args, "--output-dir", filepath.Join(t.TempDir(), "dataset"))...), &rejectedOut, &rejectedErr)
 		if err == nil || !strings.Contains(err.Error(), "--"+flag+" is not supported") {
 			t.Fatalf("%s was accepted before cache work: %v", flag, err)
 		}

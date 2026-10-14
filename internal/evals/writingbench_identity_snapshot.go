@@ -18,6 +18,8 @@ var writingBenchIdentitySnapshotJSON []byte
 const writingBenchIdentitySnapshotContentDigest = "2249760d9a472ed6ad3710075885b8c9429733b84284a3236c1e1515063401c7"
 const writingBenchIdentitySnapshotDigest = "dcbf675dc25f1d5ef2484367eb4cba5677d1f71fbd72015041df416ab717e7c6"
 
+// WritingBenchIdentitySnapshot is the embedded, digest-pinned identity
+// reference for WritingBench rows.
 type WritingBenchIdentitySnapshot struct {
 	SchemaVersion string                            `json:"schema_version"`
 	FetchedAt     time.Time                         `json:"fetched_at"`
@@ -30,6 +32,7 @@ type WritingBenchIdentitySnapshot struct {
 	Rows          []WritingBenchIdentitySnapshotRow `json:"rows"`
 }
 
+// WritingBenchIdentitySnapshotRow is one identity reference row.
 type WritingBenchIdentitySnapshotRow struct {
 	Key                string `json:"key"`
 	Name               string `json:"name"`
@@ -63,6 +66,7 @@ func loadWritingBenchIdentitySnapshot() (WritingBenchIdentitySnapshot, error) {
 	return snapshot, nil
 }
 
+// DecodeWritingBenchIdentitySnapshot strictly decodes snapshot bytes.
 func DecodeWritingBenchIdentitySnapshot(data []byte) (WritingBenchIdentitySnapshot, error) {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
@@ -79,6 +83,7 @@ func DecodeWritingBenchIdentitySnapshot(data []byte) (WritingBenchIdentitySnapsh
 	return snapshot, nil
 }
 
+// WritingBenchIdentitySnapshotDigest returns the canonical snapshot digest.
 func WritingBenchIdentitySnapshotDigest(snapshot WritingBenchIdentitySnapshot) (string, error) {
 	normalized := snapshot
 	normalized.Rows = append([]WritingBenchIdentitySnapshotRow(nil), snapshot.Rows...)
@@ -95,6 +100,8 @@ func WritingBenchIdentitySnapshotDigest(snapshot WritingBenchIdentitySnapshot) (
 	return writingBenchIdentitySnapshotBytesDigest(append(data, '\n')), nil
 }
 
+// WritingBenchSnapshotProvesNoCampaignMatches fails when any snapshot identity
+// collides with a campaign model.
 func WritingBenchSnapshotProvesNoCampaignMatches(snapshot WritingBenchIdentitySnapshot, manifest coverageCampaignManifest) error {
 	identities := make(map[string]struct{}, len(snapshot.Rows))
 	for _, row := range snapshot.Rows {

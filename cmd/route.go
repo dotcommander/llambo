@@ -50,6 +50,22 @@ func runRouteQuery(cmd *commandIO, args []string) error {
 	return nil
 }
 
+func printModeStats(out io.Writer, mode string, stats simulationStats) {
+	fmt.Fprintf(out, "Mode: %s\n", mode)
+	fmt.Fprintf(out, "  Decisions: %d\n", stats.decisions)
+	fmt.Fprintf(out, "  Different from actual chosen provider: %d (%.1f%%)\n", stats.diffCount, pct(stats.diffCount, stats.decisions))
+	fmt.Fprintf(out, "  Estimated avg latency: %dms\n", avgInt64(stats.totalLatencyMs, stats.decisions))
+	fmt.Fprintf(out, "  Estimated avg cost: $%.6f\n", avgFloat(stats.totalCost, stats.decisions))
+	fmt.Fprintf(out, "  Provider distribution: %s\n\n", formatProviderCounts(stats.providerCounts, stats.decisions))
+	if len(stats.sampleReasons) > 0 {
+		fmt.Fprintln(out, "  Sample reasons:")
+		for _, reason := range stats.sampleReasons {
+			fmt.Fprintf(out, "    - %s\n", reason)
+		}
+		fmt.Fprintln(out)
+	}
+}
+
 func (cliOpts *invocationOptions) runRouteSimulate(cmd *commandIO, args []string) error {
 	out := cmd.OutOrStdout()
 	cfg, err := providers.LoadGlobalConfig()
@@ -102,27 +118,14 @@ func (cliOpts *invocationOptions) runRouteSimulate(cmd *commandIO, args []string
 		routing.Mode = mode
 
 		stats := simulateMode(routingConfigs, routing, metrics, events)
-		fmt.Fprintf(out, "Mode: %s\n", mode)
-		fmt.Fprintf(out, "  Decisions: %d\n", stats.decisions)
-		fmt.Fprintf(out, "  Different from actual chosen provider: %d (%.1f%%)\n", stats.diffCount, pct(stats.diffCount, stats.decisions))
-		fmt.Fprintf(out, "  Estimated avg latency: %dms\n", avgInt64(stats.totalLatencyMs, stats.decisions))
-		fmt.Fprintf(out, "  Estimated avg cost: $%.6f\n", avgFloat(stats.totalCost, stats.decisions))
-		fmt.Fprintf(out, "  Provider distribution: %s\n\n", formatProviderCounts(stats.providerCounts, stats.decisions))
-		if len(stats.sampleReasons) > 0 {
-			fmt.Fprintln(out, "  Sample reasons:")
-			for _, reason := range stats.sampleReasons {
-				fmt.Fprintf(out, "    - %s\n", reason)
-			}
-			fmt.Fprintln(out)
-		}
-
+		printModeStats(out, mode, stats)
 		reports = append(reports, modeReport{Mode: mode, Stats: stats})
 	}
 
 	if strings.TrimSpace(cliOpts.routeReportPath) != "" {
 		baseline := calculateActualBaseline(events)
 		content := buildRouteSimulationReport(cliOpts.routeReportPath, eventsPath, len(events), baseline, reports)
-		if err := os.WriteFile(cliOpts.routeReportPath, []byte(content), 0644); err != nil {
+		if err := os.WriteFile(cliOpts.routeReportPath, []byte(content), 0644); err != nil { //nolint:gosec // reviewed file mode
 			return fmt.Errorf("write report: %w", err)
 		}
 		fmt.Fprintf(out, "Report written to %s\n", cliOpts.routeReportPath)

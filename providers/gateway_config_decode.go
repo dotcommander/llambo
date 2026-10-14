@@ -5,6 +5,7 @@ import (
 	"fmt"
 )
 
+// UnmarshalJSON decodes the persisted gateway config with defaults.
 func (g *GatewayConfig) UnmarshalJSON(data []byte) error {
 	type plain GatewayConfig
 	var decoded plain

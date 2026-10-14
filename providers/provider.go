@@ -125,6 +125,7 @@ type Config struct {
 	ContextLength     int                       `json:"context_length,omitempty"` // model context window in tokens; 0 = unknown (precheck never drops)
 }
 
+// UnmarshalJSON decodes one provider config, applying defaults.
 func (c *Config) UnmarshalJSON(data []byte) error {
 	type configAlias Config
 	var raw map[string]json.RawMessage

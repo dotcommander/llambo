@@ -114,7 +114,7 @@ func (cliOpts *invocationOptions) resolveFirstFusionTarget(selector string) (cat
 	if err != nil {
 		return catalog.ModelTarget{}, fmt.Errorf("load model costs: %w", err)
 	}
-	catPath, err := catalog.CatalogPath()
+	catPath, err := catalog.Path()
 	if err != nil {
 		return catalog.ModelTarget{}, err
 	}

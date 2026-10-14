@@ -12,8 +12,11 @@ const (
 	matrix1 = "matrix"
 )
 
+// FormulaVersion aliases the capability formula version stamped on reports.
 const FormulaVersion = CategoryFormulaVersion
 
+// Report is the full evals report: sources, diagnostics, rankings, and model
+// rows.
 type Report struct {
 	ReportSchemaVersion int                        `json:"report_schema_version"`
 	GeneratedAt         time.Time                  `json:"generated_at"`
@@ -32,6 +35,7 @@ type Report struct {
 	CategoryRankings    map[string]CategoryRanking `json:"category_rankings,omitempty"`
 }
 
+// CategoryRanking is the ranked model list for one capability category.
 type CategoryRanking struct {
 	Category string                `json:"category"`
 	Entries  []CategoryRankedModel `json:"entries"`
@@ -39,6 +43,7 @@ type CategoryRanking struct {
 	Status   string                `json:"status"`
 }
 
+// CategoryRankedModel is one ranked model row with winner status.
 type CategoryRankedModel struct {
 	Key                string  `json:"key"`
 	Score              float64 `json:"score"`
@@ -48,6 +53,7 @@ type CategoryRankedModel struct {
 	Estimated          bool    `json:"estimated,omitempty"`
 }
 
+// FormulaDiagnostics explains how capability scores were computed.
 type FormulaDiagnostics struct {
 	Method           string                  `json:"method"`
 	Population       int                     `json:"population"`
@@ -59,15 +65,20 @@ type FormulaDiagnostics struct {
 	Stability        StabilityDiagnostics    `json:"stability,omitempty"`
 }
 
+// MetricDiagnostic explains one benchmark metric's weight and population.
 type MetricDiagnostic struct {
 	Name, Dimension, Source, Direction string
 	Weight                             float64
 	Population, ReferencePopulation    int
 }
+
+// ProfileDiagnostic lists the effective weights for one ranking profile.
 type ProfileDiagnostic struct {
 	Name    string
 	Weights map[string]float64
 }
+
+// StabilityDiagnostics summarizes jackknife stability of the rankings.
 type StabilityDiagnostics struct {
 	Status          string
 	Variants        int     `json:"jackknife_variants"`
@@ -90,6 +101,7 @@ type ExternalScore struct {
 	Disagreement *float64 `json:"source_disagreement,omitempty"`
 }
 
+// ReportModel is one published model row with scores and evidence.
 type ReportModel struct {
 	Key               string                     `json:"key"`
 	Name              string                     `json:"name"`
@@ -109,10 +121,13 @@ type ReportModel struct {
 	UnresolvedReasons map[string]string `json:"unresolved_reasons,omitempty"`
 }
 
+// BuildReport scores and ranks eval results for the requested profile.
 func BuildReport(result Result, rankBy string) (Report, error) {
 	return BuildReportWithProjectionFile(result, rankBy, "")
 }
 
+// BuildReportWithProjectionFile applies reviewed local projections from a
+// projection file after canonical scoring.
 func BuildReportWithProjectionFile(result Result, rankBy, path string) (Report, error) {
 	if rankBy == "" {
 		rankBy = matrix1
@@ -201,7 +216,7 @@ func compareReportRows(left, right ReportModel, rankBy string) bool {
 		return left.Name < right.Name
 	}
 	var leftScore, rightScore *float64
-	if isCapabilityCategory(rankBy) {
+	if validCapabilityCategory(rankBy) {
 		if s := left.LlamboScores[rankBy]; s != nil && !s.Estimated {
 			leftScore = &s.Score
 		}
@@ -284,11 +299,12 @@ func buildCategoryRankings(rows []ReportModel) map[string]CategoryRanking {
 			}
 			for i := 0; i < tied; i++ {
 				candidate := &ranking.Entries[i]
-				if i == winner {
+				switch {
+				case i == winner:
 					candidate.WinnerStatus = ranking.Status
-				} else if official && familyCount(rows, spec.name, candidate.Key) >= 2 {
+				case official && familyCount(rows, spec.name, candidate.Key) >= 2:
 					candidate.WinnerStatus = "official_co_winner"
-				} else {
+				default:
 					candidate.WinnerStatus = "provisional_co_winner"
 				}
 			}

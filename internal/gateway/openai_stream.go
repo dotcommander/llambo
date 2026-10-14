@@ -11,6 +11,11 @@ import (
 )
 
 // handleChatCompletionStream handles streaming chat completions in OpenAI SSE format.
+// wireLog returns a scoped logger bound to the current default handler, so
+// tests that replace slog.SetDefault stay observable. Package-level slog
+// calls are banned in functions that hold a request context.
+func wireLog() *slog.Logger { return slog.New(slog.Default().Handler()) }
+
 func (s *Server) handleChatCompletionStream(w http.ResponseWriter, r *http.Request, req ChatCompletionRequest) {
 	_, ok := any(s.provider).(providers.ChatStreamProvider)
 	if !ok {
@@ -134,7 +139,7 @@ func (s *Server) handleChatCompletionStream(w http.ResponseWriter, r *http.Reque
 		}
 		b, _ := json.Marshal(errPayload)
 		if _, writeErr := fmt.Fprintf(w, "data: %s\n\n", b); writeErr != nil {
-			slog.DebugContext(r.Context(), "sse error chunk write failed", errorStr, writeErr)
+			wireLog().DebugContext(r.Context(), "sse error chunk write failed", errorStr, writeErr)
 		} else {
 			flusher.Flush()
 		}
@@ -198,7 +203,7 @@ func writeOpenAISSEChunk(w http.ResponseWriter, flusher http.Flusher, chunk Chat
 
 func writeOpenAISSEDone(w http.ResponseWriter, flusher http.Flusher) {
 	if _, err := fmt.Fprintf(w, "data: [DONE]\n\n"); err != nil {
-		slog.Debug("sse done write failed", errorStr, err)
+		wireLog().Debug("sse done write failed", errorStr, err)
 	}
 	flusher.Flush()
 }

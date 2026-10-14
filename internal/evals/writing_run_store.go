@@ -18,6 +18,8 @@ const (
 	maxWritingRunRecordSize = 64 << 20
 )
 
+// WritingRunStore is the fsynced ledger for one writing run directory,
+// enforcing manifest identity and attempt ordering.
 type WritingRunStore struct {
 	mu                 sync.Mutex
 	dir                string
@@ -34,6 +36,8 @@ type WritingRunStore struct {
 	lock               *os.File
 }
 
+// OpenWritingRunStore locks the run directory and opens or validates its
+// ledger against the manifest identity.
 func OpenWritingRunStore(dir string, manifest WritingRunManifest) (*WritingRunStore, error) {
 	return openWritingRunStore(dir, manifest, os.OpenFile)
 }
@@ -88,7 +92,7 @@ func openWritingRunStore(dir string, manifest WritingRunManifest, openLedger fun
 			return nil, fmt.Errorf("write writing manifest: %w", err)
 		}
 	}
-	if err := os.Chmod(dir, 0o700); err != nil {
+	if err = os.Chmod(dir, 0o700); err != nil { //nolint:gosec // directory, not file, permission
 		return nil, fmt.Errorf("secure writing run directory: %w", err)
 	}
 
@@ -300,6 +304,7 @@ func readWritingJSONL(path string, consume func([]byte) error) error {
 	return scanner.Err()
 }
 
+// AppendGeneration durably appends one generation record.
 func (s *WritingRunStore) AppendGeneration(record WritingGenerationRecord) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -316,6 +321,7 @@ func (s *WritingRunStore) AppendGeneration(record WritingGenerationRecord) error
 	return nil
 }
 
+// AppendJudgment durably appends one judgment record.
 func (s *WritingRunStore) AppendJudgment(record WritingJudgmentRecord) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -332,6 +338,7 @@ func (s *WritingRunStore) AppendJudgment(record WritingJudgmentRecord) error {
 	return nil
 }
 
+// Generation returns the latest generation record for a key.
 func (s *WritingRunStore) Generation(key string) (WritingGenerationRecord, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -339,6 +346,7 @@ func (s *WritingRunStore) Generation(key string) (WritingGenerationRecord, bool)
 	return record, ok
 }
 
+// Judgment returns the latest judgment record for a key.
 func (s *WritingRunStore) Judgment(key string) (WritingJudgmentRecord, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -346,24 +354,28 @@ func (s *WritingRunStore) Judgment(key string) (WritingJudgmentRecord, bool) {
 	return record, ok
 }
 
+// NextGenerationAttempt returns the next attempt number for a generation key.
 func (s *WritingRunStore) NextGenerationAttempt(key string) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.generationAttempts[key] + 1
 }
 
+// NextJudgmentAttempt returns the next attempt number for a judgment key.
 func (s *WritingRunStore) NextJudgmentAttempt(key string) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.judgmentAttempts[key] + 1
 }
 
+// Records returns all ledgered generations and judgments.
 func (s *WritingRunStore) Records() ([]WritingGenerationRecord, []WritingJudgmentRecord) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]WritingGenerationRecord(nil), s.generations...), append([]WritingJudgmentRecord(nil), s.judgments...)
 }
 
+// Close releases the run directory lock.
 func (s *WritingRunStore) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

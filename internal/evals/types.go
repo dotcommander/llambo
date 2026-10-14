@@ -5,6 +5,7 @@ import (
 	"time"
 )
 
+// DefaultTTL bounds how long fetched source caches stay fresh.
 const (
 	DefaultTTL                   = 48 * time.Hour
 	LLMStatsLeaderboardURL       = "https://llm-stats.com/leaderboards/open-llm-leaderboard"
@@ -14,6 +15,8 @@ const (
 	ArtificialAnalysisURL        = "https://artificialanalysis.ai/"
 )
 
+// Options controls evals fetching: cache location, refresh behavior, source
+// URLs, and overrides.
 type Options struct {
 	CacheDir                     string
 	TTL                          time.Duration
@@ -47,6 +50,7 @@ type Options struct {
 	officialLFM8Fetcher          officialCardFetcher
 }
 
+// Result is the merged eval fetch result with per-source status.
 type Result struct {
 	GeneratedAt time.Time      `json:"generated_at"`
 	Models      []Model        `json:"models"`
@@ -60,11 +64,13 @@ type Result struct {
 	ReferenceModels []Model `json:"-"`
 }
 
+// SourceModel is one source-native model row tagged with its origin.
 type SourceModel struct {
 	SourceID string `json:"source_id"`
 	Model    Model  `json:"model"`
 }
 
+// SourceStatus reports one source's fetch outcome and provenance.
 type SourceStatus struct {
 	Name            string    `json:"name"`
 	URL             string    `json:"url"`
@@ -81,6 +87,8 @@ type SourceStatus struct {
 	Error           string    `json:"error,omitempty"`
 }
 
+// Model is one merged scoring model with identity match and benchmark
+// observations.
 type Model struct {
 	Key           string                     `json:"key"`
 	Name          string                     `json:"name"`
@@ -138,6 +146,7 @@ type BenchmarkMirror struct {
 // Ambiguous rows are deliberately kept separate.
 type IdentityMatch string
 
+// Identity match classifications for merged model rows.
 const (
 	IdentityMatchExact      IdentityMatch = "exact"
 	IdentityMatchNormalized IdentityMatch = "normalized"
@@ -146,6 +155,7 @@ const (
 	IdentityMatchAmbiguous  IdentityMatch = "ambiguous"
 )
 
+// LLMStatsMetrics holds llm-stats.com observations attached to a model.
 type LLMStatsMetrics struct {
 	InputPrice  *float64         `json:"input_price,omitempty"`
 	OutputPrice *float64         `json:"output_price,omitempty"`
@@ -159,6 +169,7 @@ type LLMStatsMetrics struct {
 	Indexes     map[string]Index `json:"indexes,omitempty"`
 }
 
+// Index is one llm-stats.com leaderboard index entry.
 type Index struct {
 	Conservative float64 `json:"conservative"`
 	Mu           float64 `json:"mu"`
@@ -167,6 +178,8 @@ type Index struct {
 	GamesPlayed  int     `json:"games_played"`
 }
 
+// ArtificialMetrics holds artificialanalysis.ai observations attached to a
+// model.
 type ArtificialMetrics struct {
 	sourceName         string
 	sourceOrganization string

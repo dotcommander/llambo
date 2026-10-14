@@ -9,6 +9,7 @@ import (
 	"time"
 )
 
+// QualityImportRecord is one externally reviewed quality row.
 type QualityImportRecord struct {
 	Provider string  `json:"provider"`
 	Model    string  `json:"model"`
@@ -18,6 +19,7 @@ type QualityImportRecord struct {
 	Notes    string  `json:"notes,omitempty"`
 }
 
+// RecordQualityEvidence imports one reviewed quality row into the catalog.
 func RecordQualityEvidence(cat *Catalog, record QualityImportRecord, now time.Time) error {
 	if cat == nil {
 		return errors.New("catalog is nil")
@@ -59,6 +61,7 @@ func RecordQualityEvidence(cat *Catalog, record QualityImportRecord, now time.Ti
 	return nil
 }
 
+// BestQualityEvidence returns the highest-scoring task evidence for an entry.
 func BestQualityEvidence(entry *ModelEntry) (string, QualityEvidence, bool) {
 	if entry == nil || len(entry.Quality) == 0 {
 		return "", QualityEvidence{}, false
@@ -80,6 +83,7 @@ func BestQualityEvidence(entry *ModelEntry) (string, QualityEvidence, bool) {
 	return bestTask, best, true
 }
 
+// BestBenchmarkEvidence returns the best benchmark evidence for an entry.
 func BestBenchmarkEvidence(entry *ModelEntry) (string, BenchmarkEvidence, bool) {
 	if entry == nil || len(entry.Benchmarks) == 0 {
 		return "", BenchmarkEvidence{}, false

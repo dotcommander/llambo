@@ -19,6 +19,7 @@ const (
 
 const huggingFaceModelAPI = "https://huggingface.co/api/models/"
 
+// WritingSourceStatus reports one catalog source check outcome.
 type WritingSourceStatus struct {
 	BenchmarkID string    `json:"benchmark_id"`
 	SourceURL   string    `json:"source_url"`
@@ -31,6 +32,7 @@ type WritingSourceStatus struct {
 	Error       string    `json:"error,omitempty"`
 }
 
+// WritingModelStatus reports one open model's catalog state.
 type WritingModelStatus struct {
 	ModelID         string    `json:"model_id"`
 	ModelName       string    `json:"model_name"`

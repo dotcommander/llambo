@@ -190,7 +190,7 @@ func EvaluateCanary(canary *CanaryConfig, events []RouteEvent, configs map[strin
 	return status
 }
 
-func evaluatePromotionCriteria(s *CanaryStatus, promoteAfter int) (bool, string, string) {
+func evaluatePromotionCriteria(s *CanaryStatus, promoteAfter int) (promote bool, reason, detail string) {
 	if promoteAfter > 0 && s.CanaryRequests < promoteAfter {
 		return false, "", fmt.Sprintf("canary has %d/%d required requests", s.CanaryRequests, promoteAfter)
 	}

@@ -206,7 +206,7 @@ func sortedLlamboCategories(scores map[string]*LlamboScore) []string {
 	return keys
 }
 
-func partitionProjectionRows(rows []ReportModel) ([]ReportModel, []ReportModel) {
+func partitionProjectionRows(rows []ReportModel) (projected, observed []ReportModel) {
 	canonical, projected := make([]ReportModel, 0, len(rows)), make([]ReportModel, 0)
 	for _, row := range rows {
 		if row.Projection == nil {

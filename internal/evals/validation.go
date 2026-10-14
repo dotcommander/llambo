@@ -16,11 +16,13 @@ import (
 
 var receiptSHA256 = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
 
+// ValidationDiagnostic reports external score correlation per source.
 type ValidationDiagnostic struct {
 	Source     string               `json:"source"`
 	Categories []ValidationCategory `json:"categories"`
 }
 
+// ValidationCategory is one category's rank-correlation validation.
 type ValidationCategory struct {
 	Category   string   `json:"category"`
 	SampleSize int      `json:"sample_size"`
@@ -173,7 +175,7 @@ func validateValidationRecords(records []validationReceiptRecord) error {
 	seen := make(map[string]bool, len(records))
 	for index, record := range records {
 		record.ModelKey, record.Category, record.IdentityMatch = strings.TrimSpace(record.ModelKey), strings.TrimSpace(record.Category), strings.TrimSpace(record.IdentityMatch)
-		if record.ModelKey == "" || !isCapabilityCategory(record.Category) || record.IdentityMatch != string(IdentityMatchExact) || math.IsNaN(record.Score) || math.IsInf(record.Score, 0) {
+		if record.ModelKey == "" || !validCapabilityCategory(record.Category) || record.IdentityMatch != string(IdentityMatchExact) || math.IsNaN(record.Score) || math.IsInf(record.Score, 0) {
 			return fmt.Errorf("invalid sealed validation receipt %d", index+1)
 		}
 		key := record.ModelKey + "\x00" + record.Category

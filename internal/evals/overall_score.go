@@ -19,6 +19,7 @@ type OverallScore struct {
 	UnresolvedReasons     []OverallReason    `json:"unresolved_reasons,omitempty"`
 }
 
+// OverallComponent is one weighted component of a composite score.
 type OverallComponent struct {
 	Name                 string    `json:"name"`
 	Weight               float64   `json:"weight"`
@@ -32,6 +33,7 @@ type OverallComponent struct {
 	Reason               string    `json:"reason,omitempty"`
 }
 
+// OverallReason explains one unresolved component.
 type OverallReason struct {
 	Component string `json:"component"`
 	Code      string `json:"code"`
@@ -47,6 +49,7 @@ type OMLXScoreInput struct {
 	Observations []OMLXOperationalObservation
 }
 
+// OMLXOperationalObservation is one local operational metric observation.
 type OMLXOperationalObservation struct {
 	Metric           string
 	Value            float64
@@ -110,7 +113,7 @@ func ApplyOMLXCategoryScores(report *Report, inventory []OMLXScoreInput) {
 	}
 	report.CategoryRankings = buildCategoryRankings(selectedRows)
 	applyCategoryWinnerStatuses(report.Models, report.CategoryRankings)
-	if isCapabilityCategory(report.RankingProfile) {
+	if validCapabilityCategory(report.RankingProfile) {
 		sort.SliceStable(report.Models, func(i, j int) bool {
 			return compareReportRows(report.Models[i], report.Models[j], report.RankingProfile)
 		})

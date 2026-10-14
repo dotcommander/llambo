@@ -10,8 +10,10 @@ import (
 	"time"
 )
 
+// ReceiptSchemaVersion is the persisted campaign receipt layout version.
 const ReceiptSchemaVersion = 1
 
+// Roster is the locked campaign definition: assets, policies, and models.
 type Roster struct {
 	SchemaVersion int            `json:"schema_version"`
 	Locked        bool           `json:"locked"`
@@ -21,6 +23,7 @@ type Roster struct {
 	Models        []Model        `json:"models"`
 }
 
+// Assets holds the immutable file paths a campaign run consumes and produces.
 type Assets struct {
 	SourceInput      string           `json:"source_input"`
 	SystemPrompt     string           `json:"system_prompt"`
@@ -29,6 +32,7 @@ type Assets struct {
 	FutureMultistage FutureMultistage `json:"future_multistage"`
 }
 
+// FutureMultistage reserves the outline-then-write pipeline configuration.
 type FutureMultistage struct {
 	Enabled            bool   `json:"enabled"`
 	OutlinePrompt      string `json:"outline_prompt"`
@@ -36,10 +40,12 @@ type FutureMultistage struct {
 	OutlinePlaceholder string `json:"writer_outline_placeholder"`
 }
 
+// PricingPolicy caps per-model output pricing for the campaign.
 type PricingPolicy struct {
 	MaximumOutputPer1M float64 `json:"maximum_output_per_1m"`
 }
 
+// CampaignPolicy constrains provider and selector strictness.
 type CampaignPolicy struct {
 	Provider              string `json:"provider"`
 	ExactModelIDsRequired bool   `json:"exact_model_ids_required"`
@@ -47,6 +53,7 @@ type CampaignPolicy struct {
 	AliasesAllowed        bool   `json:"aliases_allowed"`
 }
 
+// Model is one roster entry with exact selector, pricing, and limits.
 type Model struct {
 	OpenRouterModelID     string  `json:"openrouter_model_id"`
 	LlamboSelector        string  `json:"llambo_selector"`
@@ -62,6 +69,7 @@ type Model struct {
 	DisabledReason        string  `json:"disabled_reason,omitempty"`
 }
 
+// Usage is token and cost accounting for one attempt.
 type Usage struct {
 	PromptTokens     int     `json:"prompt_tokens"`
 	CompletionTokens int     `json:"completion_tokens"`
@@ -70,6 +78,8 @@ type Usage struct {
 	TokensPerSecond  float64 `json:"tokens_per_second"`
 }
 
+// Attempt is one HTTP generation attempt with full served identity and raw
+// response provenance.
 type Attempt struct {
 	Attempt             int                 `json:"attempt"`
 	MaxCompletionTokens int                 `json:"max_completion_tokens"`
@@ -88,6 +98,7 @@ type Attempt struct {
 	RawResponse         json.RawMessage     `json:"raw_response,omitempty"`
 }
 
+// Receipt is the sealed per-model campaign outcome across attempts.
 type Receipt struct {
 	SchemaVersion       int       `json:"schema_version"`
 	ModelID             string    `json:"model_id"`
@@ -109,6 +120,7 @@ type Receipt struct {
 	RetryDisposition    string    `json:"retry_disposition,omitempty"`
 }
 
+// LoadRoster reads and validates a locked campaign roster.
 func LoadRoster(path string) (Roster, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

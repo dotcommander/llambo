@@ -25,6 +25,7 @@ const (
 const lechMazurWritingStylesURL = "https://github.com/lechmazur/writing_styles"
 
 const (
+	// WritingCatalogVersion is the persisted writing catalog schema version.
 	WritingCatalogVersion = 3
 	WritingPrimaryID      = "lechmazur-writing"
 	WritingPrimaryURL     = "https://raw.githubusercontent.com/lechmazur/writing/main/README.md"
@@ -35,6 +36,7 @@ var markdownLinkRE = regexp.MustCompile(`\[([^\]]+)\]\([^)]*\)`)
 
 // WritingCatalog describes writing-focused evaluation sources without mixing
 // their source-native scores into the LLAMBO-2 report.
+// WritingCatalog is the sealed writing benchmark and open-model catalog.
 type WritingCatalog struct {
 	GeneratedAt          time.Time                    `json:"generated_at"`
 	RegistryVersion      int                          `json:"registry_version"`
@@ -49,6 +51,7 @@ type WritingCatalog struct {
 	DiscoveredOpenModels []WritingDiscoveredOpenModel `json:"discovered_open_models,omitempty"`
 }
 
+// WritingBenchmark describes one writing benchmark source.
 type WritingBenchmark struct {
 	ID            string `json:"id"`
 	Name          string `json:"name"`
@@ -82,6 +85,7 @@ type WritingOpenModel struct {
 	Notes                string   `json:"notes,omitempty"`
 }
 
+// WritingLeaderboard is one fetched public leaderboard.
 type WritingLeaderboard struct {
 	BenchmarkID string                  `json:"benchmark_id"`
 	SourceURL   string                  `json:"source_url"`
@@ -90,6 +94,7 @@ type WritingLeaderboard struct {
 	Error       string                  `json:"error,omitempty"`
 }
 
+// WritingLeaderboardRow is one leaderboard entry with uncertainty bounds.
 type WritingLeaderboardRow struct {
 	Rank      int     `json:"rank"`
 	Model     string  `json:"model"`
@@ -99,6 +104,7 @@ type WritingLeaderboardRow struct {
 	Upper     float64 `json:"uncertainty_upper"`
 }
 
+// WritingCatalogOptions controls catalog fetching and validation depth.
 type WritingCatalogOptions struct {
 	Client               *http.Client
 	URL                  string
@@ -115,7 +121,7 @@ type WritingCatalogOptions struct {
 
 // DefaultWritingCatalog returns the offline registry. It intentionally carries
 // source links and model coverage, not made-up cross-benchmark scores.
-func DefaultWritingCatalog(now time.Time) WritingCatalog {
+func DefaultWritingCatalog(now time.Time) WritingCatalog { //nolint:funlen // declarative catalog table, no logic
 	if now.IsZero() {
 		now = time.Now()
 	}
@@ -376,6 +382,7 @@ func DefaultWritingCatalog(now time.Time) WritingCatalog {
 	}
 }
 
+// FetchWritingCatalog assembles the writing catalog from reviewed sources.
 func FetchWritingCatalog(ctx context.Context, opts WritingCatalogOptions) (WritingCatalog, error) {
 	if opts.IncludePromptRecords {
 		opts.ValidateSources = true
@@ -558,7 +565,7 @@ func parseWritingPercent(value string) (float64, error) {
 	return parseWritingFloat(value)
 }
 
-func parseWritingRange(value string) (float64, float64, error) {
+func parseWritingRange(value string) (minValue, maxValue float64, err error) {
 	value = strings.ReplaceAll(strings.ToLower(value), "−", "-")
 	value = strings.ReplaceAll(value, "to", " ")
 	parts := strings.Fields(value)

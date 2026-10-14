@@ -199,7 +199,7 @@ func TestOpenAIRequestContextCarriesReasoning(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reasoningOverride() error = %v", err)
 	}
-	req.reasoning = parsed
+	req.nativeReasoning = parsed
 
 	ctx, cancel := openAIRequestContextTimeout(context.Background(), req, time.Second)
 	defer cancel()

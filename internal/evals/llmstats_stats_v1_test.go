@@ -27,12 +27,13 @@ func TestLLMStatsStatsV1BearerPaginationDedupeNormalizationAndSealing(t *testing
 			if request.URL.Query().Get("benchmark") != "gpqa" || request.URL.Query().Get("limit") != "500" {
 				t.Fatalf("unexpected scores query: %s", request.URL.RawQuery)
 			}
-			if request.URL.Query().Get("cursor") == "" {
+			switch cursor := request.URL.Query().Get("cursor"); cursor {
+			case "":
 				body = fmt.Sprintf(`{"scores":[%s,%s,%s],"next_cursor":"cursor-2","total":6}`, statsV1ScoreRow("model-a", .946, true), statsV1ScoreRow("model-a", .946, true), statsV1ScoreRow("model-b", 0, false))
-			} else if request.URL.Query().Get("cursor") == "cursor-2" {
+			case "cursor-2":
 				body = fmt.Sprintf(`{"scores":[%s,%s,%s,%s],"next_cursor":"","total":6}`, statsV1ScoreRow("model-c", .25, true), statsV1ScoreRow("model-d", .75, true), statsV1ScoreRow("model-e", .6, false), statsV1ScoreRow("model-a", .946, true))
-			} else {
-				t.Fatalf("unexpected cursor %q", request.URL.Query().Get("cursor"))
+			default:
+				t.Fatalf("unexpected cursor %q", cursor)
 			}
 		default:
 			return nil, fmt.Errorf("unexpected request %s", request.URL.String())

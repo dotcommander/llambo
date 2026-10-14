@@ -18,7 +18,7 @@ func openAIRequestContextTimeout(parent context.Context, req ChatCompletionReque
 	ctx = providers.WithChatRequestOverrides(ctx, req.MaxTokens, req.Temperature, req.TopP)
 	ctx = providers.WithJSONOverrides(ctx, chatJSONOverrides(req))
 	ctx = providers.WithResponseFormatOverride(ctx, responseFormatOverride(req.ResponseFormat))
-	ctx = providers.WithRequestReasoning(ctx, req.reasoning)
+	ctx = providers.WithRequestReasoning(ctx, req.nativeReasoning)
 	return ctx, cancel
 }
 

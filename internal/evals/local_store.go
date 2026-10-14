@@ -40,17 +40,20 @@ type LocalRunStore struct {
 	intentByCase map[string]LocalDispatchIntent
 }
 
+// LocalDispatchIntent is fsynced before each provider call; a stop after this
+// record but before its call leaves the attempt intentionally in doubt.
 type LocalDispatchIntent struct {
 	CaseID      string    `json:"case_id"`
 	InputSHA256 string    `json:"input_sha256"`
 	At          time.Time `json:"at"`
 }
 
+// OpenLocalRunStore opens or validates the durable run ledger for a manifest.
 func OpenLocalRunStore(dir string, manifest LocalRunManifest) (*LocalRunStore, error) {
 	if dir == "" || filepath.Clean(dir) == "." {
 		return nil, errors.New("--output-dir must be explicit")
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil { //nolint:gosec // reviewed directory mode
 		return nil, err
 	}
 	lock, err := os.OpenFile(filepath.Join(dir, localRunLockName), os.O_CREATE|os.O_RDWR, 0o600)
@@ -75,14 +78,15 @@ func OpenLocalRunStore(dir string, manifest LocalRunManifest) (*LocalRunStore, e
 func (s *LocalRunStore) open() error {
 	manifestPath := filepath.Join(s.dir, manifestJSON)
 	b, err := os.ReadFile(manifestPath)
-	if os.IsNotExist(err) {
+	switch {
+	case os.IsNotExist(err):
 		// The manifest is the durable start marker and must precede any call.
 		if err = writeDurableLocalJSON(manifestPath, s.manifest); err != nil {
 			return fmt.Errorf("write manifest: %w", err)
 		}
-	} else if err != nil {
+	case err != nil:
 		return err
-	} else {
+	default:
 		var existing LocalRunManifest
 		if err = json.Unmarshal(b, &existing); err != nil {
 			return fmt.Errorf("parse existing manifest: %w", err)
@@ -240,6 +244,7 @@ func (s *LocalRunStore) AppendCall(call LocalCall) error {
 	return nil
 }
 
+// Calls returns all ledgered calls.
 func (s *LocalRunStore) Calls() []LocalCall {
 	calls := make([]LocalCall, 0, len(s.byCase))
 	for _, call := range s.byCase {
@@ -428,6 +433,7 @@ func hasLocalCallError(calls []LocalCall) bool {
 	return false
 }
 
+// Close flushes and closes the run ledger.
 func (s *LocalRunStore) Close() error {
 	var errs []error
 	if s.calls != nil {

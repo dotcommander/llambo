@@ -61,7 +61,7 @@ func TestLoadAllMergesModelsDevWithCSVOverride(t *testing.T) {
 			writeModelsDevFixture(t, modelsDevPath, tt.modelsDev)
 			require.NoError(t, os.WriteFile(csvPath, []byte(tt.csv), 0o644))
 
-			got, err := loadAll(modelsDevPath, csvPath)
+			got, err := mergePricing(modelsDevPath, csvPath)
 			require.NoError(t, err)
 			require.Equal(t, tt.want, got)
 		})
@@ -101,7 +101,7 @@ func TestLoadAllWithMissingFiles(t *testing.T) {
 				require.NoError(t, os.WriteFile(csvPath, []byte(csvFixture("openai,gpt-4o,2.50,10.00,manual override\n")), 0o644))
 			}
 
-			got, err := loadAll(modelsDevPath, csvPath)
+			got, err := mergePricing(modelsDevPath, csvPath)
 			require.NoError(t, err)
 			if tt.wantNilResult {
 				require.Nil(t, got)

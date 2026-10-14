@@ -187,7 +187,7 @@ func readSnapshot(path string) (sourceSnapshot, error) {
 }
 
 func writeSnapshot(path string, snapshot sourceSnapshot) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil { //nolint:gosec // reviewed directory mode
 		return err
 	}
 	b, err := json.MarshalIndent(snapshot, "", "  ")

@@ -2,6 +2,7 @@ package evals
 
 import "strings"
 
+// WritingModelCoverage maps a model to its covered leaderboards.
 type WritingModelCoverage struct {
 	ModelID                 string   `json:"model_id"`
 	ModelName               string   `json:"model_name"`

@@ -5,6 +5,7 @@ import (
 	"strings"
 )
 
+// AddTag adds a normalized tag, keeping tags sorted.
 func AddTag(m *ModelEntry, tag string) {
 	tag = normalizeTag(tag)
 	if tag == "" || HasTag(m, tag) {
@@ -14,6 +15,7 @@ func AddTag(m *ModelEntry, tag string) {
 	sort.Strings(m.Tags)
 }
 
+// RemoveTag removes a normalized tag if present.
 func RemoveTag(m *ModelEntry, tag string) {
 	tag = normalizeTag(tag)
 	if tag == "" || m == nil {
@@ -28,6 +30,7 @@ func RemoveTag(m *ModelEntry, tag string) {
 	m.Tags = kept
 }
 
+// HasTag reports whether the entry carries the normalized tag.
 func HasTag(m *ModelEntry, tag string) bool {
 	tag = normalizeTag(tag)
 	if tag == "" || m == nil {

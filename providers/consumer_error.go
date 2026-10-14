@@ -7,4 +7,6 @@ type ConsumerError struct{ Err error }
 
 func (e *ConsumerError) Error() string { return e.Err.Error() }
 func (e *ConsumerError) Unwrap() error { return e.Err }
-func IsConsumerError(err error) bool   { var consumer *ConsumerError; return errors.As(err, &consumer) }
+
+// IsConsumerError reports whether the error is a client-caused ConsumerError.
+func IsConsumerError(err error) bool { var consumer *ConsumerError; return errors.As(err, &consumer) }

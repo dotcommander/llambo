@@ -21,7 +21,7 @@ import (
 
 func TestExecuteEvalsDefaultsToReport(t *testing.T) {
 	var out, errOut bytes.Buffer
-	err := execute(context.Background(), []string{"evals", "--min-score", "101"}, &out, &errOut)
+	err := executeRoot(context.Background(), []string{"evals", "--min-score", "101"}, &out, &errOut)
 	if err == nil || !strings.Contains(err.Error(), "--min-score must be between -1 and 100") {
 		t.Fatalf("bare evals did not select the ranking report: %v", err)
 	}
@@ -32,7 +32,7 @@ func TestExecuteEvalsDefaultsToReport(t *testing.T) {
 
 func TestEvalsHelpAndRemovedContract(t *testing.T) {
 	var out, errOut bytes.Buffer
-	if err := execute(context.Background(), []string{"evals", "--help"}, &out, &errOut); err != nil {
+	if err := executeRoot(context.Background(), []string{"evals", "--help"}, &out, &errOut); err != nil {
 		t.Fatal(err)
 	}
 	help := out.String()
@@ -46,11 +46,11 @@ func TestEvalsHelpAndRemovedContract(t *testing.T) {
 			t.Fatalf("evals help retained %q:\n%s", removed, help)
 		}
 	}
-	if err := execute(context.Background(), []string{"evals", "--min-overall", "0"}, &out, &errOut); err == nil || !strings.Contains(err.Error(), "unknown flag") {
+	if err := executeRoot(context.Background(), []string{"evals", "--min-overall", "0"}, &out, &errOut); err == nil || !strings.Contains(err.Error(), "unknown flag") {
 		t.Fatalf("removed --min-overall accepted: %v", err)
 	}
 	for _, profile := range []string{"overall", "general", "value", "llambo-score"} {
-		if err := execute(context.Background(), []string{"evals", "--rank-by", profile, "--min-score", "0"}, &out, &errOut); err == nil || !strings.Contains(err.Error(), "requires a capability") {
+		if err := executeRoot(context.Background(), []string{"evals", "--rank-by", profile, "--min-score", "0"}, &out, &errOut); err == nil || !strings.Contains(err.Error(), "requires a capability") {
 			t.Fatalf("removed profile %q accepted: %v", profile, err)
 		}
 	}
@@ -86,7 +86,7 @@ func TestEvalsNonReportCommandsRejectOfficialCardRefreshBeforeWork(t *testing.T)
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			var out, errOut bytes.Buffer
-			err := execute(context.Background(), test.args, &out, &errOut)
+			err := executeRoot(context.Background(), test.args, &out, &errOut)
 			if err == nil || !strings.Contains(err.Error(), "--refresh-official-model-cards is not supported") {
 				t.Fatalf("official-card refresh was not rejected before command work: %v", err)
 			}

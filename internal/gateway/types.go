@@ -28,9 +28,10 @@ type ChatCompletionRequest struct {
 	Reasoning       json.RawMessage `json:"reasoning,omitempty"`
 	target          providers.ResolvedTarget
 	structured      providers.StructuredChatRequest
-	reasoning       *whtypes.Reasoning
+	nativeReasoning *whtypes.Reasoning
 }
 
+// StreamOptions requests usage accounting in streaming responses.
 type StreamOptions struct {
 	IncludeUsage bool `json:"include_usage"`
 }
@@ -68,6 +69,7 @@ type Choice struct {
 	FinishReason string   `json:"finish_reason,omitempty"`
 }
 
+// OpenAIToolCall is one complete tool call in a response.
 type OpenAIToolCall struct {
 	ID       string                    `json:"id"`
 	Type     string                    `json:"type"`
@@ -81,12 +83,15 @@ type Delta struct {
 	ToolCalls []OpenAIToolDelta `json:"tool_calls,omitempty"`
 }
 
+// OpenAIToolDelta is one streaming tool-call fragment.
 type OpenAIToolDelta struct {
 	Index    int                `json:"index"`
 	ID       string             `json:"id,omitempty"`
 	Type     string             `json:"type,omitempty"`
 	Function OpenAIToolFunction `json:"function"`
 }
+
+// OpenAIToolFunction names a function call with its raw arguments.
 type OpenAIToolFunction struct {
 	Name      string `json:"name,omitempty"`
 	Arguments string `json:"arguments,omitempty"`
@@ -121,6 +126,7 @@ type EmbeddingRequest struct {
 	Input []string `json:"input"`
 }
 
+// UnmarshalJSON accepts input as a string or array of strings.
 func (r *EmbeddingRequest) UnmarshalJSON(data []byte) error {
 	var raw struct {
 		Model string          `json:"model"`

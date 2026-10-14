@@ -38,6 +38,7 @@ type ProjectionInfo struct {
 	ReviewedAt string `json:"reviewed_at"`
 }
 
+// ProjectionDiagnostics reports the projection registry's application state.
 type ProjectionDiagnostics struct {
 	RegistrySource string              `json:"registry_source"`
 	Version        int                 `json:"version"`
@@ -46,11 +47,14 @@ type ProjectionDiagnostics struct {
 	Missing        []MissingProjection `json:"missing,omitempty"`
 }
 
+// MissingProjection names an artifact lacking a reviewed projection.
 type MissingProjection struct {
 	ArtifactKey string `json:"artifact_key"`
 	SourceKey   string `json:"source_key"`
 }
 
+// ReviewedProjectionForArtifact resolves the reviewed projection for an
+// artifact key.
 func ReviewedProjectionForArtifact(artifactKey string) (ProjectionInfo, bool, error) {
 	registry, err := loadProjectionRegistry("")
 	if err != nil {

@@ -46,11 +46,12 @@ type RoutingMetricsStore struct {
 	Providers map[string]*ProviderRuntimeMetrics `json:"providers"`
 }
 
+// NewRoutingMetricsStore opens or creates the persisted metrics store.
 func NewRoutingMetricsStore(path string) (*RoutingMetricsStore, error) {
-	return newRoutingMetricsStore(path, slog.Default(), os.Rename)
+	return openRoutingMetricsStore(path, slog.Default(), os.Rename)
 }
 
-func newRoutingMetricsStore(path string, logger *slog.Logger, rename func(string, string) error) (*RoutingMetricsStore, error) {
+func openRoutingMetricsStore(path string, logger *slog.Logger, rename func(string, string) error) (*RoutingMetricsStore, error) {
 	store := &RoutingMetricsStore{
 		path:      path,
 		interval:  time.Second,
@@ -104,6 +105,7 @@ func (s *RoutingMetricsStore) quarantineCorruptFile() error {
 	return s.rename(s.path, corruptPath)
 }
 
+// Save persists the metrics store atomically.
 func (s *RoutingMetricsStore) Save() error {
 	s.saveMu.Lock()
 	defer s.saveMu.Unlock()
@@ -140,6 +142,7 @@ func saveRoutingMetricsSnapshot(path string, providers map[string]*ProviderRunti
 	return filetxn.WriteAtomic(path, data, 0o600)
 }
 
+// Record folds one request outcome into the provider's rolling metrics.
 func (s *RoutingMetricsStore) Record(provider string, latency time.Duration, usage *LLMUsage, err error) {
 	if provider == "" {
 		return
@@ -194,6 +197,7 @@ func (s *RoutingMetricsStore) Record(provider string, latency time.Duration, usa
 
 // RecordQuality updates the rolling quality score for a provider.
 // Score should be in [0, 1]. Uses cumulative moving average.
+// RecordQuality folds one quality score into the provider's rolling metrics.
 func (s *RoutingMetricsStore) RecordQuality(provider string, score float64) {
 	if provider == "" {
 		return
@@ -247,6 +251,7 @@ func ComputeResponseQuality(promptLen, responseLen int, latencyMs int64) float64
 	return score
 }
 
+// Snapshot returns the current per-provider runtime metrics.
 func (s *RoutingMetricsStore) Snapshot() map[string]ProviderRuntimeMetrics {
 	today := time.Now().UTC().Format(dailyWindowFormat)
 	s.mu.RLock()

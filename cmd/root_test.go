@@ -19,17 +19,17 @@ import (
 func TestExecuteMetadataAndErrors(t *testing.T) {
 	for _, args := range [][]string{nil, {"--help"}, {"prompt", "--help"}, {"models", "catalog", "--help"}} {
 		var out, errOut bytes.Buffer
-		if err := execute(context.Background(), args, &out, &errOut); err != nil {
-			t.Fatalf("execute(%v): %v", args, err)
+		if err := executeRoot(context.Background(), args, &out, &errOut); err != nil {
+			t.Fatalf("executeRoot(%v): %v", args, err)
 		}
 		if !strings.Contains(out.String(), "Usage:") {
-			t.Fatalf("execute(%v) missing usage: %s", args, out.String())
+			t.Fatalf("executeRoot(%v) missing usage: %s", args, out.String())
 		}
 	}
 	for _, args := range [][]string{{"completion"}, {"version"}, {"--bad-flag"}} {
 		var out, errOut bytes.Buffer
-		if err := execute(context.Background(), args, &out, &errOut); err == nil {
-			t.Fatalf("execute(%v) unexpectedly succeeded", args)
+		if err := executeRoot(context.Background(), args, &out, &errOut); err == nil {
+			t.Fatalf("executeRoot(%v) unexpectedly succeeded", args)
 		}
 	}
 }
@@ -43,7 +43,7 @@ func TestRootHelpGolden(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out, errOut bytes.Buffer
-	if err := execute(context.Background(), []string{"--help"}, &out, &errOut); err != nil {
+	if err := executeRoot(context.Background(), []string{"--help"}, &out, &errOut); err != nil {
 		t.Fatal(err)
 	}
 	if got := out.String(); got != string(want) {
@@ -59,7 +59,7 @@ func TestRootHelpGolden(t *testing.T) {
 func TestNestedHelpListsDirectChildren(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	var out, errOut bytes.Buffer
-	if err := execute(context.Background(), []string{"models", "--help"}, &out, &errOut); err != nil {
+	if err := executeRoot(context.Background(), []string{"models", "--help"}, &out, &errOut); err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{"catalog", "discover-free", "sync-pricing"} {
@@ -78,15 +78,15 @@ func TestVersionFlagsAndPositionalCommand(t *testing.T) {
 	t.Cleanup(func() { Version = original })
 	for _, flag := range []string{"-v", "--version"} {
 		var out, errOut bytes.Buffer
-		if err := execute(context.Background(), []string{flag}, &out, &errOut); err != nil {
-			t.Fatalf("execute(%q): %v", flag, err)
+		if err := executeRoot(context.Background(), []string{flag}, &out, &errOut); err != nil {
+			t.Fatalf("executeRoot(%q): %v", flag, err)
 		}
 		if got, want := out.String(), "llambo version v0.1.0-test\n"; got != want {
-			t.Errorf("execute(%q) output = %q, want %q", flag, got, want)
+			t.Errorf("executeRoot(%q) output = %q, want %q", flag, got, want)
 		}
 	}
 	var out, errOut bytes.Buffer
-	if err := execute(context.Background(), []string{"version"}, &out, &errOut); err == nil {
+	if err := executeRoot(context.Background(), []string{"version"}, &out, &errOut); err == nil {
 		t.Fatal("positional version unexpectedly succeeded")
 	}
 }
@@ -96,14 +96,14 @@ func TestHelpAndErrorsHonorTerminalColorControls(t *testing.T) {
 		t.Setenv("NO_COLOR", "")
 		t.Setenv("CLICOLOR_FORCE", "1")
 		var out, errOut bytes.Buffer
-		if err := execute(context.Background(), []string{"serve", "--help"}, &out, &errOut); err != nil {
+		if err := executeRoot(context.Background(), []string{"serve", "--help"}, &out, &errOut); err != nil {
 			t.Fatal(err)
 		}
 		if !strings.Contains(out.String(), "\x1b[") {
 			t.Fatalf("forced-color help contains no ANSI styling: %q", out.String())
 		}
 		out.Reset()
-		if err := execute(context.Background(), []string{"--help"}, &out, &errOut); err != nil {
+		if err := executeRoot(context.Background(), []string{"--help"}, &out, &errOut); err != nil {
 			t.Fatal(err)
 		}
 		if !strings.Contains(out.String(), "\x1b[2mRun ") {
@@ -120,7 +120,7 @@ func TestHelpAndErrorsHonorTerminalColorControls(t *testing.T) {
 		t.Setenv("NO_COLOR", "1")
 		t.Setenv("CLICOLOR_FORCE", "")
 		var out, errOut bytes.Buffer
-		if err := execute(context.Background(), []string{"--help"}, &out, &errOut); err != nil {
+		if err := executeRoot(context.Background(), []string{"--help"}, &out, &errOut); err != nil {
 			t.Fatal(err)
 		}
 		if strings.Contains(out.String(), "\x1b[") {
@@ -137,7 +137,7 @@ func TestHelpAndErrorsHonorTerminalColorControls(t *testing.T) {
 
 func TestParseErrorsAreConcise(t *testing.T) {
 	var out, errOut bytes.Buffer
-	err := execute(context.Background(), []string{"--bad-flag"}, &out, &errOut)
+	err := executeRoot(context.Background(), []string{"--bad-flag"}, &out, &errOut)
 	if err == nil {
 		t.Fatal("invalid flag unexpectedly succeeded")
 	}
@@ -216,8 +216,8 @@ func TestLegacyHelpContract(t *testing.T) {
 		{[]string{"ping", "--help"}, []string{"-P", "--timeout-seconds", "Example:"}},
 	} {
 		var out, errOut bytes.Buffer
-		if err := execute(context.Background(), tc.args, &out, &errOut); err != nil {
-			t.Fatalf("execute(%v): %v", tc.args, err)
+		if err := executeRoot(context.Background(), tc.args, &out, &errOut); err != nil {
+			t.Fatalf("executeRoot(%v): %v", tc.args, err)
 		}
 		for _, want := range tc.wants {
 			if !strings.Contains(out.String(), want) {
@@ -258,7 +258,7 @@ func TestRunnableParentCommandsDispatch(t *testing.T) {
 	}
 
 	var providersOut, providersErr bytes.Buffer
-	if err := execute(context.Background(), []string{"--config", configPath, "providers"}, &providersOut, &providersErr); err != nil {
+	if err := executeRoot(context.Background(), []string{"--config", configPath, "providers"}, &providersOut, &providersErr); err != nil {
 		t.Fatalf("bare providers failed: %v", err)
 	}
 	if !strings.Contains(providersOut.String(), "PROVIDER") || !strings.Contains(providersOut.String(), "openai") {
@@ -266,7 +266,7 @@ func TestRunnableParentCommandsDispatch(t *testing.T) {
 	}
 
 	var routeOut, routeErr bytes.Buffer
-	if err := execute(context.Background(), []string{"--config", configPath, "route", "write a draft"}, &routeOut, &routeErr); err != nil {
+	if err := executeRoot(context.Background(), []string{"--config", configPath, "route", "write a draft"}, &routeOut, &routeErr); err != nil {
 		t.Fatalf("route query failed: %v", err)
 	}
 	for _, want := range []string{"intent:", "model:", "reason:"} {
@@ -288,20 +288,20 @@ func TestHistoricallyPermissiveLeavesIgnoreExtraArgs(t *testing.T) {
 		{"--config", missing, "ping", "extra"},
 	} {
 		var out, errOut bytes.Buffer
-		err := execute(context.Background(), args, &out, &errOut)
+		err := executeRoot(context.Background(), args, &out, &errOut)
 		if err == nil {
-			t.Errorf("execute(%v) unexpectedly succeeded with missing config", args)
+			t.Errorf("executeRoot(%v) unexpectedly succeeded with missing config", args)
 			continue
 		}
 		if strings.Contains(err.Error(), "unexpected argument") {
-			t.Errorf("execute(%v) rejected historically ignored argument: %v", args, err)
+			t.Errorf("executeRoot(%v) rejected historically ignored argument: %v", args, err)
 		}
 	}
 }
 
 func TestCompactShorthandAndExplicitDefaultDetection(t *testing.T) {
 	var out, errOut bytes.Buffer
-	if err := execute(context.Background(), []string{"models", "discover-free", "-Popenrouter", "--help"}, &out, &errOut); err != nil {
+	if err := executeRoot(context.Background(), []string{"models", "discover-free", "-Popenrouter", "--help"}, &out, &errOut); err != nil {
 		t.Fatalf("compact provider shorthand rejected: %v", err)
 	}
 	changed := presentFlags([]string{"prompt", "--models=free", "--fuse=false", "--fuse-models=zai/explicit"})
@@ -316,7 +316,7 @@ func TestExecutePropagatesCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	var out, errOut bytes.Buffer
-	err := execute(ctx, []string{"providers", "refresh"}, &out, &errOut)
+	err := executeRoot(ctx, []string{"providers", "refresh"}, &out, &errOut)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context cancellation, got %v", err)
 	}
@@ -344,7 +344,7 @@ func TestJobsRunCancelsInFlightRequest(t *testing.T) {
 	result := make(chan error, 1)
 	go func() {
 		var out, errOut bytes.Buffer
-		result <- execute(ctx, []string{"jobs", "run", "--server", server.URL, "--count", "1"}, &out, &errOut)
+		result <- executeRoot(ctx, []string{"jobs", "run", "--server", server.URL, "--count", "1"}, &out, &errOut)
 	}()
 
 	select {
@@ -382,7 +382,7 @@ func TestJobsStressPropagatesCancellation(t *testing.T) {
 	result := make(chan error, 1)
 	go func() {
 		var out, errOut bytes.Buffer
-		result <- execute(ctx, []string{"jobs", "stress", "--server", server.URL, "--jobs", "1", "--requests-per-job", "1"}, &out, &errOut)
+		result <- executeRoot(ctx, []string{"jobs", "stress", "--server", server.URL, "--jobs", "1", "--requests-per-job", "1"}, &out, &errOut)
 	}()
 	select {
 	case <-started:

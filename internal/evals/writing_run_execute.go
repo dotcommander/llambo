@@ -262,7 +262,7 @@ func runWritingJobs[T any](ctx context.Context, concurrency int, jobs []T, fn fu
 	}
 }
 
-func writingPromptDomains(record WritingPromptRecord) (string, string) {
+func writingPromptDomains(record WritingPromptRecord) (primary, secondary string) {
 	object, err := sourceObject(record.SourceRecord)
 	if err != nil {
 		return "", ""

@@ -73,7 +73,7 @@ func (e *fixtureWritingExecutor) Execute(ctx context.Context, call WritingExecut
 	return WritingExecutionResult{Content: "fixture response", Provider: call.Model.Provider, Model: call.Model.Model}, nil
 }
 
-func (e *fixtureWritingExecutor) stats() (int, int) {
+func (e *fixtureWritingExecutor) stats() (generations, judgments int) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.calls, e.maxActive

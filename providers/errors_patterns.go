@@ -9,19 +9,21 @@ package providers
 // not by modifying classification logic.
 // =============================================================================
 
-// HTTP status codes that indicate rate limiting or quota issues.
-// These are checked first before string pattern matching.
+// RateLimitStatusCodes lists HTTP status codes that indicate rate limiting or
+// quota issues. These are checked first before string pattern matching.
 var RateLimitStatusCodes = []int{
 	429, // Too Many Requests - standard rate limit response
 }
 
-// HTTP status codes that indicate authentication/authorization errors.
+// AuthErrorStatusCodes lists HTTP status codes that indicate authentication or
+// authorization errors.
 var AuthErrorStatusCodes = []int{
 	401, // Unauthorized - invalid or missing API key
 	403, // Forbidden - valid key but insufficient permissions
 }
 
-// HTTP status codes that indicate transient server errors worth retrying.
+// TransientStatusCodes lists HTTP status codes that indicate transient server
+// errors worth retrying.
 var TransientStatusCodes = []int{
 	502, // Bad Gateway - upstream server error
 	503, // Service Unavailable - server overloaded

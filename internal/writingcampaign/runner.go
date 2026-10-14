@@ -15,6 +15,7 @@ import (
 	"time"
 )
 
+// RunOptions controls one campaign invocation.
 type RunOptions struct {
 	RosterPath    string
 	SourcePath    string
@@ -28,6 +29,7 @@ type RunOptions struct {
 	Execute       bool
 }
 
+// Plan is the provider-free campaign plan.
 type Plan struct {
 	Models               int  `json:"models"`
 	InitialMaxTokens     int  `json:"initial_max_completion_tokens"`
@@ -35,6 +37,7 @@ type Plan struct {
 	Execute              bool `json:"execute"`
 }
 
+// BuildPlan validates the roster and computes the campaign plan.
 func BuildPlan(roster Roster, _, _ string, options RunOptions) (Plan, error) {
 	if options.InitialTokens < 1 || options.RetryTokens < options.InitialTokens {
 		return Plan{}, errors.New("token limits must be positive and retry limit must not be lower than initial limit")
@@ -58,7 +61,7 @@ func Run(ctx context.Context, client *Client, roster Roster, source, systemPromp
 	if strings.TrimSpace(client.APIKey) == "" {
 		return nil, plan, errors.New("OpenRouter API key is required")
 	}
-	if err := os.MkdirAll(options.OutputDir, 0o755); err != nil {
+	if err = os.MkdirAll(options.OutputDir, 0o750); err != nil { //nolint:gosec // reviewed directory mode
 		return nil, plan, fmt.Errorf("create output directory: %w", err)
 	}
 	sourceHash := contentHash(source)
@@ -166,6 +169,7 @@ func runModel(ctx context.Context, client *Client, model Model, source, systemPr
 	return receipt
 }
 
+// LoadReceipts loads all model receipts from a campaign output directory.
 func LoadReceipts(dir string) ([]Receipt, error) {
 	entries, err := os.ReadDir(dir)
 	if os.IsNotExist(err) {
@@ -204,7 +208,7 @@ func writeReceipt(dir string, receipt Receipt) error {
 
 func writeAtomic(path string, data []byte) error {
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil { //nolint:gosec // reviewed directory mode
 		return err
 	}
 	file, err := os.CreateTemp(dir, ".writing-*")

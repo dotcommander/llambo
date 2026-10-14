@@ -7,8 +7,9 @@ import (
 	whtypes "github.com/garyblankenship/wormhole/v3/types"
 )
 
-// The HTTP representation contains OpenAI function objects; Wormhole's neutral
-// fields stay internal to the ordered executor contract.
+// MarshalJSON renders the message in the OpenAI wire shape: tool calls become
+// OpenAI function objects while Wormhole's neutral fields stay internal to the
+// ordered executor contract.
 func (m Message) MarshalJSON() ([]byte, error) {
 	calls := make([]OpenAIToolCall, 0, len(m.ToolCalls))
 	for _, call := range m.ToolCalls {
@@ -30,6 +31,7 @@ func (m Message) MarshalJSON() ([]byte, error) {
 	}{m.Role, m.Content, calls, m.ToolCallID})
 }
 
+// UnmarshalJSON decodes the OpenAI wire shape into a Message.
 func (m *Message) UnmarshalJSON(data []byte) error {
 	var raw struct {
 		Role       string             `json:"role"`

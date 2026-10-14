@@ -30,7 +30,10 @@ type ResolvedTarget struct {
 	providers map[string]bool
 }
 
-func (t ResolvedTarget) Model() string           { return t.model }
+// Model returns the resolved target model, if any.
+func (t ResolvedTarget) Model() string { return t.model }
+
+// Allows reports whether a provider may serve the resolved target.
 func (t ResolvedTarget) Allows(name string) bool { return t.model == "" || t.providers[name] }
 func ResolveTarget(configs map[string]Config, model, embeddingDefault string) (ResolvedTarget, error) {
 	if model == "" {
@@ -71,7 +74,7 @@ type structuredRequestKey struct{}
 func structuredContext(ctx context.Context, r StructuredChatRequest) context.Context {
 	return context.WithValue(ctx, structuredRequestKey{}, cloneStructuredRequest(r))
 }
-func (r StructuredChatRequest) projection() (string, string) {
+func (r StructuredChatRequest) projection() (provider, model string) {
 	var b strings.Builder
 	for _, m := range r.Messages {
 		if m != nil {
@@ -108,6 +111,9 @@ func cloneStructuredMessages(in []whtypes.Message) []whtypes.Message {
 	}
 	return out
 }
+
+// ChatStructuredWithInfoContext executes a structured chat request against the
+// resolved target with full result info.
 func (p *OpenAIProvider) ChatStructuredWithInfoContext(ctx context.Context, r StructuredChatRequest, target ResolvedTarget) (ChatResult, error) {
 	if err := r.Validate(); err != nil {
 		return ChatResult{}, err
@@ -122,6 +128,9 @@ func (p *OpenAIProvider) ChatStructuredWithInfoContext(ctx context.Context, r St
 	outcome, err := coordinator.execute(ctx, plan, system, user, p.failoverCallback, p.executeChatAttempt)
 	return p.chatResultFromOutcome(outcome), err
 }
+
+// ChatStructuredStreamWithInfoContext streams a structured chat request
+// against the resolved target with full result info.
 func (p *OpenAIProvider) ChatStructuredStreamWithInfoContext(ctx context.Context, r StructuredChatRequest, target ResolvedTarget, onChunk ChatStreamHandler) (ChatResult, error) {
 	if err := r.Validate(); err != nil {
 		return ChatResult{}, err
@@ -151,6 +160,7 @@ func (c executionCoordinator) withTarget(t ResolvedTarget) executionCoordinator 
 	return c
 }
 
+// Validate checks the structured request's required fields.
 func (r StructuredChatRequest) Validate() error {
 	if len(r.Messages) == 0 {
 		return errors.New("messages must not be empty")

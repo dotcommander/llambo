@@ -63,7 +63,7 @@ func ResolveModelsDevKey(name string, cfg Config) string {
 // LoadGlobalConfig loads config from ~/.config/llambo/config.json
 // Fails fast if config file is missing - run 'llambo config init' first
 func LoadGlobalConfig() (*GlobalConfig, error) {
-	cfg, err := loadGlobalConfig()
+	cfg, err := readGlobalConfig()
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +104,7 @@ func LoadGlobalConfig() (*GlobalConfig, error) {
 	return cfg, nil
 }
 
-func loadGlobalConfig() (*GlobalConfig, error) {
+func readGlobalConfig() (*GlobalConfig, error) {
 	data, err := os.ReadFile(configFile)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -147,7 +147,7 @@ func loadGlobalConfig() (*GlobalConfig, error) {
 // when writing derived config files so secrets from the process environment are
 // not persisted accidentally.
 func LoadRawGlobalConfig() (*GlobalConfig, error) {
-	return loadGlobalConfig()
+	return readGlobalConfig()
 }
 
 // SaveGlobalConfig saves config to ~/.config/llambo/config.json
@@ -168,7 +168,7 @@ func validateProviderNames(configs map[string]Config) error {
 // Users can add/remove providers freely - provider list comes entirely from config.json
 func InitDefaultConfig() error {
 	providers := map[string]Config{
-		openai1: {
+		openai1: { //nolint:gosec // template placeholder keys, never real credentials
 			ProviderType: openai1,
 			BaseURL:      "https://api.openai.com",
 			Model:        "gpt-5.1-mini",
@@ -210,9 +210,9 @@ func InitDefaultConfig() error {
 			Priority:     3,
 			Enabled:      false,
 			RequiresKey:  true,
-			APIKey:       "YOUR_SYNTHETIC_API_KEY",
+			APIKey:       "YOUR_SYNTHETIC_API_KEY", //nolint:gosec // documented placeholder, never a real credential,
 		},
-		"zai": {
+		"zai": { //nolint:gosec // template placeholder keys, never real credentials
 			ProviderType: openai1,
 			BaseURL:      "https://api.z.ai/api/coding/paas/v4",
 			Model:        "GLM-5.2",

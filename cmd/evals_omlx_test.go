@@ -31,7 +31,7 @@ func TestEvalsOMLXShowsCachedSnapshotWithoutNetwork(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out, errOut bytes.Buffer
-	if err := execute(context.Background(), []string{"evals", "omlx"}, &out, &errOut); err != nil {
+	if err := executeRoot(context.Background(), []string{"evals", "omlx"}, &out, &errOut); err != nil {
 		t.Fatal(err)
 	}
 	rendered := out.String()
@@ -63,7 +63,7 @@ func TestEvalsOMLXLiveRejectsUnsafeAndIrrelevantFlagsBeforeWork(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			var out, errOut bytes.Buffer
-			err := execute(context.Background(), test.args, &out, &errOut)
+			err := executeRoot(context.Background(), test.args, &out, &errOut)
 			if err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -85,7 +85,7 @@ func TestEvalsSourcesRefreshRejectsUnknownAndConflictingFlags(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			var out, errOut bytes.Buffer
-			err := execute(context.Background(), test.args, &out, &errOut)
+			err := executeRoot(context.Background(), test.args, &out, &errOut)
 			if err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -99,7 +99,7 @@ func TestEvalsOMLXAndSourcesHelp(t *testing.T) {
 		{"evals", "sources", "refresh", "--help"},
 	} {
 		var out, errOut bytes.Buffer
-		if err := execute(context.Background(), args, &out, &errOut); err != nil {
+		if err := executeRoot(context.Background(), args, &out, &errOut); err != nil {
 			t.Fatal(err)
 		}
 		help := out.String()

@@ -157,7 +157,7 @@ func (cliOpts *invocationOptions) applyPromptUXDefaults(cmd *commandIO) {
 	}
 }
 
-func boolEnv(name string) (bool, bool) {
+func boolEnv(name string) (value, ok bool) {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv(name))) {
 	case "1", "true", yes1, "on":
 		return true, true
@@ -229,7 +229,7 @@ func writeResultsToFile(_ *commandIO, promptText string, results []PromptResult,
 	}
 
 	// Write buffer to file
-	if err := os.WriteFile(filePath, buf.Bytes(), 0644); err != nil {
+	if err := os.WriteFile(filePath, buf.Bytes(), 0644); err != nil { //nolint:gosec // reviewed file mode
 		return err
 	}
 

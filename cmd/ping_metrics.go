@@ -51,7 +51,7 @@ func recordPingCatalogHealth(ctx context.Context, results []PingResult) error {
 	if len(results) == 0 {
 		return nil
 	}
-	catPath, err := catalog.CatalogPath()
+	catPath, err := catalog.Path()
 	if err != nil {
 		return err
 	}
@@ -99,7 +99,7 @@ func writePingOutput(path string, results []PingResult) error {
 	if err != nil {
 		return fmt.Errorf("marshal results: %w", err)
 	}
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := os.WriteFile(path, data, 0644); err != nil { //nolint:gosec // reviewed file mode
 		return fmt.Errorf("write output: %w", err)
 	}
 	return nil

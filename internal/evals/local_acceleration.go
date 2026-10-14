@@ -21,16 +21,19 @@ const (
 	applicationJSON = "application/json"
 )
 
+// AccelerationChatClient performs one acceleration probe chat call.
 type AccelerationChatClient interface {
 	AccelerationChat(context.Context, AccelerationChatRequest) (AccelerationChatResponse, error)
 }
 
+// AccelerationChatRequest is one acceleration probe request body.
 type AccelerationChatRequest struct {
 	Model           string `json:"model"`
 	Prompt          string `json:"prompt"`
 	MaxOutputTokens int    `json:"max_output_tokens"`
 }
 
+// AccelerationChatResponse is the acceleration probe outcome.
 type AccelerationChatResponse struct {
 	Provider     string `json:"provider"`
 	Model        string `json:"model"`
@@ -46,6 +49,7 @@ type OMLXAccelerationChatClient struct {
 	Client  *http.Client
 }
 
+// AccelerationChat executes one bounded chat call against the OMLX server.
 func (c OMLXAccelerationChatClient) AccelerationChat(ctx context.Context, request AccelerationChatRequest) (AccelerationChatResponse, error) {
 	if strings.TrimSpace(request.Prompt) == "" || request.MaxOutputTokens < 1 {
 		return AccelerationChatResponse{}, errors.New("prompt and positive maximum output tokens are required")
@@ -107,6 +111,7 @@ func (c OMLXAccelerationChatClient) AccelerationChat(ctx context.Context, reques
 	return AccelerationChatResponse{Provider: "omlx", Model: firstNonEmpty(payload.Model, response.Header.Get("X-Llambo-Model")), Content: payload.Choices[0].Message.Content, OutputTokens: payload.Usage.CompletionTokens}, nil
 }
 
+// AccelerationConditionRecord is one ledgered off/on probe with its result.
 type AccelerationConditionRecord struct {
 	CaseID      string       `json:"case_id"`
 	MTPEnabled  bool         `json:"mtp_enabled"`
@@ -211,7 +216,7 @@ func (g OMLXSettingsGuard) WithMTPEnabled(ctx context.Context, enabled bool, run
 			err = errors.Join(err, errors.New("model settings changed concurrently during guarded run; refusing overwrite"))
 			return
 		}
-		if writeErr := os.WriteFile(g.Path, original, info.Mode().Perm()); writeErr != nil {
+		if writeErr := os.WriteFile(g.Path, original, info.Mode().Perm()); writeErr != nil { //nolint:gosec // user-supplied local CLI path by design
 			err = errors.Join(err, fmt.Errorf("restore model settings: %w", writeErr))
 			return
 		}
@@ -253,6 +258,7 @@ type AccelerationLocalExecutor struct {
 	warmed        map[bool]bool
 }
 
+// ExecuteLocal runs the guarded off/on acceleration pair for one case.
 func (e *AccelerationLocalExecutor) ExecuteLocal(ctx context.Context, _ LocalRunManifest, raw json.RawMessage) (LocalCall, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()

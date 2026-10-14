@@ -11,18 +11,23 @@ import (
 )
 
 const (
+	// QuarantineDuration is how long a health failure quarantines a model.
 	QuarantineDuration = 2 * time.Hour
-	SlowPingThreshold  = 5 * time.Second
+	// SlowPingThreshold is the latency above which a backend is marked slow.
+	SlowPingThreshold = 5 * time.Second
 )
 
+// CostStatus classifies a model's known pricing.
 type CostStatus string
 
+// Cost status values.
 const (
 	CostUnknown CostStatus = "unknown"
 	CostFree    CostStatus = free1
 	CostPaid    CostStatus = "paid"
 )
 
+// SelectorOptions controls model resolution filters and budget bounds.
 type SelectorOptions struct {
 	Selector           string
 	ProviderFilter     string
@@ -34,6 +39,8 @@ type SelectorOptions struct {
 	Blocklist          providers.Blocklist
 }
 
+// ModelTarget is one resolved provider/model pair with cost and quarantine
+// state.
 type ModelTarget struct {
 	Provider         string
 	Model            string

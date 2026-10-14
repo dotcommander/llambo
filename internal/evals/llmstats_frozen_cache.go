@@ -22,8 +22,8 @@ func llmStatsFrozenCohortArtifactPath(cacheDir string) string {
 func removeFrozenLLMStatsCohortResults(models []Model) {
 	for index := range models {
 		for benchmark := range frozenLLMStatsCohortPopulations {
-			if result := models[index].Benchmarks[benchmark]; result.SourceID == llmStatsBenchmarkResults {
-				delete(models[index].Benchmarks, benchmark)
+			if result := models[index].Benchmarks[benchmark]; result.SourceID == llmStatsBenchmarkResults { //nolint:gosec // index is range-bounded over models
+				delete(models[index].Benchmarks, benchmark) //nolint:gosec // bounded by construction
 			}
 		}
 	}

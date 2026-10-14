@@ -105,7 +105,7 @@ type pendingOMLXScores struct {
 // owns the terminal publish step so a failed validation, encoding, or report
 // write cannot replace the last known-good model-list state.
 func prepareOMLXScores(report *evals.Report, discovery evals.OMLXDiscovery, liveInventory bool) (pendingOMLXScores, error) {
-	path, err := catalog.CatalogPath()
+	path, err := catalog.Path()
 	if err != nil {
 		return pendingOMLXScores{}, err
 	}
@@ -323,11 +323,11 @@ func writeEvalsReportTo(errOut io.Writer, path string, data []byte) error {
 }
 
 func writeAtomicOutput(path string, data []byte) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil { //nolint:gosec // reviewed directory mode
 		return err
 	}
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	if err := os.WriteFile(tmp, data, 0o600); err != nil { //nolint:gosec // reviewed file mode
 		return err
 	}
 	if err := os.Rename(tmp, path); err != nil {

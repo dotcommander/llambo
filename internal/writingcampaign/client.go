@@ -12,6 +12,8 @@ import (
 	"time"
 )
 
+// Client executes campaign generation attempts against OpenRouter via
+// llambo.
 type Client struct {
 	HTTPClient *http.Client
 	BaseURL    string

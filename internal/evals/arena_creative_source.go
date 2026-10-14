@@ -16,6 +16,7 @@ const (
 	owner1 = "owner"
 )
 
+// Arena creative-writing source identity and fetch bounds.
 const (
 	ArenaCreativeSourceID = "arena-creative-writing"
 	maxArenaCreativeBody  = 32 << 20
@@ -38,7 +39,7 @@ func fetchArenaCreative(ctx context.Context, opts Options) (sourceSnapshot, erro
 	}
 	rows := categories["creative_writing"]
 	if len(rows) == 0 {
-		return sourceSnapshot{}, errors.New("Arena source has no creative_writing rows")
+		return sourceSnapshot{}, errors.New("arena source has no creative_writing rows")
 	}
 	sum := sha256.Sum256(body)
 	contentSHA := hex.EncodeToString(sum[:])
@@ -60,7 +61,7 @@ func fetchArenaCreative(ctx context.Context, opts Options) (sourceSnapshot, erro
 	for _, name := range names {
 		row := rows[name]
 		if !finite(row.Rating) || !finite(row.Lower) || !finite(row.Upper) || row.Lower > row.Upper {
-			return sourceSnapshot{}, fmt.Errorf("Arena model %q has invalid rating bounds", name)
+			return sourceSnapshot{}, fmt.Errorf("arena model %q has invalid rating bounds", name)
 		}
 		score := row.Rating
 		result := BenchmarkResult{Score: &score, Version: version, URL: opts.ArenaCreativeURL, CommitSHA: commit, ContentSHA: contentSHA, Method: "Arena human-preference Bradley-Terry creative_writing rating", FetchedAt: fetchedAt, Details: map[string]float64{"rating_q025": row.Lower, "rating_q975": row.Upper}, SourceClass: string(SourceOwnerResult), EvidenceGrade: owner1, Unit: "rating", Direction: higher1, Cohort: "arena-creative-writing-live", Locator: opts.ArenaCreativeURL, SourceID: ArenaCreativeSourceID, SourceRevision: version}

@@ -42,7 +42,7 @@ func routingProviderConfigs(configs map[string]providers.Config, routing provide
 		return enabled, nil
 	}
 
-	catalogPath, err := catalog.CatalogPath()
+	catalogPath, err := catalog.Path()
 	if err != nil {
 		return nil, err
 	}

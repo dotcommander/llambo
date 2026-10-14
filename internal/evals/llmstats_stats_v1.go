@@ -145,7 +145,7 @@ func fetchLLMStatsStatsV1Models(ctx context.Context, opts Options) ([]Model, [][
 			return nil, nil, err
 		}
 		if _, duplicate := seenCursors[cursor]; duplicate {
-			return nil, nil, fmt.Errorf("Stats v1 models repeated cursor %q", cursor)
+			return nil, nil, fmt.Errorf("stats v1 models repeated cursor %q", cursor)
 		}
 		seenCursors[cursor] = struct{}{}
 		data, err := getBytesWithBearer(ctx, opts.Client, endpoint, opts.LLMStatsAPIKey)
@@ -157,7 +157,7 @@ func fetchLLMStatsStatsV1Models(ctx context.Context, opts Options) ([]Model, [][
 			return nil, nil, fmt.Errorf("decode Stats v1 models page %d: %w", page, err)
 		}
 		if response.Total < 0 || (page == 1 && len(response.Models) == 0) {
-			return nil, nil, fmt.Errorf("Stats v1 models page %d has invalid pagination metadata", page)
+			return nil, nil, fmt.Errorf("stats v1 models page %d has invalid pagination metadata", page)
 		}
 		if err := writeSealed(sealedRevisionPath(filepath.Join(opts.CacheDir, "sealed", "llm-stats-stats-v1"), "models", data, ".json"), data); err != nil {
 			return nil, nil, err
@@ -168,7 +168,7 @@ func fetchLLMStatsStatsV1Models(ctx context.Context, opts Options) ([]Model, [][
 			break
 		}
 		if page >= 100 {
-			return nil, nil, errors.New("Stats v1 models pagination exceeded 100 pages")
+			return nil, nil, errors.New("stats v1 models pagination exceeded 100 pages")
 		}
 		cursor = response.NextCursor
 	}
@@ -176,13 +176,13 @@ func fetchLLMStatsStatsV1Models(ctx context.Context, opts Options) ([]Model, [][
 	seen := make(map[string]struct{}, len(rows))
 	for _, row := range rows {
 		if strings.TrimSpace(row.ID) == "" || strings.TrimSpace(row.Name) == "" || strings.TrimSpace(row.Organization.Name) == "" {
-			return nil, nil, errors.New("Stats v1 model row is malformed")
+			return nil, nil, errors.New("stats v1 model row is malformed")
 		}
 		if row.ModelType != llm1 {
 			continue
 		}
 		if _, duplicate := seen[row.ID]; duplicate {
-			return nil, nil, fmt.Errorf("Stats v1 models has duplicate id %q", row.ID)
+			return nil, nil, fmt.Errorf("stats v1 models has duplicate id %q", row.ID)
 		}
 		seen[row.ID] = struct{}{}
 		open := row.OpenWeight
@@ -197,7 +197,7 @@ func fetchLLMStatsStatsV1Models(ctx context.Context, opts Options) ([]Model, [][
 		})
 	}
 	if len(models) == 0 {
-		return nil, nil, errors.New("Stats v1 models returned no LLM rows")
+		return nil, nil, errors.New("stats v1 models returned no LLM rows")
 	}
 	return models, pages, nil
 }
@@ -337,7 +337,7 @@ func decodeLLMStatsStatsV1Benchmarks(data []byte) ([]llmStatsStatsV1Benchmark, e
 	}
 	for index, benchmark := range response.Benchmarks {
 		if strings.TrimSpace(benchmark.ID) == "" || strings.TrimSpace(benchmark.Name) == "" || benchmark.ModelCount < 0 {
-			return nil, fmt.Errorf("Stats v1 benchmark catalog row %d is malformed", index+1)
+			return nil, fmt.Errorf("stats v1 benchmark catalog row %d is malformed", index+1)
 		}
 	}
 	sort.Slice(response.Benchmarks, func(i, j int) bool {
@@ -357,7 +357,7 @@ func fetchLLMStatsStatsV1BenchmarkScores(ctx context.Context, opts Options, root
 			return nil, err
 		}
 		if _, duplicate := seenCursors[cursor]; duplicate {
-			return nil, fmt.Errorf("Stats v1 benchmark %s repeated cursor %q", benchmark.ID, cursor)
+			return nil, fmt.Errorf("stats v1 benchmark %s repeated cursor %q", benchmark.ID, cursor)
 		}
 		seenCursors[cursor] = struct{}{}
 		data, err := getBytesWithBearer(ctx, opts.Client, endpoint, opts.LLMStatsAPIKey)
@@ -369,7 +369,7 @@ func fetchLLMStatsStatsV1BenchmarkScores(ctx context.Context, opts Options, root
 			return nil, fmt.Errorf("decode Stats v1 benchmark %s page %d: %w", benchmark.ID, page, err)
 		}
 		if response.Total < 0 {
-			return nil, fmt.Errorf("Stats v1 benchmark %s page %d has invalid total", benchmark.ID, page)
+			return nil, fmt.Errorf("stats v1 benchmark %s page %d has invalid total", benchmark.ID, page)
 		}
 		digest := SealBytes(data)
 		pagePath := filepath.Join(root, SealBytes([]byte(benchmark.ID))[:16], fmt.Sprintf("%04d-%s.json", page, digest))
@@ -379,11 +379,11 @@ func fetchLLMStatsStatsV1BenchmarkScores(ctx context.Context, opts Options, root
 		for index, row := range response.Scores {
 			observation, err := llmStatsStatsV1Observation(row, benchmark, digest, endpoint, index, opts.Now)
 			if err != nil {
-				return nil, fmt.Errorf("Stats v1 benchmark %s page %d row %d: %w", benchmark.ID, page, index+1, err)
+				return nil, fmt.Errorf("stats v1 benchmark %s page %d row %d: %w", benchmark.ID, page, index+1, err)
 			}
 			if prior, duplicate := seenRows[observation.ModelID]; duplicate {
 				if prior != observation.RawScore {
-					return nil, fmt.Errorf("Stats v1 benchmark %s has conflicting scores for model %q", benchmark.ID, observation.ModelID)
+					return nil, fmt.Errorf("stats v1 benchmark %s has conflicting scores for model %q", benchmark.ID, observation.ModelID)
 				}
 				continue
 			}
@@ -394,19 +394,19 @@ func fetchLLMStatsStatsV1BenchmarkScores(ctx context.Context, opts Options, root
 			break
 		}
 		if page >= llmStatsStatsV1MaximumScorePagesPerBenchmark {
-			return nil, fmt.Errorf("Stats v1 benchmark %s pagination exceeded %d pages", benchmark.ID, llmStatsStatsV1MaximumScorePagesPerBenchmark)
+			return nil, fmt.Errorf("stats v1 benchmark %s pagination exceeded %d pages", benchmark.ID, llmStatsStatsV1MaximumScorePagesPerBenchmark)
 		}
 		cursor = response.NextCursor
 	}
 	if len(observations) == 0 {
-		return nil, fmt.Errorf("Stats v1 benchmark %s returned no unique score rows", benchmark.ID)
+		return nil, fmt.Errorf("stats v1 benchmark %s returned no unique score rows", benchmark.ID)
 	}
 	if len(observations) != benchmark.ModelCount {
 		observed := make([]string, 0, len(observations))
 		for _, observation := range observations {
 			observed = append(observed, observation.ModelID)
 		}
-		return nil, fmt.Errorf("Stats v1 benchmark %s returned %d unique models, catalog declared %d (observed: %s)", benchmark.ID, len(observations), benchmark.ModelCount, strings.Join(observed, ", "))
+		return nil, fmt.Errorf("stats v1 benchmark %s returned %d unique models, catalog declared %d (observed: %s)", benchmark.ID, len(observations), benchmark.ModelCount, strings.Join(observed, ", "))
 	}
 	return observations, nil
 }

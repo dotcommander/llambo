@@ -2,7 +2,6 @@ package providers
 
 import (
 	"errors"
-	"log/slog"
 	"math"
 	"sync/atomic"
 )
@@ -112,7 +111,7 @@ func (c executionCoordinator) selectWeightedProvider(enabled []providerInfo, tot
 	}
 
 	counter := atomic.AddUint64(c.counter, 1)
-	slot := int(counter % uint64(totalWeight))
+	slot := int(counter % uint64(totalWeight)) //nolint:gosec // modulo bounds value below totalWeight
 
 	cumulative := 0
 	for _, info := range enabled {
@@ -176,7 +175,7 @@ func (c executionCoordinator) plan(systemPrompt, userContent string, allowUnheal
 			}
 		}
 		if !isCanary {
-			slog.Warn("canary provider not available, falling back to normal routing", "canary", canary.Provider, "reason", "not in healthy backends")
+			chatLog().Warn("canary provider not available, falling back to normal routing", "canary", canary.Provider, "reason", "not in healthy backends")
 		}
 	}
 	if !isCanary {

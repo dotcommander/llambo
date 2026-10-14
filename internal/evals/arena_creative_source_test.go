@@ -29,7 +29,7 @@ func TestFetchArenaCreativeNormalizesOnlyCreativeWriting(t *testing.T) {
 }
 
 func TestNormalizeHTTPETag(t *testing.T) {
-	for input, want := range map[string]string{`"strong"`: "strong", `W/"weak"`: "weak", " plain ": "plain"} {
+	for input, want := range map[string]string{`"strong"`: "strong", `W/"weak"`: "weak", " plain ": "plain"} { //nolint:gocritic // fixture exercises whitespace trimming
 		if got := normalizeHTTPETag(input); got != want {
 			t.Errorf("normalizeHTTPETag(%q) = %q, want %q", input, got, want)
 		}

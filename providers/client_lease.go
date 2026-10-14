@@ -13,7 +13,8 @@ var (
 	// an attempt waits for its admission slot. The attempt did not reach the
 	// provider and must not affect breaker health.
 	ErrBackendUnavailable = errors.New("backend unavailable after admission")
-	ErrClientsClosed      = errors.New("provider clients are closed")
+	// ErrClientsClosed is returned when using clients after shutdown.
+	ErrClientsClosed = errors.New("provider clients are closed")
 )
 
 type clientGeneration struct {

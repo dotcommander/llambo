@@ -12,7 +12,7 @@ func recordPromptCatalogHealth(ctx context.Context, results []PromptResult) erro
 	if len(results) == 0 {
 		return nil
 	}
-	catPath, err := catalog.CatalogPath()
+	catPath, err := catalog.Path()
 	if err != nil {
 		return err
 	}

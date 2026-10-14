@@ -13,10 +13,12 @@ const localAdapterResponseLimit = 2 << 20
 // ToolChatClient is the deliberately narrow boundary for tool-use evaluation.
 // Production wiring owns protocol translation; this adapter owns only the
 // evaluation contract and rejects ambiguous served identities.
+// ToolChatClient performs one tool-use chat call.
 type ToolChatClient interface {
 	ToolChat(context.Context, ToolChatRequest) (ToolChatResponse, error)
 }
 
+// ToolChatRequest is one tool-use chat request body.
 type ToolChatRequest struct {
 	Model        string            `json:"model"`
 	Messages     []ToolChatMessage `json:"messages"`
@@ -24,23 +26,27 @@ type ToolChatRequest struct {
 	RequiredTool string            `json:"required_tool,omitempty"`
 }
 
+// ToolChatMessage is one message in a tool-use conversation.
 type ToolChatMessage struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
 }
 
+// ToolDefinition declares one callable tool.
 type ToolDefinition struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description,omitempty"`
 	Parameters  json.RawMessage `json:"parameters"`
 }
 
+// ToolChatUsage is token accounting for one tool call.
 type ToolChatUsage struct {
 	InputTokens  int `json:"input_tokens,omitempty"`
 	OutputTokens int `json:"output_tokens,omitempty"`
 	Known        bool
 }
 
+// ToolChatResponse is the tool-use chat outcome.
 type ToolChatResponse struct {
 	Provider  string        `json:"provider"`
 	Model     string        `json:"model"`
@@ -58,6 +64,7 @@ type ToolEvaluationRequest struct {
 	VerifiedServedModel string
 }
 
+// EvaluateToolCase executes one tool case and scores it.
 func EvaluateToolCase(ctx context.Context, client ToolChatClient, request ToolEvaluationRequest) (LocalCall, bool, error) {
 	if client == nil {
 		return LocalCall{}, false, errors.New("tool chat client is required")

@@ -21,15 +21,20 @@ const (
 	gemini1    = "gemini"
 )
 
+// chatLog returns a scoped logger bound to the current default handler, so
+// tests that replace slog.SetDefault stay observable. Package-level slog
+// calls are banned in functions that hold a request context.
+func chatLog() *slog.Logger { return slog.New(slog.Default().Handler()) }
+
 func noWormholeRetries() *int {
 	noRetries := 0
 	return &noRetries
 }
 
 func createProviderForConfigWithKey(name string, cfg Config, apiKey string) (whtypes.Provider, error) {
-	slog.Debug("provider client construction: entry", "provider", name, "model", cfg.Model, "provider_type", cfg.GetProviderType())
+	chatLog().Debug("provider client construction: entry", "provider", name, "model", cfg.Model, "provider_type", cfg.GetProviderType())
 	if apiKey == "" && cfg.GetRequiresKey() {
-		slog.Debug("provider client construction: exit", "provider", name, "model", cfg.Model, "outcome", "error")
+		chatLog().Debug("provider client construction: exit", "provider", name, "model", cfg.Model, "outcome", "error")
 		return nil, fmt.Errorf("no API key for %s", name)
 	}
 
@@ -51,16 +56,16 @@ func createProviderForConfigWithKey(name string, cfg Config, apiKey string) (wht
 	case anthropic1:
 		client := whanthropic.New(providerConfig)
 		client.BaseProvider = newBaseProvider(anthropic1, providerConfig)
-		slog.Debug("provider client construction: exit", "provider", name, "model", cfg.Model, "outcome", "success")
+		chatLog().Debug("provider client construction: exit", "provider", name, "model", cfg.Model, "outcome", "success")
 		return client, nil
 	case gemini1:
 		client := whgemini.New(apiKey, providerConfig)
-		slog.Debug("provider client construction: exit", "provider", name, "model", cfg.Model, "outcome", "success")
+		chatLog().Debug("provider client construction: exit", "provider", name, "model", cfg.Model, "outcome", "success")
 		return client, nil
 	default:
 		client := whopenai.New(providerConfig)
 		client.BaseProvider = newBaseProvider(openai1, providerConfig)
-		slog.Debug("provider client construction: exit", "provider", name, "model", cfg.Model, "outcome", "success")
+		chatLog().Debug("provider client construction: exit", "provider", name, "model", cfg.Model, "outcome", "success")
 		return client, nil
 	}
 }
@@ -118,7 +123,7 @@ func NormalizeOpenAIBaseURL(url string) string {
 
 	// Ensure /v1 suffix - SDK appends /chat/completions directly
 	if !strings.HasSuffix(url, "/v1") && !strings.HasSuffix(url, "/v4") {
-		url = url + "/v1"
+		url += "/v1"
 	}
 
 	return url

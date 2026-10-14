@@ -34,11 +34,12 @@ func applyChatResponse(result Attempt, model Model, decoded chatResponse) Attemp
 	result.Usage.PromptTokens = decoded.Usage.PromptTokens
 	result.Usage.CompletionTokens = decoded.Usage.CompletionTokens
 	result.Usage.TotalTokens = decoded.Usage.TotalTokens
-	if decoded.Usage.Cost != nil {
+	switch {
+	case decoded.Usage.Cost != nil:
 		result.Usage.CostUSD = *decoded.Usage.Cost
-	} else if model.DynamicRouting {
+	case model.DynamicRouting:
 		result.Error = "auto-router response omitted usage.cost"
-	} else if model.InputPer1M > 0 || model.OutputPer1M > 0 {
+	case model.InputPer1M > 0 || model.OutputPer1M > 0:
 		result.Usage.CostUSD = float64(result.Usage.PromptTokens)*model.InputPer1M/1_000_000 + float64(result.Usage.CompletionTokens)*model.OutputPer1M/1_000_000
 	}
 	if model.DynamicRouting && result.ServedModel == "" {

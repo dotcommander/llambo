@@ -26,7 +26,7 @@ const (
 
 func (cliOpts *invocationOptions) runModelsCatalog(cmd *commandIO, args []string) error {
 	out := cmd.OutOrStdout()
-	catPath, err := catalog.CatalogPath()
+	catPath, err := catalog.Path()
 	if err != nil {
 		return err
 	}
@@ -219,7 +219,7 @@ func runModelsCatalogImportQuality(cmd *commandIO, args []string) error {
 		return errors.New("quality import contains no records")
 	}
 
-	catPath, err := catalog.CatalogPath()
+	catPath, err := catalog.Path()
 	if err != nil {
 		return err
 	}
@@ -240,7 +240,7 @@ func runModelsCatalogImportQuality(cmd *commandIO, args []string) error {
 
 // mutateCatalogEntry loads, mutates one entry, and saves atomically.
 func mutateCatalogEntry(cmd *commandIO, providerName, modelID string, mutate func(*catalog.ModelEntry)) error {
-	catPath, err := catalog.CatalogPath()
+	catPath, err := catalog.Path()
 	if err != nil {
 		return err
 	}

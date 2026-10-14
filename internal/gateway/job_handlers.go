@@ -63,7 +63,7 @@ func validateJobBatch(requests []JobRequest) error {
 			return fmt.Errorf("requests[%d].messages is required", index)
 		}
 		for messageIndex, message := range request.Messages {
-			if strings.TrimSpace(message.Content) == "" && (message.Role != assistant1 || len(message.ToolCalls) <= 0) {
+			if strings.TrimSpace(message.Content) == "" && (message.Role != assistant1 || len(message.ToolCalls) == 0) {
 				return fmt.Errorf("requests[%d].messages[%d].content is required", index, messageIndex)
 			}
 		}

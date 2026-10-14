@@ -7,10 +7,13 @@ import (
 	"time"
 )
 
+// RoutingIntent classifies a request by task shape for intelligent routing.
 type RoutingIntent string
 
+// RoutingMode selects the optimization objective for routing.
 type RoutingMode string
 
+// Intent values classify requests; Mode values select routing objectives.
 const (
 	IntentChat       RoutingIntent = "chat"
 	IntentCode       RoutingIntent = "code"
@@ -24,6 +27,7 @@ const (
 	RoutingModeQuality  RoutingMode = "quality"
 )
 
+// CandidateScore is one routed provider's score and reason.
 type CandidateScore struct {
 	Provider string  `json:"provider"`
 	Model    string  `json:"model"`
@@ -31,6 +35,8 @@ type CandidateScore struct {
 	Reason   string  `json:"reason"`
 }
 
+// RouteDecision records the chosen backend and the scored candidates behind
+// it.
 type RouteDecision struct {
 	Mode       string           `json:"mode"`
 	Intent     RoutingIntent    `json:"intent"`
@@ -40,6 +46,7 @@ type RouteDecision struct {
 	IsCanary   bool             `json:"is_canary,omitempty"`
 }
 
+// DetectIntent infers a routing intent from prompt content.
 func DetectIntent(systemPrompt, userContent string) RoutingIntent {
 	text := strings.ToLower(systemPrompt + "\n" + userContent)
 	if strings.Contains(text, "```") || strings.Contains(text, "function") || strings.Contains(text, "golang") || strings.Contains(text, "python") || strings.Contains(text, "typescript") || strings.Contains(text, "debug") {
@@ -54,10 +61,12 @@ func DetectIntent(systemPrompt, userContent string) RoutingIntent {
 	return IntentChat
 }
 
+// EstimatePromptTokens approximates token count as a quarter of byte length.
 func EstimatePromptTokens(systemPrompt, userContent string) int {
 	return (len(systemPrompt) + len(userContent)) / 4
 }
 
+// NormalizeRoutingMode canonicalizes a routing mode, defaulting to balanced.
 func NormalizeRoutingMode(mode string) string {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
 	case string(RoutingModeFastest):
@@ -71,10 +80,14 @@ func NormalizeRoutingMode(mode string) string {
 	}
 }
 
+// ResolveDailyLimitInt64 resolves the provider's integer daily limit with
+// global fallback.
 func ResolveDailyLimitInt64(limits map[string]int64, provider string) (int64, bool) {
 	return resolveDailyLimit(limits, provider)
 }
 
+// ResolveDailyLimitFloat64 resolves the provider's float daily limit with
+// global fallback.
 func ResolveDailyLimitFloat64(limits map[string]float64, provider string) (float64, bool) {
 	return resolveDailyLimit(limits, provider)
 }

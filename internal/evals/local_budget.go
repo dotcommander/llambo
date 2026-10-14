@@ -34,6 +34,7 @@ type CampaignAttempt struct {
 	UpdatedAt        time.Time `json:"updated_at,omitempty"`
 }
 
+// CampaignBudget is the persisted campaign cost ledger with attempts.
 type CampaignBudget struct {
 	SchemaVersion   int               `json:"schema_version"`
 	MaxCostUSD      float64           `json:"max_cost_usd"`
@@ -88,6 +89,7 @@ func (o CampaignReservationOwner) sameIdentity(a CampaignAttempt) bool {
 	return a.RunIdentity == o.RunIdentity
 }
 
+// CampaignLedger owns the cross-process campaign budget file.
 type CampaignLedger struct {
 	path string
 	mu   sync.Mutex
@@ -95,6 +97,8 @@ type CampaignLedger struct {
 	Budget CampaignBudget
 }
 
+// OpenCampaignLedger opens or creates the campaign ledger with a maximum
+// campaign cost.
 func OpenCampaignLedger(path string, maxCost float64) (*CampaignLedger, error) {
 	if strings.TrimSpace(path) == "" {
 		return nil, errors.New("campaign ledger path is required")
@@ -131,6 +135,7 @@ func OpenCampaignLedger(path string, maxCost float64) (*CampaignLedger, error) {
 	return l, nil
 }
 
+// Remaining returns unspent, unreserved budget.
 func (l *CampaignLedger) Remaining() float64 {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -259,6 +264,7 @@ func (l *CampaignLedger) Admit(runID string, worstCase, maxRun float64) error {
 	return err
 }
 
+// Record settles a legacy run's observed cost and terminal status.
 func (l *CampaignLedger) Record(runID string, observed float64, status string) error {
 	return l.RecordOwned(CampaignReservationOwner{RunID: runID, RunIdentity: runID, AttemptID: "legacy-" + runID, OutputDir: "legacy-" + runID}, &observed, status)
 }
@@ -281,7 +287,7 @@ func (l *CampaignLedger) lockAndReload() (func(), error) {
 }
 
 func lockCampaignPath(path string) (func(), error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil { //nolint:gosec // reviewed directory mode
 		return nil, err
 	}
 	lock, err := os.OpenFile(path+".lock", os.O_CREATE|os.O_RDWR, 0o600)
@@ -299,7 +305,7 @@ func lockCampaignPath(path string) (func(), error) {
 }
 
 func (l *CampaignLedger) save() error {
-	if err := os.MkdirAll(filepath.Dir(l.path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(l.path), 0o750); err != nil { //nolint:gosec // reviewed directory mode
 		return err
 	}
 	b, err := json.MarshalIndent(l.Budget, "", "  ")

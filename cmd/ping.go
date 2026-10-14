@@ -32,6 +32,7 @@ type PingResult struct {
 	OutputCostPer1M float64           `json:"output_cost_per_1m,omitempty"`
 }
 
+// MarshalJSON renders the ping result in its stable report shape.
 func (r PingResult) MarshalJSON() ([]byte, error) {
 	type pingResultJSON struct {
 		Provider        string            `json:"provider"`
@@ -184,7 +185,7 @@ func (cliOpts *invocationOptions) loadPingTargetsWithIO(cmd *commandIO) ([]pingT
 			selector = free1
 		}
 		var catPath string
-		catPath, err = catalog.CatalogPath()
+		catPath, err = catalog.Path()
 		if err != nil {
 			return nil, providers.RoutingConfig{}, err
 		}

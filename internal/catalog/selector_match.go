@@ -71,7 +71,7 @@ func matchesSelector(selector, providerName, modelID string, m *ModelEntry, cost
 	}
 }
 
-func splitDirectSelector(selector string) (string, string, bool) {
+func splitDirectSelector(selector string) (provider, model string, direct bool) {
 	provider, model, ok := strings.Cut(strings.TrimSpace(selector), "/")
 	if !ok || strings.TrimSpace(provider) == "" || strings.TrimSpace(model) == "" {
 		return "", "", false

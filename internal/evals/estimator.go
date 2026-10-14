@@ -128,7 +128,7 @@ func estimateOMLXRows(rows []ReportModel, artifact estimatorArtifact) {
 	}
 }
 
-func estimatorValidation(target estimatorTarget, method string) (*float64, *float64) {
+func estimatorValidation(target estimatorTarget, method string) (minScore, maxScore *float64) {
 	if target.Support == 0 || target.Method == estimatorMethodPrior || method == "prior-only" {
 		return nil, nil
 	}

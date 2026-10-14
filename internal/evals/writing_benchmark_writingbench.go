@@ -8,18 +8,30 @@ import (
 	"strings"
 )
 
+// WritingBenchAdapter adapts sealed WritingBench prompts to the local
+// checklist-judge contract.
 type WritingBenchAdapter struct{}
 
-func (WritingBenchAdapter) ID() string            { return writingbench1 }
-func (WritingBenchAdapter) Version() string       { return "writingbench-checklist-v2" }
+// ID returns the adapter's source identifier.
+func (WritingBenchAdapter) ID() string { return writingbench1 }
+
+// Version returns the adapter contract version.
+func (WritingBenchAdapter) Version() string { return "writingbench-checklist-v2" }
+
+// ScoreIdentity returns the sealed score identity.
 func (WritingBenchAdapter) ScoreIdentity() string { return "writingbench/local-checklist" }
+
+// GenerationSettings pins deterministic generation.
 func (WritingBenchAdapter) GenerationSettings() WritingGenerationSettings {
 	return WritingGenerationSettings{}
 }
+
+// Iterations forces the checklist's fixed iteration count.
 func (WritingBenchAdapter) Iterations(requested int) (int, error) {
 	return singleWritingIteration(writingBench1, requested)
 }
 
+// ValidateRecord verifies the record against the sealed WritingBench source.
 func (a WritingBenchAdapter) ValidateRecord(record WritingPromptRecord) error {
 	object, err := sourceObject(record.SourceRecord)
 	if err != nil {
@@ -38,6 +50,7 @@ func (a WritingBenchAdapter) ValidateRecord(record WritingPromptRecord) error {
 	return nil
 }
 
+// Criteria derives checklist criteria from the record's sealed rubric.
 func (WritingBenchAdapter) Criteria(record WritingPromptRecord) ([]WritingCriterion, error) {
 	object, err := sourceObject(record.SourceRecord)
 	if err != nil {

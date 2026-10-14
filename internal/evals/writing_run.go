@@ -18,8 +18,12 @@ const (
 	maxWritingJudgmentAttempts   = 1
 )
 
+// ErrWritingRunIncomplete marks a run that finished with generation or
+// judgment failures.
 var ErrWritingRunIncomplete = errors.New("writing evaluation completed with failures")
 
+// LoadWritingPromptFile reads a sealed writing prompt file and returns its
+// records plus content digest.
 func LoadWritingPromptFile(path string) ([]WritingPromptRecord, string, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -91,6 +95,8 @@ func NewWritingRunManifest(inputPath, inputHash string, records []WritingPromptR
 	return manifest
 }
 
+// WritingRunIdentityHash returns the full hex digest of a writing run's
+// identity.
 func WritingRunIdentityHash(manifest WritingRunManifest) string {
 	identityJSON, _ := json.Marshal(normalizedWritingRunIdentity(manifest.Identity))
 	runHash := sha256.Sum256(identityJSON)

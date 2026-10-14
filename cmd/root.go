@@ -56,11 +56,13 @@ func optionalString(value string) []string {
 	return []string{value}
 }
 
+// Execute runs the llambo CLI with the given writers and returns the exit
+// error.
 func Execute(ctx context.Context, args []string, stdout, stderr io.Writer) error {
-	return execute(ctx, args, stdout, stderr)
+	return executeRoot(ctx, args, stdout, stderr)
 }
 
-func execute(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+func executeRoot(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if isVersionFlag(args) {
 		_, err := fmt.Fprintf(stdout, "llambo version %s\n", VersionString())
 		return err

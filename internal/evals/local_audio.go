@@ -19,6 +19,7 @@ import (
 
 const localAudioLimit = 32 << 20
 
+// OMLXAudioAdapter calls a local OMLX server's audio endpoints.
 type OMLXAudioAdapter struct {
 	BaseURL             string
 	APIKey              string
@@ -26,6 +27,7 @@ type OMLXAudioAdapter struct {
 	VerifiedServedModel string
 }
 
+// ASRAudioInput carries one WAV payload for transcription.
 type ASRAudioInput struct {
 	Case     ASRCase
 	WAVPath  string
@@ -33,6 +35,7 @@ type ASRAudioInput struct {
 	FileName string
 }
 
+// ASREvaluation is the scored outcome of one transcription.
 type ASREvaluation struct {
 	ServedModel    string
 	Transcript     string
@@ -110,6 +113,7 @@ func (a OMLXAudioAdapter) Transcribe(ctx context.Context, model string, input AS
 	return ASREvaluation{ServedModel: served, Transcript: payload.Text, WER: WordErrorRate(input.Case.Transcript, payload.Text), CER: CharErrorRate(input.Case.Transcript, payload.Text), Latency: elapsed, RealTimeFactor: elapsed.Seconds() / metadata.DurationSeconds, InputWAV: metadata, OutputRawJSON: append(json.RawMessage(nil), responseBody...)}, nil
 }
 
+// TTSSpeechRequest is the OMLX speech-synthesis request body.
 type TTSSpeechRequest struct {
 	Model  string `json:"model"`
 	Input  string `json:"input"`
@@ -117,15 +121,18 @@ type TTSSpeechRequest struct {
 	Format string `json:"response_format,omitempty"`
 }
 
+// TTSRoundTripper transcribes synthesized audio for round-trip scoring.
 type TTSRoundTripper interface {
 	TranscribeGeneratedAudio(context.Context, []byte) (string, error)
 }
 
+// OMLXTTSRoundTripper scores TTS output by transcribing it with ASR.
 type OMLXTTSRoundTripper struct {
 	Adapter OMLXAudioAdapter
 	Model   string
 }
 
+// TranscribeGeneratedAudio transcribes one synthesized WAV.
 func (r OMLXTTSRoundTripper) TranscribeGeneratedAudio(ctx context.Context, wav []byte) (string, error) {
 	result, err := r.Adapter.Transcribe(ctx, r.Model, ASRAudioInput{
 		Case: ASRCase{ID: "tts-round-trip", Transcript: "round trip transcription"},
@@ -137,6 +144,7 @@ func (r OMLXTTSRoundTripper) TranscribeGeneratedAudio(ctx context.Context, wav [
 	return result.Transcript, nil
 }
 
+// TTSEvaluation is the scored outcome of one synthesis round trip.
 type TTSEvaluation struct {
 	ServedModel        string
 	WAVBase64          string
@@ -145,6 +153,7 @@ type TTSEvaluation struct {
 	IntelligibilityWER *float64
 }
 
+// Synthesize generates speech and scores it through the round-tripper.
 func (a OMLXAudioAdapter) Synthesize(ctx context.Context, request TTSSpeechRequest, roundTrip TTSRoundTripper) (TTSEvaluation, error) {
 	if strings.TrimSpace(request.Model) == "" || strings.TrimSpace(request.Input) == "" {
 		return TTSEvaluation{}, errors.New("TTS model and input are required")

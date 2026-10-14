@@ -67,6 +67,7 @@ tr:last-child td { border-bottom:0; }
 </main></body></html>
 `))
 
+// RenderHTML writes the campaign comparison page.
 func RenderHTML(w io.Writer, roster Roster, receipts []Receipt, generated time.Time) error {
 	byModel := make(map[string]Receipt, len(receipts))
 	for _, receipt := range receipts {
@@ -98,6 +99,7 @@ func RenderHTML(w io.Writer, roster Roster, receipts []Receipt, generated time.T
 	return pageTemplate.Execute(w, pageData{Generated: generated.UTC().Format(time.RFC3339), Rows: rows})
 }
 
+// WriteHTML renders the comparison page to a file.
 func WriteHTML(path string, roster Roster, receipts []Receipt, generated time.Time) error {
 	var out bytes.Buffer
 	if err := RenderHTML(&out, roster, receipts, generated); err != nil {

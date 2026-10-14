@@ -77,6 +77,8 @@ var frozenReferenceMetrics = []string{
 	writingbenchDomain, writingbenchFormat, writingbenchLength, writingbenchOverall, writingbenchRequirements,
 }
 
+// FormulaReference freezes the reference population behind percentile
+// scoring.
 type FormulaReference struct {
 	FormulaVersion     string               `json:"formula_version"`
 	CreatedAt          time.Time            `json:"created_at"`
@@ -488,6 +490,7 @@ func frozenBenchmarkNames() []string {
 	return names
 }
 
+// FormulaReferenceSummary digests the reference for report diagnostics.
 type FormulaReferenceSummary struct {
 	CreatedAt          time.Time         `json:"created_at"`
 	AAVersion          float64           `json:"artificial_analysis_index_version"`
@@ -495,6 +498,7 @@ type FormulaReferenceSummary struct {
 	SourceFingerprints map[string]string `json:"source_fingerprints"`
 }
 
+// DriftDiagnostics reports drift between current and reference sources.
 type DriftDiagnostics struct {
 	Status              string            `json:"status"`
 	Reasons             []string          `json:"reasons,omitempty"`
@@ -555,6 +559,8 @@ func containsFrozenReferenceMetric(name string) bool {
 	return index < len(frozenReferenceMetrics) && frozenReferenceMetrics[index] == name
 }
 
+// GenerateFormulaReference renders the frozen reference population for the
+// fetch result.
 func GenerateFormulaReference(result Result) ([]byte, error) {
 	createdAt := time.Time{}
 	for _, source := range result.Sources {

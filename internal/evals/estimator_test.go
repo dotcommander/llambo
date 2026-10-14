@@ -30,7 +30,7 @@ func TestLLAMBO9EstimatorArtifactFingerprintAndCandidates(t *testing.T) {
 			t.Fatalf("unidentified training row: %#v", row)
 		}
 		for category, score := range row.Scores {
-			if !isCapabilityCategory(category) || !finite(score) || score < 0 || score > 100 {
+			if !validCapabilityCategory(category) || !finite(score) || score < 0 || score > 100 {
 				t.Fatalf("inadmissible training cell %s/%s=%v", row.Key, category, score)
 			}
 		}

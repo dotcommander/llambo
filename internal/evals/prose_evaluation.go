@@ -23,11 +23,13 @@ const (
 	targetReaderFit     = "target_reader_fit"
 )
 
+// Prose judge prompt and schema identity for the v2 six-dimension contract.
 const (
 	ProseEvaluationPromptVersion = "prose-evaluation-v2"
 	ProseEvaluationSchemaName    = "ProseEvaluation"
 )
 
+// ErrInvalidProseEvaluation wraps every judge-response validation failure.
 var (
 	ErrInvalidProseEvaluation = errors.New("invalid prose evaluation")
 	//go:embed prompts/prose-evaluation-system.txt
@@ -37,16 +39,22 @@ var (
 	proseRationalePattern = regexp.MustCompile(`^[^\s.!?](?:[^\r\n.!?]*[^\s.!?])?\.$`)
 )
 
+// ProseEvidenceSpan is a half-open byte range in the evaluated prose cited
+// as dimension evidence.
 type ProseEvidenceSpan struct {
 	Start int `json:"start"`
 	End   int `json:"end"`
 }
+
+// ProseDimensionEvaluation is the judge verdict for one dimension.
 type ProseDimensionEvaluation struct {
 	Score      int                 `json:"score"`
 	Applicable bool                `json:"applicable"`
 	Rationale  string              `json:"rationale"`
 	Evidence   []ProseEvidenceSpan `json:"evidence"`
 }
+
+// ProseEvaluation is the decoded six-dimension judge verdict.
 type ProseEvaluation struct {
 	DepthAndDevelopment ProseDimensionEvaluation `json:"depth_and_development"`
 	StructuralCoherence ProseDimensionEvaluation `json:"structural_coherence"`
@@ -56,17 +64,24 @@ type ProseEvaluation struct {
 	Mechanics           ProseDimensionEvaluation `json:"mechanics"`
 	Aggregate           ProseEvaluationAggregate `json:"-"`
 }
+
+// ProseEvaluationAggregate is the derived aggregate score with its mechanics
+// cap outcome.
 type ProseEvaluationAggregate struct {
 	Version              string  `json:"version"`
 	Score                float64 `json:"score"`
 	ApplicableDimensions int     `json:"applicable_dimensions"`
 	MechanicsCapApplied  bool    `json:"mechanics_cap_applied"`
 }
+
+// ProseEvaluationInput is the judge payload: task, reader profile, and prose.
 type ProseEvaluationInput struct {
 	Task          string `json:"task"`
 	ReaderProfile string `json:"reader_profile"`
 	Prose         string `json:"prose"`
 }
+
+// ProseJudgeRequest is a fully assembled structured-output judge call.
 type ProseJudgeRequest struct {
 	PromptVersion string
 	SchemaName    string
@@ -93,10 +108,12 @@ type proseEvaluationWire struct {
 	Mechanics           *proseDimensionWire `json:"mechanics"`
 }
 
+// ProseEvaluationSchema returns the embedded judge JSON schema.
 func ProseEvaluationSchema() json.RawMessage {
 	return append(json.RawMessage(nil), proseEvaluationSchema...)
 }
 
+// Validate requires non-whitespace task, reader profile, and prose.
 func (input ProseEvaluationInput) Validate() error {
 	for _, field := range []struct{ name, value string }{{task1, input.Task}, {"reader profile", input.ReaderProfile}, {"prose", input.Prose}} {
 		if strings.TrimSpace(field.value) == "" {
@@ -105,6 +122,9 @@ func (input ProseEvaluationInput) Validate() error {
 	}
 	return nil
 }
+
+// NewProseJudgeRequest validates input and assembles the judge request with
+// the pinned prompt version and schema.
 func NewProseJudgeRequest(input ProseEvaluationInput) (ProseJudgeRequest, error) {
 	if err := input.Validate(); err != nil {
 		return ProseJudgeRequest{}, err
@@ -119,6 +139,8 @@ func NewProseJudgeRequest(input ProseEvaluationInput) (ProseJudgeRequest, error)
 	return ProseJudgeRequest{PromptVersion: ProseEvaluationPromptVersion, SchemaName: ProseEvaluationSchemaName, SystemPrompt: strings.TrimSpace(proseEvaluationSystemPrompt), UserPayload: payload, JSONSchema: ProseEvaluationSchema()}, nil
 }
 
+// DecodeProseEvaluation strictly decodes a judge response, validates evidence
+// spans against the prose, and computes the aggregate.
 func DecodeProseEvaluation(raw []byte, prose string) (ProseEvaluation, error) {
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 {
@@ -187,6 +209,8 @@ func (wire proseEvaluationWire) evaluation() (ProseEvaluation, error) {
 	}
 	return ProseEvaluation{DepthAndDevelopment: depth, StructuralCoherence: structure, ProseCraft: craft, AntiRepetition: repetition, TargetReaderFit: reader, Mechanics: mechanics}, nil
 }
+
+// Dimensions lists the six dimension verdicts in stable order.
 func (e ProseEvaluation) Dimensions() []struct {
 	ID    string
 	Value ProseDimensionEvaluation

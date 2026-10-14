@@ -18,7 +18,7 @@ func (cliOpts *invocationOptions) runModelsDiscoverFree(cmd *commandIO, args []s
 	if err != nil {
 		return err
 	}
-	catPath, err := catalog.CatalogPath()
+	catPath, err := catalog.Path()
 	if err != nil {
 		return err
 	}

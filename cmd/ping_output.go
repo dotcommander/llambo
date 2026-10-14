@@ -102,11 +102,9 @@ func tokenizeWords(text string) []string {
 	for _, r := range lower {
 		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '-' || r == '/' || r == '.' {
 			buf.WriteRune(r)
-		} else {
-			if buf.Len() > 0 {
-				words = append(words, buf.String())
-				buf.Reset()
-			}
+		} else if buf.Len() > 0 {
+			words = append(words, buf.String())
+			buf.Reset()
 		}
 	}
 	if buf.Len() > 0 {

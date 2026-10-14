@@ -18,7 +18,7 @@ func CanonicalPath(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if _, err := os.Lstat(abs); err == nil {
+	if _, err = os.Lstat(abs); err == nil { //nolint:gosec // user-supplied local CLI path by design
 		var resolved string
 		resolved, err = filepath.EvalSymlinks(abs)
 		if err != nil {
@@ -29,7 +29,7 @@ func CanonicalPath(path string) (string, error) {
 		return "", err
 	}
 	dir := filepath.Dir(abs)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err = os.MkdirAll(dir, 0o750); err != nil { //nolint:gosec // reviewed directory mode
 		return "", err
 	}
 	resolved, err := filepath.EvalSymlinks(dir)
@@ -53,7 +53,7 @@ func WithLock(ctx context.Context, path string, apply func(string) error) error 
 	if err != nil {
 		return err
 	}
-	lock, err := os.OpenFile(path+".lock", os.O_CREATE|os.O_RDWR, 0o600)
+	lock, err := os.OpenFile(path+".lock", os.O_CREATE|os.O_RDWR, 0o600) //nolint:gosec // user-supplied local CLI path by design
 	if err != nil {
 		return err
 	}
@@ -96,7 +96,7 @@ func WriteAtomic(path string, data []byte, mode os.FileMode) error {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = os.Remove(tmp.Name()) }()
+	defer func() { _ = os.Remove(tmp.Name()) }() //nolint:gosec // user-supplied local CLI path by design
 	defer func() { _ = tmp.Close() }()
 	if err = tmp.Chmod(mode); err != nil {
 		return err
@@ -110,10 +110,10 @@ func WriteAtomic(path string, data []byte, mode os.FileMode) error {
 	if err = tmp.Close(); err != nil {
 		return err
 	}
-	if err := os.Rename(tmp.Name(), path); err != nil {
+	if err = os.Rename(tmp.Name(), path); err != nil { //nolint:gosec // user-supplied local CLI path by design
 		return err
 	}
-	d, err := os.Open(dir)
+	d, err := os.Open(dir) //nolint:gosec // user-supplied local CLI path by design
 	if err != nil {
 		return fmt.Errorf("file published but open directory: %w", err)
 	}

@@ -6,12 +6,16 @@ import (
 	"time"
 )
 
+// WritingRunSchemaVersion is the persisted manifest and report schema version
+// for local writing-benchmark runs.
 const (
 	WritingRunSchemaVersion        = 2
 	WritingJudgePromptVersion      = "local-writing-judge-combined-v1"
 	WritingGenerationPromptVersion = "local-writing-generation-v1"
 )
 
+// WritingModelSpec pins one evaluated model to an exact provider/model pair,
+// its per-million pricing, and the worker budget used during the run.
 type WritingModelSpec struct {
 	Provider        string  `json:"provider"`
 	Model           string  `json:"model"`
@@ -26,14 +30,20 @@ type WritingModelSpec struct {
 	EvidenceNote    string  `json:"external_evidence_note,omitempty"`
 }
 
+// ID returns the canonical "provider/model" selector for the spec.
 func (m WritingModelSpec) ID() string { return m.Provider + "/" + m.Model }
 
+// WritingGenerationSettings captures generation sampling controls and any
+// provider passthrough body applied to every writing call.
 type WritingGenerationSettings struct {
 	Temperature    float64        `json:"temperature"`
 	TemperatureSet bool           `json:"temperature_set,omitempty"`
 	ExtraBody      map[string]any `json:"extra_body,omitempty"`
 }
 
+// WritingRunIdentity is the sealed preconditions of a writing run: input
+// digest, benchmark and prompt versions, model roster, judge configuration,
+// and cost bounds. Two runs with equal identities are interchangeable.
 type WritingRunIdentity struct {
 	InputSHA256             string                    `json:"input_sha256"`
 	BenchmarkID             string                    `json:"benchmark_id"`
@@ -55,6 +65,8 @@ type WritingRunIdentity struct {
 	LocalUseCase            string                    `json:"local_use_case,omitempty"`
 }
 
+// WritingRunManifest is the durable start marker fsynced before any provider
+// call; it records run identity for restart and reconciliation.
 type WritingRunManifest struct {
 	SchemaVersion int                `json:"schema_version"`
 	RunID         string             `json:"run_id"`
@@ -63,6 +75,8 @@ type WritingRunManifest struct {
 	Identity      WritingRunIdentity `json:"identity"`
 }
 
+// WritingUsage records token accounting and dollar cost for one writing call,
+// with Known flags marking provider-reported gaps.
 type WritingUsage struct {
 	PromptTokens     int     `json:"prompt_tokens,omitempty"`
 	CompletionTokens int     `json:"completion_tokens,omitempty"`
@@ -75,6 +89,8 @@ type WritingUsage struct {
 	CostKnown        bool    `json:"cost_known,omitempty"`
 }
 
+// WritingCriterionJudgment is the judge verdict for one scoring criterion,
+// including the score, reasoning, applicability, and evidence spans.
 type WritingCriterionJudgment struct {
 	CriterionID string              `json:"criterion_id"`
 	Criterion   string              `json:"criterion"`
@@ -95,6 +111,8 @@ type WritingDispatchIntent struct {
 	DispatchedAt time.Time `json:"dispatched_at"`
 }
 
+// WritingGenerationRecord is one ledgered generation attempt for a prompt,
+// capturing served identity, latency, status, content digest, and usage.
 type WritingGenerationRecord struct {
 	Key               string       `json:"key"`
 	Attempt           int          `json:"attempt"`
@@ -120,6 +138,8 @@ type WritingGenerationRecord struct {
 	AccountingCostUSD float64      `json:"accounting_cost_usd,omitempty"`
 }
 
+// WritingJudgmentRecord is one ledgered judgment attempt over a generation,
+// capturing the judge identity, raw response, and per-criterion results.
 type WritingJudgmentRecord struct {
 	Key               string                     `json:"key"`
 	Attempt           int                        `json:"attempt"`
@@ -146,6 +166,8 @@ type WritingJudgmentRecord struct {
 	Results           []WritingCriterionJudgment `json:"results,omitempty"`
 }
 
+// WritingExecutionCall is the neutral generation request handed to a
+// WritingExecutor.
 type WritingExecutionCall struct {
 	Kind            string
 	Model           WritingModelSpec
@@ -155,6 +177,8 @@ type WritingExecutionCall struct {
 	Settings        WritingGenerationSettings
 }
 
+// WritingExecutionResult is the neutral generation outcome returned by a
+// WritingExecutor.
 type WritingExecutionResult struct {
 	Content      string
 	Provider     string
@@ -164,15 +188,20 @@ type WritingExecutionResult struct {
 	Usage        WritingUsage
 }
 
+// WritingExecutor performs one generation call, allowing tests to substitute
+// deterministic fixtures for live providers.
 type WritingExecutor interface {
 	Execute(context.Context, WritingExecutionCall) (WritingExecutionResult, error)
 }
 
+// WritingCriterion is one named scoring instruction applied by the judge.
 type WritingCriterion struct {
 	ID          string `json:"id"`
 	Description string `json:"description"`
 }
 
+// WritingRunPlan is the provider-free plan of a writing run: expected call
+// counts and the worst-case cost bound that gates execution.
 type WritingRunPlan struct {
 	BenchmarkID            string  `json:"benchmark_id"`
 	ScoreIdentity          string  `json:"score_identity"`
@@ -185,6 +214,7 @@ type WritingRunPlan struct {
 	WorstCaseCostUSD       float64 `json:"worst_case_cost_usd"`
 }
 
+// WritingScore is the aggregate model score with its judgment count.
 type WritingScore struct {
 	Provider  string  `json:"provider"`
 	Model     string  `json:"model"`
@@ -192,6 +222,8 @@ type WritingScore struct {
 	Judgments int     `json:"judgments"`
 }
 
+// WritingCriterionScore is one per-criterion observation contributing to a
+// model score.
 type WritingCriterionScore struct {
 	Provider    string              `json:"provider"`
 	Model       string              `json:"model"`
@@ -204,6 +236,7 @@ type WritingCriterionScore struct {
 	Reason      string              `json:"reason,omitempty"`
 }
 
+// WritingPromptScore is the per-prompt mean score for one model iteration.
 type WritingPromptScore struct {
 	Provider  string  `json:"provider"`
 	Model     string  `json:"model"`
@@ -215,6 +248,7 @@ type WritingPromptScore struct {
 	Judgments int     `json:"judgments"`
 }
 
+// WritingDomainScore aggregates prompt scores into a writing domain.
 type WritingDomainScore struct {
 	Provider string  `json:"provider"`
 	Model    string  `json:"model"`
@@ -223,6 +257,9 @@ type WritingDomainScore struct {
 	Prompts  int     `json:"prompts"`
 }
 
+// WritingRunReport is the final scored artifact of a writing run, covering
+// completeness counters, costs, and the score breakdowns by model, prompt,
+// domain, and criterion.
 type WritingRunReport struct {
 	SchemaVersion      int                      `json:"schema_version"`
 	RunID              string                   `json:"run_id"`
@@ -243,6 +280,7 @@ type WritingRunReport struct {
 	ModelAggregates    []WritingModelAggregate  `json:"model_aggregates,omitempty"`
 }
 
+// WritingModelDispersion summarizes score spread for one model.
 type WritingModelDispersion struct {
 	Provider           string  `json:"provider"`
 	Model              string  `json:"model"`
@@ -255,6 +293,8 @@ type WritingModelDispersion struct {
 	InsufficientSample bool    `json:"insufficient_sample"`
 }
 
+// WritingModelAggregate is the canonical per-model aggregate row exported for
+// downstream quality imports.
 type WritingModelAggregate struct {
 	Version       string  `json:"version"`
 	Provider      string  `json:"provider"`
@@ -264,6 +304,8 @@ type WritingModelAggregate struct {
 	MechanicsCaps int     `json:"mechanics_caps"`
 }
 
+// WritingRunReceipt is the sealed completion proof pairing requested and
+// served identities with the final report and artifact inventory.
 type WritingRunReceipt struct {
 	SchemaVersion   int               `json:"schema_version"`
 	RunID           string            `json:"run_id"`
@@ -279,6 +321,8 @@ type WritingRunReceipt struct {
 	Artifacts       map[string]string `json:"artifacts"`
 }
 
+// WritingQualityImportRecord is one externally reviewed score row accepted by
+// the guarded catalog quality-import path.
 type WritingQualityImportRecord struct {
 	Provider string  `json:"provider"`
 	Model    string  `json:"model"`
