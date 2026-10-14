@@ -2,3 +2,5 @@
 1e525e911e1bcb92cf26714baeee24f656d09321:internal/evals/projections.json:generic-api-key:117
 1e525e911e1bcb92cf26714baeee24f656d09321:internal/evals/projections.json:generic-api-key:124
 1e525e911e1bcb92cf26714baeee24f656d09321:internal/evals/projections.json:generic-api-key:131
+# Public EQBench benchmark/cache key, not an authentication credential.
+f994d2248077a80250145eec9811f639448bb452:internal/evals/reference.go:generic-api-key:19
