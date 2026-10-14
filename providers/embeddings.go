@@ -87,7 +87,7 @@ func selectEmbeddingProvider(configs map[string]Config) (Config, string) {
 
 	// Try openai or openai-type provider first
 	for _, entry := range entries {
-		if entry.Name == "openai" || entry.Config.ProviderType == "openai" {
+		if entry.Name == openai1 || entry.Config.ProviderType == openai1 {
 			return entry.Config, entry.Name
 		}
 	}
@@ -100,9 +100,9 @@ func selectEmbeddingProvider(configs map[string]Config) (Config, string) {
 	// Return defaults
 	return Config{
 		BaseURL:      "https://api.openai.com",
-		ProviderType: "openai",
+		ProviderType: openai1,
 		Enabled:      true,
-	}, "openai"
+	}, openai1
 }
 
 // NewOpenAIEmbeddingWithConfig creates an embedding provider with explicit config

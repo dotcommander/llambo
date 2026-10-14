@@ -38,7 +38,7 @@ func loadModelsDev(path string) (map[string]ModelCost, error) {
 		}
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	data, err := io.ReadAll(io.LimitReader(f, 16<<20))
 	if err != nil {

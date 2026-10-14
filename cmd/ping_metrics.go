@@ -18,10 +18,6 @@ func printPingPlan(out io.Writer, runCtx pingRunContext) {
 	fmt.Fprintf(out, "Pinging %d provider/model targets in parallel with prompt: %q\n\n", len(runCtx.Targets), runCtx.Prompt)
 }
 
-func (cliOpts *invocationOptions) executePingTargets(targets []pingTarget, prompt string) []PingResult {
-	return cliOpts.executePingTargetsContext(context.Background(), targets, prompt)
-}
-
 func (cliOpts *invocationOptions) executePingTargetsContext(ctx context.Context, targets []pingTarget, prompt string) []PingResult {
 	return runOrderedProviderGroups(targets, func(target pingTarget) string { return target.Name }, func(_ int, target pingTarget) PingResult {
 		timeout := cliOpts.pingTimeoutForProvider(target.Name)
@@ -40,7 +36,7 @@ func recordPingRoutingMetrics(results []PingResult, routing providers.RoutingCon
 	}
 	for _, result := range results {
 		recordPingResultMetric(store, result.Provider, result)
-		if strings.TrimSpace(strings.ToLower(routing.CatalogModels)) == "pinned" {
+		if strings.TrimSpace(strings.ToLower(routing.CatalogModels)) == pinned1 {
 			recordPingResultMetric(store, providers.ModelBackendName(result.Provider, result.Model), result)
 		}
 	}
@@ -107,13 +103,4 @@ func writePingOutput(path string, results []PingResult) error {
 		return fmt.Errorf("write output: %w", err)
 	}
 	return nil
-}
-
-// Scalar helpers retain their signatures with independent default options.
-func executePingTargetsContext(ctx context.Context, targets []pingTarget, prompt string) []PingResult {
-	return defaultInvocationOptions().executePingTargetsContext(ctx, targets, prompt)
-}
-
-func executePingTargets(targets []pingTarget, prompt string) []PingResult {
-	return defaultInvocationOptions().executePingTargets(targets, prompt)
 }

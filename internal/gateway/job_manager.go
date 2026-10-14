@@ -334,8 +334,11 @@ func (m *JobManager) Stats() (total, pending, processing, completed, failed, can
 			failed++
 		case JobStatusCancelled:
 			cancelled++
+		case JobStatusPartialFailure:
+			// Terminal with mixed per-request outcomes; counted as completed.
+			completed++
 		}
 		job.mu.RUnlock()
 	}
-	return
+	return total, pending, processing, completed, failed, cancelled
 }

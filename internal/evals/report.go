@@ -7,6 +7,11 @@ import (
 	"time"
 )
 
+// Repeated string literals consolidated by goconst.
+const (
+	matrix1 = "matrix"
+)
+
 const FormulaVersion = CategoryFormulaVersion
 
 type Report struct {
@@ -110,7 +115,7 @@ func BuildReport(result Result, rankBy string) (Report, error) {
 
 func BuildReportWithProjectionFile(result Result, rankBy, path string) (Report, error) {
 	if rankBy == "" {
-		rankBy = "matrix"
+		rankBy = matrix1
 	}
 	if !isSupportedProfile(rankBy) {
 		return Report{}, fmt.Errorf("unsupported ranking profile %q (supported: %s)", rankBy, strings.Join(SupportedRankingProfiles(), ", "))
@@ -129,7 +134,7 @@ func BuildReportWithProjectionFile(result Result, rankBy, path string) (Report, 
 				row.UnresolvedReasons[category.name] = categoryUnresolvedReasonWithContext(model, category, context)
 			}
 		}
-		for _, dimension := range []string{"speed", "price"} {
+		for _, dimension := range []string{speed1, price1} {
 			row.Scores[dimension] = operationalScore(model, dimension, reference)
 		}
 		rows[i] = row
@@ -165,14 +170,6 @@ func BuildReportWithProjectionFile(result Result, rankBy, path string) (Report, 
 	return Report{ReportSchemaVersion: 6, GeneratedAt: result.GeneratedAt, FormulaVersion: FormulaVersion, RankingProfile: rankBy, AAVersion: result.AAVersion, Sources: result.Sources, Projections: ProjectionDiagnostics{RegistrySource: projectionSource, Version: registry.Version, Configured: len(registry.Projections), Applied: len(registry.Projections) - len(missing), Missing: missing}, Formula: FormulaDiagnostics{Method: "LLAMBO-9 reviewed category registry; direct common frozen-cohort percentiles plus frozen calibrated OMLX-only gap estimates; evidence and estimates remain separate", Population: len(result.Models), Reference: FormulaReferenceSummary{CreatedAt: reference.CreatedAt, AAVersion: reference.AAVersion, SourceModelCounts: sourceModelCounts(result.Models), SourceFingerprints: sourceFingerprints(result.Models)}, Drift: evaluateReferenceDrift(driftModels, result.AAVersion, reference, currentReferenceValues(driftModels))}, CoverageCampaign: coverageCampaign, Models: rows, CategoryRankings: rankings}, nil
 }
 
-func categoryUnresolvedReason(model Model, category categorySpec) string {
-	context, err := loadScoringContext()
-	if err != nil {
-		return "frozen scoring context is unavailable"
-	}
-	return categoryUnresolvedReasonWithContext(model, category, context)
-}
-
 func categoryUnresolvedReasonWithContext(model Model, category categorySpec, context scoringContext) string {
 	for _, family := range category.families {
 		for _, benchmark := range family.benchmarks {
@@ -193,7 +190,7 @@ func categoryUnresolvedReasonWithContext(model Model, category categorySpec, con
 }
 
 func compareReportRows(left, right ReportModel, rankBy string) bool {
-	if rankBy == "matrix" {
+	if rankBy == matrix1 {
 		leftScored, rightScored := hasCapabilityScore(left), hasCapabilityScore(right)
 		if leftScored != rightScored {
 			return leftScored

@@ -9,8 +9,15 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
+)
+
+// Repeated string literals consolidated by goconst.
+const (
+	qualityImportJSON = "quality-import.json"
+	success1          = "success"
 )
 
 func BuildWritingRunReport(manifest WritingRunManifest, adapter WritingBenchmarkAdapter, generations []WritingGenerationRecord, judgments []WritingJudgmentRecord, complete bool) WritingRunReport {
@@ -23,7 +30,7 @@ func BuildWritingRunReport(manifest WritingRunManifest, adapter WritingBenchmark
 	}
 	for _, record := range generations {
 		report.ObservedCostUSD += record.Usage.CostUSD
-		if record.Status == "success" {
+		if record.Status == success1 {
 			report.Generations++
 		} else {
 			report.GenerationFailures++
@@ -41,7 +48,7 @@ func BuildWritingRunReport(manifest WritingRunManifest, adapter WritingBenchmark
 	promptGeneration := make(map[string]WritingGenerationRecord)
 	for _, record := range judgments {
 		report.ObservedCostUSD += record.Usage.CostUSD
-		if record.Status != "success" {
+		if record.Status != success1 {
 			report.JudgmentFailures++
 			continue
 		}
@@ -104,7 +111,7 @@ func BuildWritingRunReport(manifest WritingRunManifest, adapter WritingBenchmark
 	}
 	sort.Slice(report.CriterionScores, func(i, j int) bool {
 		a, b := report.CriterionScores[i], report.CriterionScores[j]
-		return strings.Join([]string{a.Provider, a.Model, a.PromptID, fmt.Sprint(a.Iteration), a.CriterionID}, "\x00") < strings.Join([]string{b.Provider, b.Model, b.PromptID, fmt.Sprint(b.Iteration), b.CriterionID}, "\x00")
+		return strings.Join([]string{a.Provider, a.Model, a.PromptID, strconv.Itoa(a.Iteration), a.CriterionID}, "\x00") < strings.Join([]string{b.Provider, b.Model, b.PromptID, strconv.Itoa(b.Iteration), b.CriterionID}, "\x00")
 	})
 	type domainAccumulator struct {
 		total float64
@@ -147,7 +154,7 @@ func buildProseScreenRunReport(report WritingRunReport, generations []WritingGen
 	byModel := map[string][]caseScore{}
 	for _, record := range judgments {
 		report.ObservedCostUSD += record.Usage.CostUSD
-		if record.Status != "success" {
+		if record.Status != success1 {
 			report.JudgmentFailures++
 			continue
 		}
@@ -192,11 +199,11 @@ func buildProseScreenRunReport(report WritingRunReport, generations []WritingGen
 	}
 	sort.Slice(report.PromptScores, func(i, j int) bool {
 		a, b := report.PromptScores[i], report.PromptScores[j]
-		return strings.Join([]string{a.Provider, a.Model, a.PromptID, fmt.Sprint(a.Iteration)}, "\x00") < strings.Join([]string{b.Provider, b.Model, b.PromptID, fmt.Sprint(b.Iteration)}, "\x00")
+		return strings.Join([]string{a.Provider, a.Model, a.PromptID, strconv.Itoa(a.Iteration)}, "\x00") < strings.Join([]string{b.Provider, b.Model, b.PromptID, strconv.Itoa(b.Iteration)}, "\x00")
 	})
 	sort.Slice(report.CriterionScores, func(i, j int) bool {
 		a, b := report.CriterionScores[i], report.CriterionScores[j]
-		return strings.Join([]string{a.Provider, a.Model, a.PromptID, fmt.Sprint(a.Iteration), a.CriterionID}, "\x00") < strings.Join([]string{b.Provider, b.Model, b.PromptID, fmt.Sprint(b.Iteration), b.CriterionID}, "\x00")
+		return strings.Join([]string{a.Provider, a.Model, a.PromptID, strconv.Itoa(a.Iteration), a.CriterionID}, "\x00") < strings.Join([]string{b.Provider, b.Model, b.PromptID, strconv.Itoa(b.Iteration), b.CriterionID}, "\x00")
 	})
 	return report
 }
@@ -230,7 +237,7 @@ func domainLabel(level, value string) string {
 
 func generationByKey(records []WritingGenerationRecord, key string) WritingGenerationRecord {
 	for i := len(records) - 1; i >= 0; i-- {
-		if records[i].Key == key && records[i].Status == "success" {
+		if records[i].Key == key && records[i].Status == success1 {
 			record := records[i]
 			if record.ActualProvider != "" {
 				record.Provider = record.ActualProvider
@@ -299,11 +306,11 @@ func RenderWritingRunMarkdown(report WritingRunReport) string {
 
 func WriteWritingRunArtifacts(dir string, manifest WritingRunManifest, adapter WritingBenchmarkAdapter, generations []WritingGenerationRecord, judgments []WritingJudgmentRecord, complete bool, now time.Time) (WritingRunReceipt, error) {
 	if _, err := os.Stat(filepath.Join(dir, "receipt.json")); err == nil {
-		return WritingRunReceipt{}, fmt.Errorf("completed writing output is immutable; use a new --output-dir")
+		return WritingRunReceipt{}, errors.New("completed writing output is immutable; use a new --output-dir")
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return WritingRunReceipt{}, err
 	}
-	for _, name := range []string{"report.json", "report.md", "quality-import.json"} {
+	for _, name := range []string{reportJSON1, reportMd, qualityImportJSON} {
 		if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
 			return WritingRunReceipt{}, fmt.Errorf("writing output has %s without a receipt; preserve it and use a new --output-dir", name)
 		} else if !errors.Is(err, os.ErrNotExist) {
@@ -336,9 +343,9 @@ func WriteWritingRunArtifacts(dir string, manifest WritingRunManifest, adapter W
 	}
 	qualityJSON = append(qualityJSON, '\n')
 	artifacts := map[string][]byte{
-		"report.json":         reportJSON,
-		"report.md":           reportMarkdown,
-		"quality-import.json": qualityJSON,
+		reportJSON1:       reportJSON,
+		reportMd:          reportMarkdown,
+		qualityImportJSON: qualityJSON,
 	}
 	hashes := make(map[string]string, len(artifacts))
 	for name, data := range artifacts {
@@ -348,7 +355,7 @@ func WriteWritingRunArtifacts(dir string, manifest WritingRunManifest, adapter W
 		sum := sha256.Sum256(data)
 		hashes[name] = hex.EncodeToString(sum[:])
 	}
-	for _, name := range []string{"manifest.json", "intents.jsonl", "generations.jsonl", "judgments.jsonl"} {
+	for _, name := range []string{manifestJSON, intentsJsonl, "generations.jsonl", "judgments.jsonl"} {
 		data, err := os.ReadFile(filepath.Join(dir, name))
 		if err != nil {
 			return WritingRunReceipt{}, fmt.Errorf("hash %s: %w", name, err)
@@ -356,9 +363,9 @@ func WriteWritingRunArtifacts(dir string, manifest WritingRunManifest, adapter W
 		sum := sha256.Sum256(data)
 		hashes[name] = hex.EncodeToString(sum[:])
 	}
-	status := "partial"
+	status := partial1
 	if complete && !report.PreScreenOnly {
-		status = "complete_quality"
+		status = completeQuality
 	} else if complete && report.PreScreenOnly {
 		status = "complete_pre_screen"
 	}
@@ -367,7 +374,7 @@ func WriteWritingRunArtifacts(dir string, manifest WritingRunManifest, adapter W
 		requested = append(requested, model.ID())
 	}
 	for _, record := range generations {
-		if record.Status == "success" {
+		if record.Status == success1 {
 			if record.ActualProvider != "" && record.ActualModel != "" {
 				served = append(served, record.ActualProvider+"/"+record.ActualModel)
 			} else {
@@ -376,7 +383,7 @@ func WriteWritingRunArtifacts(dir string, manifest WritingRunManifest, adapter W
 		}
 	}
 	for _, record := range judgments {
-		if record.Status == "success" {
+		if record.Status == success1 {
 			if record.ActualProvider != "" && record.ActualModel != "" {
 				servedJudges = append(servedJudges, record.ActualProvider+"/"+record.ActualModel)
 			} else {

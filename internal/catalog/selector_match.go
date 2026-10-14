@@ -9,6 +9,11 @@ import (
 	"github.com/dotcommander/llambo/providers"
 )
 
+// Repeated string literals consolidated by goconst.
+const (
+	configured1 = "configured"
+)
+
 func candidateModels(cat *Catalog, providerName string, cfg providers.Config, selectorRaw, selector string) []string {
 	if provider, model, ok := splitDirectSelector(selectorRaw); ok {
 		if !strings.EqualFold(provider, providerName) {
@@ -16,7 +21,7 @@ func candidateModels(cat *Catalog, providerName string, cfg providers.Config, se
 		}
 		return directSelectorCandidateModels(cat, providerName, cfg, model)
 	}
-	if selector == "configured" {
+	if selector == configured1 {
 		return configModels(cfg)
 	}
 	if policy, ok := categoryPolicyForSelector(selector); ok && policy.configuredOnly {
@@ -48,9 +53,9 @@ func matchesSelector(selector, providerName, modelID string, m *ModelEntry, cost
 	switch {
 	case directSelectorMatches(selector, providerName, modelID):
 		return true
-	case selector == "configured" || selector == "all":
+	case selector == configured1 || selector == "all":
 		return true
-	case selector == "free":
+	case selector == free1:
 		status, _, _ := modelCostStatusForEntry(costMap, providerName, modelID, m)
 		return status == CostFree
 	case selector == "pinned":

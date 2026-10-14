@@ -214,11 +214,6 @@ func lensIndex(index int) int {
 	return index % len(fusionDraftLenses)
 }
 
-// Scalar helpers retain their signatures with independent default options.
-func resolveFirstFusionTarget(selector string) (catalog.ModelTarget, error) {
-	return defaultInvocationOptions().resolveFirstFusionTarget(selector)
-}
-
 func promptTextForModel(promptText, systemPrompt string, index, total int, provider, model string) string {
 	return defaultInvocationOptions().promptTextForModel(promptText, systemPrompt, index, total, provider, model)
 }

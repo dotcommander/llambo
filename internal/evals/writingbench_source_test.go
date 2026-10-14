@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"fmt"
+	"encoding/hex"
 	"io"
 	"net/http"
 	"testing"
@@ -57,4 +57,4 @@ func TestMergeWritingBenchModelsRejectsAmbiguity(t *testing.T) {
 	}
 }
 
-func fmtSHA(sum [32]byte) string { return fmt.Sprintf("%x", sum) }
+func fmtSHA(sum [32]byte) string { return hex.EncodeToString(sum[:]) }

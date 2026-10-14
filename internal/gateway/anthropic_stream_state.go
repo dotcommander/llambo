@@ -10,6 +10,12 @@ import (
 	"github.com/dotcommander/llambo/providers"
 )
 
+// Repeated string literals consolidated by goconst.
+const (
+	index1 = "index"
+	text1  = "text"
+)
+
 func (s *anthropicStreamState) startTextBlock(w http.ResponseWriter, flusher http.Flusher) error {
 	if s.textStarted {
 		return nil
@@ -19,8 +25,8 @@ func (s *anthropicStreamState) startTextBlock(w http.ResponseWriter, flusher htt
 	s.nextIndex++
 	s.openBlocks = append(s.openBlocks, s.textIndex)
 	return writeAnthropicSSEEvent(w, flusher, "content_block_start", map[string]any{
-		"type": "content_block_start", "index": s.textIndex,
-		"content_block": map[string]any{"type": "text", "text": ""},
+		typeStr: "content_block_start", index1: s.textIndex,
+		"content_block": map[string]any{typeStr: text1, text1: ""},
 	})
 }
 
@@ -41,8 +47,8 @@ func (s *anthropicStreamState) ensureToolBlock(w http.ResponseWriter, flusher ht
 		name = fmt.Sprintf("tool_%d", delta.Index)
 	}
 	err := writeAnthropicSSEEvent(w, flusher, "content_block_start", map[string]any{
-		"type": "content_block_start", "index": idx,
-		"content_block": map[string]any{"type": "tool_use", "id": id, "name": name, "input": map[string]any{}},
+		typeStr: "content_block_start", index1: idx,
+		"content_block": map[string]any{typeStr: toolUse, "id": id, "name": name, "input": map[string]any{}},
 	})
 	return idx, err
 }
@@ -52,7 +58,7 @@ func (s *anthropicStreamState) stopAllBlocks(w http.ResponseWriter, flusher http
 	sort.Ints(indexes)
 	for _, idx := range indexes {
 		_ = writeAnthropicSSEEvent(w, flusher, "content_block_stop", map[string]any{
-			"type": "content_block_stop", "index": idx,
+			typeStr: "content_block_stop", index1: idx,
 		})
 	}
 }
@@ -123,8 +129,8 @@ func (s *anthropicStreamState) emitTextDelta(w http.ResponseWriter, flusher http
 		return err
 	}
 	return writeAnthropicSSEEvent(w, flusher, "content_block_delta", map[string]any{
-		"type": "content_block_delta", "index": s.textIndex,
-		"delta": map[string]any{"type": "text_delta", "text": text},
+		typeStr: "content_block_delta", index1: s.textIndex,
+		delta1: map[string]any{typeStr: "text_delta", text1: text},
 	})
 }
 

@@ -58,6 +58,10 @@ func sanitizeUpstreamError(err error) (errType, message string) {
 		return "auth", "Upstream provider authentication failed"
 	case providers.TransientError:
 		return "transient", "Upstream provider temporarily unavailable"
+	case providers.ConfigError:
+		return "config", "Upstream provider rejected the request configuration"
+	case providers.UnknownError:
+		return "upstream_error", "Upstream provider request failed"
 	default:
 		return "upstream_error", "Upstream provider request failed"
 	}
@@ -90,7 +94,7 @@ func writeErrorDetail(w http.ResponseWriter, status int, detail ErrorDetail) {
 
 func writeAnthropicError(w http.ResponseWriter, status int, requestID, message string) {
 	writeJSON(w, status, AnthropicErrorResponse{
-		Type: "error", Error: AnthropicErrorDetail{Type: anthropicErrorTypeFromStatus(status), Message: message}, RequestID: requestID,
+		Type: errorStr, Error: AnthropicErrorDetail{Type: anthropicErrorTypeFromStatus(status), Message: message}, RequestID: requestID,
 	})
 }
 

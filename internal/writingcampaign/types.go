@@ -2,6 +2,7 @@ package writingcampaign
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -125,10 +126,10 @@ func LoadRoster(path string) (Roster, error) {
 
 func (r Roster) Validate() error {
 	if r.SchemaVersion != 1 || !r.Locked {
-		return fmt.Errorf("roster must be locked schema version 1")
+		return errors.New("roster must be locked schema version 1")
 	}
 	if r.Policy.Provider != "openrouter" || r.Policy.LocalModelsAllowed || r.Policy.AliasesAllowed {
-		return fmt.Errorf("roster must require exact OpenRouter models without local routes or aliases")
+		return errors.New("roster must require exact OpenRouter models without local routes or aliases")
 	}
 	for name, path := range map[string]string{"source input": r.Assets.SourceInput, "system prompt": r.Assets.SystemPrompt, "comparison page": r.Assets.ComparisonPage, "raw output directory": r.Assets.RawOutputDir} {
 		if strings.TrimSpace(path) == "" || filepath.Clean(path) == "." {
@@ -165,7 +166,7 @@ func (r Roster) Validate() error {
 		}
 	}
 	if len(r.Models) == 0 {
-		return fmt.Errorf("roster has no models")
+		return errors.New("roster has no models")
 	}
 	return nil
 }

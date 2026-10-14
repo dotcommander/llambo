@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -18,6 +19,12 @@ import (
 	"github.com/dotcommander/llambo/providers"
 )
 
+// Repeated string literals consolidated by goconst.
+const (
+	omlx1 = "omlx"
+	ping1 = "ping"
+)
+
 var (
 	omlxDiscoveryHTTPClient = &http.Client{Timeout: 5 * time.Second}
 	fetchEvalsReport        = evals.Fetch
@@ -26,22 +33,22 @@ var (
 
 func (cliOpts *invocationOptions) runEvals(cmd *commandIO, _ []string) error {
 	if cliOpts.evalsOffline && cliOpts.evalsRefresh {
-		return fmt.Errorf("--offline and --refresh cannot be used together")
+		return errors.New("--offline and --refresh cannot be used together")
 	}
 	if cliOpts.evalsRefresh && cliOpts.evalsRefreshOfficialCards {
-		return fmt.Errorf("--refresh and --refresh-official-model-cards cannot be used together")
+		return errors.New("--refresh and --refresh-official-model-cards cannot be used together")
 	}
 	if cliOpts.evalsOffline && cliOpts.evalsRefreshOfficialCards {
-		return fmt.Errorf("--offline and --refresh-official-model-cards cannot be used together")
+		return errors.New("--offline and --refresh-official-model-cards cannot be used together")
 	}
 	if math.IsNaN(cliOpts.evalsMinScore) || math.IsInf(cliOpts.evalsMinScore, 0) || cliOpts.evalsMinScore < -1 || cliOpts.evalsMinScore > 100 {
-		return fmt.Errorf("--min-score must be between -1 and 100")
+		return errors.New("--min-score must be between -1 and 100")
 	}
 	if cliOpts.evalsMinScore >= 0 && !evals.IsCapabilityCategory(strings.ToLower(strings.TrimSpace(cliOpts.evalsRankBy))) {
-		return fmt.Errorf("--min-score requires a capability --rank-by category")
+		return errors.New("--min-score requires a capability --rank-by category")
 	}
 	if math.IsNaN(cliOpts.evalsMaxOutputPrice) || math.IsInf(cliOpts.evalsMaxOutputPrice, 0) || cliOpts.evalsMaxOutputPrice < -1 {
-		return fmt.Errorf("--max-output-price must be -1 or greater")
+		return errors.New("--max-output-price must be -1 or greater")
 	}
 	cacheDir := strings.TrimSpace(cliOpts.evalsCacheDir)
 	if cacheDir == "" {
@@ -143,7 +150,7 @@ func omlxConfiguredModelIDs(cfg *providers.GlobalConfig) []string {
 	if cfg == nil {
 		return nil
 	}
-	config, ok := cfg.Providers["omlx"]
+	config, ok := cfg.Providers[omlx1]
 	if !ok {
 		return nil
 	}
@@ -169,7 +176,7 @@ func omlxScoreInputs(report *evals.Report, cat *catalog.Catalog, costMap map[str
 	}
 	var pc *catalog.ProviderCatalog
 	if cat.Providers != nil {
-		pc = cat.Providers["omlx"]
+		pc = cat.Providers[omlx1]
 	}
 	byKey := make(map[string]evals.ReportModel, len(report.Models))
 	for _, row := range report.Models {
@@ -198,13 +205,13 @@ func omlxScoreInputs(report *evals.Report, cat *catalog.Catalog, costMap map[str
 			}
 			if entry.LastPing.Success {
 				if entry.LastPing.SpeedTokensPerSecond > 0 {
-					input.Observations = append(input.Observations, evals.OMLXOperationalObservation{Metric: "speed", Value: entry.LastPing.SpeedTokensPerSecond, Source: "ping", MeasuredAt: entry.LastPing.CheckedAt, Successful: true})
+					input.Observations = append(input.Observations, evals.OMLXOperationalObservation{Metric: "speed", Value: entry.LastPing.SpeedTokensPerSecond, Source: ping1, MeasuredAt: entry.LastPing.CheckedAt, Successful: true})
 				}
 				if entry.LastPing.LatencyMS > 0 {
-					input.Observations = append(input.Observations, evals.OMLXOperationalObservation{Metric: "latency", Value: float64(entry.LastPing.LatencyMS), Source: "ping", MeasuredAt: entry.LastPing.CheckedAt, Successful: true})
+					input.Observations = append(input.Observations, evals.OMLXOperationalObservation{Metric: "latency", Value: float64(entry.LastPing.LatencyMS), Source: ping1, MeasuredAt: entry.LastPing.CheckedAt, Successful: true})
 				}
 			}
-			status, _, output := catalog.CostForEntry(costMap, "omlx", key, entry)
+			status, _, output := catalog.CostForEntry(costMap, omlx1, key, entry)
 			if status != catalog.CostUnknown {
 				input.Observations = append(input.Observations, evals.OMLXOperationalObservation{Metric: "output-price", Value: output, Source: "catalog-pricing", TimestampUnknown: true, Benchmark: true})
 			}
@@ -264,11 +271,11 @@ func (cliOpts *invocationOptions) evalFetchOptions(cacheDir string) evals.Option
 
 func encodeEvalsReport(report evals.Report, format string, limit int) ([]byte, error) {
 	switch strings.ToLower(strings.TrimSpace(format)) {
-	case "markdown", "md":
+	case markdown1, "md":
 		return []byte(evals.RenderMarkdown(report, limit)), nil
 	case "html":
 		return []byte(evals.RenderHTML(report, limit)), nil
-	case "json":
+	case json1:
 		limited := limitEvalsModels(report.Models, limit)
 		report.Models = report.Models[:0]
 		report.ProjectedModels = nil
@@ -307,10 +314,6 @@ func limitEvalsModels(models []evals.ReportModel, limit int) []evals.ReportModel
 	return limited
 }
 
-func writeEvalsReport(path string, data []byte) error {
-	return writeEvalsReportTo(os.Stderr, path, data)
-}
-
 func writeEvalsReportTo(errOut io.Writer, path string, data []byte) error {
 	if err := writeAtomicOutput(path, data); err != nil {
 		return err
@@ -331,17 +334,4 @@ func writeAtomicOutput(path string, data []byte) error {
 		return err
 	}
 	return nil
-}
-
-// Scalar helpers retain their signatures with independent default options.
-func evalFetchOptions(cacheDir string) evals.Options {
-	return defaultInvocationOptions().evalFetchOptions(cacheDir)
-}
-
-func applyLiveOMLXDiscovery(cmd *commandIO, report *evals.Report) (evals.OMLXDiscovery, bool, error) {
-	return defaultInvocationOptions().applyLiveOMLXDiscovery(cmd, report)
-}
-
-func runEvals(cmd *commandIO, ignored1 []string) error {
-	return defaultInvocationOptions().runEvals(cmd, ignored1)
 }

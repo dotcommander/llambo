@@ -44,7 +44,7 @@ func (c *pingGeminiClient) Chat(ctx context.Context, systemPrompt, userContent s
 
 	result := &pingGeminiResult{
 		Content: strings.TrimSpace(resp.Text),
-		Model:   string(resp.Model),
+		Model:   resp.Model,
 	}
 	if resp.Usage != nil {
 		result.TokensIn = resp.Usage.PromptTokens

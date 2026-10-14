@@ -1,6 +1,7 @@
 package evals
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -178,7 +179,7 @@ func TestFetchCachedOnlyAttachesFrozenTargetsAndReportsMissingArtifact(t *testin
 
 func TestFrozenLLMStatsCohortStatusChangesReportFingerprint(t *testing.T) {
 	sealed := Report{Sources: []SourceStatus{frozenLLMStatsCohortStatus(nil)}}
-	unavailable := Report{Sources: []SourceStatus{frozenLLMStatsCohortStatus(fmt.Errorf("missing"))}}
+	unavailable := Report{Sources: []SourceStatus{frozenLLMStatsCohortStatus(errors.New("missing"))}}
 	if reportCacheFingerprint(sealed) == reportCacheFingerprint(unavailable) {
 		t.Fatal("sealed and unavailable frozen cohorts share a report fingerprint")
 	}

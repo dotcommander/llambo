@@ -17,19 +17,19 @@ func RenderHTML(report Report, limit int) string {
 	b.WriteString("<!doctype html><html><head><meta charset=\"utf-8\"><title>Llambo Score Matrix</title><style>body{font:15px system-ui;margin:2rem}table{border-collapse:collapse}th,td{border:1px solid #ccc;padding:.4rem;text-align:left}th{background:#eee}</style></head><body>")
 	fmt.Fprintf(&b, "<h1>Llambo Category Scores</h1><p>Formula <code>%s</code>; ranked by <code>%s</code>. Six independent category scores use frozen cached reference populations. Speed and price are operational-only.</p>", template.HTMLEscapeString(report.FormulaVersion), template.HTMLEscapeString(report.RankingProfile))
 	for _, source := range report.Sources {
-		if source.Cache == "stale" || (!source.FetchedAt.IsZero() && report.GeneratedAt.Sub(source.FetchedAt) > DefaultTTL) {
+		if source.Cache == stale1 || (!source.FetchedAt.IsZero() && report.GeneratedAt.Sub(source.FetchedAt) > DefaultTTL) {
 			fmt.Fprintf(&b, "<p><strong>Stale evidence:</strong> %s (%s) remains scoreable but lowers confidence.</p>", template.HTMLEscapeString(source.Name), template.HTMLEscapeString(source.FetchedAt.UTC().Format(time.RFC3339)))
 		}
 	}
 	b.WriteString("<table data-sortable=\"true\"><thead><tr><th>Model</th><th>Agents</th><th>Coding</th><th>Instruction Following</th><th>Long Context</th><th>Reasoning</th><th>Writing</th><th>Speed</th><th>Price</th></tr></thead><tbody>")
 	for _, row := range rows {
-		fmt.Fprintf(&b, "<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>", template.HTMLEscapeString(row.Name), formatLlambo(row.LlamboScores["agents"]), formatLlambo(row.LlamboScores["coding"]), formatLlambo(row.LlamboScores["instruction-following"]), formatLlambo(row.LlamboScores["long-context"]), formatLlambo(row.LlamboScores["reasoning"]), formatLlambo(row.LlamboScores["writing"]), formatOperational(row.Scores["speed"]), fmtOutputPrice(row))
+		fmt.Fprintf(&b, "<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>", template.HTMLEscapeString(row.Name), formatLlambo(row.LlamboScores[agents1]), formatLlambo(row.LlamboScores[coding1]), formatLlambo(row.LlamboScores[instructionFollowing]), formatLlambo(row.LlamboScores[longContext]), formatLlambo(row.LlamboScores[reasoning1]), formatLlambo(row.LlamboScores[writing1]), formatOperational(row.Scores[speed1]), fmtOutputPrice(row))
 	}
 	b.WriteString("</tbody></table>")
 	if len(projected) > 0 {
 		b.WriteString("<h2>Local projections</h2><p>Projected artifacts inherit reviewed upstream category evidence with explicit confidence calibration.</p><table><thead><tr><th>Model</th><th>Agents</th><th>Coding</th><th>Instruction Following</th><th>Long Context</th><th>Reasoning</th><th>Writing</th><th>Speed</th><th>Price</th></tr></thead><tbody>")
 		for _, row := range projected {
-			fmt.Fprintf(&b, "<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>", template.HTMLEscapeString(row.Name), formatLlambo(row.LlamboScores["agents"]), formatLlambo(row.LlamboScores["coding"]), formatLlambo(row.LlamboScores["instruction-following"]), formatLlambo(row.LlamboScores["long-context"]), formatLlambo(row.LlamboScores["reasoning"]), formatLlambo(row.LlamboScores["writing"]), formatOperational(row.Scores["speed"]), fmtOutputPrice(row))
+			fmt.Fprintf(&b, "<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>", template.HTMLEscapeString(row.Name), formatLlambo(row.LlamboScores[agents1]), formatLlambo(row.LlamboScores[coding1]), formatLlambo(row.LlamboScores[instructionFollowing]), formatLlambo(row.LlamboScores[longContext]), formatLlambo(row.LlamboScores[reasoning1]), formatLlambo(row.LlamboScores[writing1]), formatOperational(row.Scores[speed1]), fmtOutputPrice(row))
 		}
 		b.WriteString("</tbody></table>")
 	}

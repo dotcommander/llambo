@@ -36,12 +36,12 @@ func (m *jobRequestMetrics) addAll(results []gateway.JobResult) {
 	}
 }
 
-func printRequestLatencyStats(fmt commandPrinter, heading string, latencies []time.Duration) {
+func printRequestLatencyStats(printer commandPrinter, heading string, latencies []time.Duration) {
 	if len(latencies) == 0 {
 		return
 	}
 
-	fmt.Println(styles.Header.Render(heading))
+	printer.Println(styles.Header.Render(heading))
 	sort.Slice(latencies, func(i, j int) bool {
 		return latencies[i] < latencies[j]
 	})
@@ -61,16 +61,16 @@ func printRequestLatencyStats(fmt commandPrinter, heading string, latencies []ti
 		p99Idx = n - 1
 	}
 
-	fmt.Printf("  Min:     %s\n", latencies[0].Round(time.Millisecond))
-	fmt.Printf("  Average: %s\n", avg.Round(time.Millisecond))
-	fmt.Printf("  P50:     %s\n", latencies[n/2].Round(time.Millisecond))
-	fmt.Printf("  P95:     %s\n", latencies[p95Idx].Round(time.Millisecond))
-	fmt.Printf("  P99:     %s\n", latencies[p99Idx].Round(time.Millisecond))
-	fmt.Printf("  Max:     %s\n", latencies[n-1].Round(time.Millisecond))
-	fmt.Println()
+	printer.Printf("  Min:     %s\n", latencies[0].Round(time.Millisecond))
+	printer.Printf("  Average: %s\n", avg.Round(time.Millisecond))
+	printer.Printf("  P50:     %s\n", latencies[n/2].Round(time.Millisecond))
+	printer.Printf("  P95:     %s\n", latencies[p95Idx].Round(time.Millisecond))
+	printer.Printf("  P99:     %s\n", latencies[p99Idx].Round(time.Millisecond))
+	printer.Printf("  Max:     %s\n", latencies[n-1].Round(time.Millisecond))
+	printer.Println()
 }
 
-func printRequestBackendDistribution(fmt commandPrinter, backendCounts map[string]int, _ int) {
+func printRequestBackendDistribution(printer commandPrinter, backendCounts map[string]int, _ int) {
 	if len(backendCounts) == 0 {
 		return
 	}
@@ -79,7 +79,7 @@ func printRequestBackendDistribution(fmt commandPrinter, backendCounts map[strin
 	for _, count := range backendCounts {
 		total += count
 	}
-	fmt.Println(styles.Header.Render("Backend Distribution"))
+	printer.Println(styles.Header.Render("Backend Distribution"))
 	backends := make([]string, 0, len(backendCounts))
 	for backend := range backendCounts {
 		backends = append(backends, backend)
@@ -89,7 +89,7 @@ func printRequestBackendDistribution(fmt commandPrinter, backendCounts map[strin
 	for _, backend := range backends {
 		count := backendCounts[backend]
 		percentage := pct(count, total)
-		fmt.Printf("  %-15s %4d (%5.1f%%)\n", backend, count, percentage)
+		printer.Printf("  %-15s %4d (%5.1f%%)\n", backend, count, percentage)
 	}
-	fmt.Println()
+	printer.Println()
 }

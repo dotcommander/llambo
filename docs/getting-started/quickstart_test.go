@@ -111,12 +111,9 @@ func TestQuickstartProvidesWorkingApiCallExample(t *testing.T) {
 
 	// Check for at least one API call example that should work
 	// Either health endpoint or chat completion
-	hasWorkingExample := false
+	hasWorkingExample := strings.Contains(text, "curl http://localhost:8080/health")
 
 	// Health endpoint should always work
-	if strings.Contains(text, "curl http://localhost:8080/health") {
-		hasWorkingExample = true
-	}
 
 	// Or chat completion with local provider
 	if strings.Contains(text, "curl -X POST http://localhost:8080/v1/chat/completions") {
@@ -162,12 +159,9 @@ func TestQuickstartCanBeCompletedUnder5Minutes(t *testing.T) {
 
 	// Check guide doesn't require complex setup like installing LM Studio
 	// as a mandatory step
-	requiresComplexSetup := false
-	if strings.Contains(text, "Install and run [LM Studio]") &&
+	requiresComplexSetup := strings.Contains(text, "Install and run [LM Studio]") &&
 		!strings.Contains(text, "skip to Step 4") &&
-		!strings.Contains(text, "If you don't have") {
-		requiresComplexSetup = true
-	}
+		!strings.Contains(text, "If you don't have")
 
 	if requiresComplexSetup {
 		t.Error("quickstart.md requires complex setup (LM Studio) without providing alternative")

@@ -576,7 +576,7 @@ func TestWrappedProviderErrorUsesWormholeRetryMetadata(t *testing.T) {
 	source := whtypes.NewWormholeError(whtypes.ErrorCodeRateLimit, "slow down", true).
 		WithStatusCode(429).
 		WithRetryAfter(7 * time.Second)
-	wrapped := wrapProviderError(source, Config{Model: "test-model"})
+	wrapped := wrapProviderError(source)
 	require.Equal(t, 7*time.Second, wrapped.RetryAfter())
 }
 

@@ -4,14 +4,25 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
-	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
+
+// Repeated string literals consolidated by goconst.
+const (
+	completeQuality = "complete_quality"
+	partial1        = "partial"
+)
+
+const reportMd = "report.md"
+
+const manifestJSON = "manifest.json"
 
 type IdentityTracker struct {
 	requested string
@@ -27,7 +38,7 @@ func (t *IdentityTracker) Record(served string) error {
 	provider, model, ok := strings.Cut(served, "/")
 	requestedProvider, _, requestedOK := strings.Cut(t.requested, "/")
 	if !ok || !requestedOK || provider == "" || model == "" {
-		return fmt.Errorf("execution did not report served model identity")
+		return errors.New("execution did not report served model identity")
 	}
 	if provider != requestedProvider {
 		return fmt.Errorf("served provider %q differs from requested provider %q", provider, requestedProvider)
@@ -64,7 +75,7 @@ type LocalRunPlan struct {
 
 func PlanLocalRun(m LocalRunManifest, in LocalInputManifest) (LocalRunPlan, error) {
 	if m.Identity.Suite != in.Suite || m.Identity.SuiteVersion != in.Version || m.Identity.Limit < 1 || m.Identity.Limit > len(in.Cases) {
-		return LocalRunPlan{}, fmt.Errorf("manifest does not match sealed input")
+		return LocalRunPlan{}, errors.New("manifest does not match sealed input")
 	}
 	if err := m.Identity.Pricing.Validate(); err != nil {
 		return LocalRunPlan{}, err
@@ -73,7 +84,7 @@ func PlanLocalRun(m LocalRunManifest, in LocalInputManifest) (LocalRunPlan, erro
 		return LocalRunPlan{}, err
 	}
 	if m.Identity.MaxOutputTokens < 1 {
-		return LocalRunPlan{}, fmt.Errorf("positive maximum output tokens are required")
+		return LocalRunPlan{}, errors.New("positive maximum output tokens are required")
 	}
 	plan := LocalRunPlan{RunID: m.RunID, Suite: in.Suite, Cases: m.Identity.Limit, WorstCaseProviderCalls: m.Identity.Limit}
 	if in.Suite == LocalSuiteTTS && m.Identity.ReferenceModel != "" {
@@ -98,7 +109,7 @@ func PlanLocalRun(m LocalRunManifest, in LocalInputManifest) (LocalRunPlan, erro
 
 func RunLocalEvaluation(ctx context.Context, m LocalRunManifest, in LocalInputManifest, exec LocalExecutor) ([]LocalCall, error) {
 	if exec == nil {
-		return nil, fmt.Errorf("local executor is required")
+		return nil, errors.New("local executor is required")
 	}
 	if _, err := PlanLocalRun(m, in); err != nil {
 		return nil, err
@@ -110,7 +121,7 @@ func RunLocalEvaluation(ctx context.Context, m LocalRunManifest, in LocalInputMa
 		if err != nil {
 			return calls, err
 		}
-		call.CaseID = fmt.Sprintf("%d", i+1)
+		call.CaseID = strconv.Itoa(i + 1)
 		call.RequestedModel = m.Identity.RequestedModel
 		call.Input = append(json.RawMessage(nil), in.Cases[i]...)
 		call.At = time.Now().UTC()
@@ -133,7 +144,7 @@ func WriteLocalRunArtifacts(dir string, m LocalRunManifest, calls []LocalCall, r
 		report.RunID = m.RunID
 	}
 	if _, err := os.Stat(filepath.Join(dir, "receipt.json")); err == nil {
-		return LocalReceipt{}, fmt.Errorf("completed output directory is immutable; use a new --output-dir")
+		return LocalReceipt{}, errors.New("completed output directory is immutable; use a new --output-dir")
 	} else if !os.IsNotExist(err) {
 		return LocalReceipt{}, err
 	}
@@ -152,25 +163,25 @@ func WriteLocalRunArtifacts(dir string, m LocalRunManifest, calls []LocalCall, r
 	}
 	report.ServedModels = served.Served()
 	if len(calls) != m.Identity.Limit || len(report.Errors) > 0 {
-		report.Status = "partial"
+		report.Status = partial1
 	} else if report.Status == "" {
-		report.Status = "complete_quality"
+		report.Status = completeQuality
 	}
-	if err := writeJSON(filepath.Join(dir, "manifest.json"), m); err != nil {
+	if err := writeJSON(filepath.Join(dir, manifestJSON), m); err != nil {
 		return LocalReceipt{}, err
 	}
-	if err := writeCalls(filepath.Join(dir, "calls.jsonl"), calls); err != nil {
+	if err := writeCalls(filepath.Join(dir, callsJsonl), calls); err != nil {
 		return LocalReceipt{}, err
 	}
-	if err := writeJSON(filepath.Join(dir, "report.json"), report); err != nil {
+	if err := writeJSON(filepath.Join(dir, reportJSON1), report); err != nil {
 		return LocalReceipt{}, err
 	}
 	md := fmt.Sprintf("# Local evaluation %s\n\nStatus: %s\n\nScore (%s): %.6f\n", m.RunID, report.Status, report.ScoreIdentity, report.Score)
-	if err := os.WriteFile(filepath.Join(dir, "report.md"), []byte(md), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, reportMd), []byte(md), 0o644); err != nil {
 		return LocalReceipt{}, err
 	}
 	hashes := map[string]string{}
-	for _, name := range []string{"manifest.json", "calls.jsonl", "report.json", "report.md"} {
+	for _, name := range []string{manifestJSON, callsJsonl, reportJSON1, reportMd} {
 		b, e := os.ReadFile(filepath.Join(dir, name))
 		if e != nil {
 			return LocalReceipt{}, e
@@ -196,7 +207,7 @@ func writeCalls(path string, calls []LocalCall) error {
 	if e != nil {
 		return e
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	w := bufio.NewWriter(f)
 	for _, c := range calls {
 		b, e := json.Marshal(c)
@@ -226,7 +237,6 @@ func VerifyLocalReceipt(dir string) error {
 	}
 	return nil
 }
-func sortedStrings(v []string) []string { sort.Strings(v); return v }
 
 // HTTPJSONLocalExecutor is deliberately generic: an endpoint receives the raw
 // sealed case and returns a LocalCall-shaped JSON object. Provider adapters can
@@ -241,7 +251,7 @@ func (e HTTPJSONLocalExecutor) ExecuteLocal(ctx context.Context, _ LocalRunManif
 	if e2 != nil {
 		return LocalCall{}, e2
 	}
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", applicationJSON)
 	c := e.Client
 	if c == nil {
 		c = &http.Client{Timeout: 10 * time.Minute}
@@ -250,7 +260,7 @@ func (e HTTPJSONLocalExecutor) ExecuteLocal(ctx context.Context, _ LocalRunManif
 	if e2 != nil {
 		return LocalCall{}, e2
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 	if res.StatusCode < 200 || res.StatusCode > 299 {
 		return LocalCall{}, fmt.Errorf("local endpoint HTTP %d", res.StatusCode)
 	}

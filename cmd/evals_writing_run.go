@@ -37,7 +37,7 @@ type evalsWritingRunCommand struct {
 }
 
 func (c *evalsWritingRunCommand) Run(parent *evalsCommand, io *commandIO) error {
-	for _, name := range []string{"refresh", "refresh-official-model-cards", "format", "output", "export-prompts", "prompt-source", "prompt-limit", "discover-open-models", "discover-limit", "allow-partial", "rank-by", "offline", "projections", "min-score", "validation-receipts", "max-output-price", "omlx-url", "no-omlx"} {
+	for _, name := range []string{refresh1, refreshOfficialModelCards, format1, output1, exportPrompts1, promptSource1, promptLimit1, discoverOpenModels, discoverLimit1, "allow-partial", rankBy, offline1, "projections", minScore, validationReceipts, maxOutputPrice, omlxURL1, "no-omlx"} {
 		if io.FlagChanged(name) {
 			return fmt.Errorf("--%s is not supported with evals writing run", name)
 		}
@@ -56,38 +56,35 @@ func runWritingEvaluationCommand(cmd *commandIO, options *evalsWritingRunCommand
 		}
 	}
 	if limit < 1 || limit > 100 {
-		return fmt.Errorf("--limit must be between 1 and 100")
+		return errors.New("--limit must be between 1 and 100")
 	}
 	if options.Concurrency < 1 || options.Concurrency > 8 {
-		return fmt.Errorf("--concurrency must be between 1 and 8")
+		return errors.New("--concurrency must be between 1 and 8")
 	}
 	if options.Timeout <= 0 {
-		return fmt.Errorf("--timeout must be positive")
+		return errors.New("--timeout must be positive")
 	}
 	if options.JudgeTokens < 1 || options.JudgeTokens > 65536 {
-		return fmt.Errorf("--judge-max-output-tokens must be between 1 and 65536")
+		return errors.New("--judge-max-output-tokens must be between 1 and 65536")
 	}
 	if options.GenerationTokens < 0 || options.GenerationTokens > 65536 || (options.GenerationTokens == 0 && cmd.FlagChanged("generation-max-output-tokens")) {
-		return fmt.Errorf("--generation-max-output-tokens must be between 1 and 65536")
+		return errors.New("--generation-max-output-tokens must be between 1 and 65536")
 	}
 	if options.ThinkingBudget < 0 || options.ThinkingBudget > 65536 || (options.ThinkingBudget == 0 && cmd.FlagChanged("thinking-budget-tokens")) {
-		return fmt.Errorf("--thinking-budget-tokens must be between 1 and 65536")
+		return errors.New("--thinking-budget-tokens must be between 1 and 65536")
 	}
-	if options.ThinkingBudget > 0 && options.ReasoningEffort == "off" {
-		return fmt.Errorf("--thinking-budget-tokens cannot be combined with --reasoning-effort off")
+	if options.ThinkingBudget > 0 && options.ReasoningEffort == off1 {
+		return errors.New("--thinking-budget-tokens cannot be combined with --reasoning-effort off")
 	}
 	cleanOutputDir := filepath.Clean(options.OutputDir)
 	if cleanOutputDir == "." || strings.TrimSpace(options.OutputDir) == "" || filepath.Dir(cleanOutputDir) == cleanOutputDir {
-		return fmt.Errorf("--output-dir must be an explicit directory")
+		return errors.New("--output-dir must be an explicit directory")
 	}
 	adapter, err := evals.WritingAdapter(options.Benchmark)
 	if err != nil {
 		return err
 	}
-	judgeTokens, err := writingJudgeTokenCap(adapter, options.JudgeTokens, cmd.FlagChanged("judge-max-output-tokens"))
-	if err != nil {
-		return err
-	}
+	judgeTokens := writingJudgeTokenCap(adapter, options.JudgeTokens, cmd.FlagChanged("judge-max-output-tokens"))
 	iterations, err := adapter.Iterations(options.Iterations)
 	if err != nil {
 		return err
@@ -126,13 +123,13 @@ func runWritingEvaluationCommand(cmd *commandIO, options *evalsWritingRunCommand
 		return writeWritingDryRun(cmd.OutOrStdout(), manifest, plan)
 	}
 	if options.MaxRunCost <= 0 {
-		return fmt.Errorf("--execute requires a positive --max-run-cost")
+		return errors.New("--execute requires a positive --max-run-cost")
 	}
 	if options.MaxCampaignCost <= 0 {
-		return fmt.Errorf("--execute requires a positive --max-campaign-cost")
+		return errors.New("--execute requires a positive --max-campaign-cost")
 	}
 	if (strings.HasPrefix(options.Model, "omlx/") || strings.HasPrefix(options.JudgeModel, "omlx/")) && strings.TrimSpace(options.LocalUseCase) == "" {
-		return fmt.Errorf("local execution requires a specific --local-use-case")
+		return errors.New("local execution requires a specific --local-use-case")
 	}
 	if plan.WorstCaseCostUSD > options.MaxRunCost+1e-12 {
 		return fmt.Errorf("worst-case run estimate $%.6f exceeds --max-run-cost $%.6f", plan.WorstCaseCostUSD, options.MaxRunCost)
@@ -157,7 +154,7 @@ func runWritingEvaluationCommand(cmd *commandIO, options *evalsWritingRunCommand
 	}
 	executor, err := newCommandWritingExecutor(cmd.ErrOrStderr(), configs, options.Timeout)
 	if err != nil {
-		return errors.Join(err, store.Close(), ledger.RecordOwned(owner, nil, "partial"))
+		return errors.Join(err, store.Close(), ledger.RecordOwned(owner, nil, partial1))
 	}
 	defer executor.Close()
 	runErr := evals.RunWritingEvaluation(cmd.Context(), manifest, records, adapter, executor, store)
@@ -167,7 +164,7 @@ func runWritingEvaluationCommand(cmd *commandIO, options *evalsWritingRunCommand
 	receipt, artifactErr := evals.WriteWritingRunArtifacts(options.OutputDir, manifest, adapter, generations, judgments, complete, time.Now())
 	status := receipt.Status
 	if runErr != nil || closeErr != nil || artifactErr != nil {
-		status = "partial"
+		status = partial1
 	}
 	observedPtr := writingObservedCost(manifest, generations, judgments)
 	ledgerErr := ledger.RecordOwned(owner, observedPtr, status)
@@ -178,16 +175,11 @@ func runWritingEvaluationCommand(cmd *commandIO, options *evalsWritingRunCommand
 	return runErr
 }
 
-func writingJudgeTokenCap(adapter evals.WritingBenchmarkAdapter, requested int, explicit bool) (int, error) {
+func writingJudgeTokenCap(adapter evals.WritingBenchmarkAdapter, requested int, explicit bool) int {
 	if adapter.ID() == "prose-screen" && !explicit {
-		return evals.DefaultProseEvaluationMaxTokens, nil
+		return evals.DefaultProseEvaluationMaxTokens
 	}
-	return requested, nil
-}
-
-type writingCommandExecutor interface {
-	evals.WritingExecutor
-	Close()
+	return requested
 }
 
 func writingManifestRunID(manifest evals.WritingRunManifest) string {
@@ -246,7 +238,7 @@ func writeWritingDryRun(out io.Writer, manifest evals.WritingRunManifest, plan e
 
 func resolveWritingModels(modelSelectors []string, judgeSelector string, judgeMaxOutputTokens int, pricingFile string) ([]evals.WritingModelSpec, evals.WritingModelSpec, map[string]providers.Config, error) {
 	if len(modelSelectors) == 0 {
-		return nil, evals.WritingModelSpec{}, nil, fmt.Errorf("at least one exact --model is required")
+		return nil, evals.WritingModelSpec{}, nil, errors.New("at least one exact --model is required")
 	}
 	globalCfg, err := providers.LoadGlobalConfig()
 	if err != nil {

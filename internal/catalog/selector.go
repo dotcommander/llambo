@@ -19,7 +19,7 @@ type CostStatus string
 
 const (
 	CostUnknown CostStatus = "unknown"
-	CostFree    CostStatus = "free"
+	CostFree    CostStatus = free1
 	CostPaid    CostStatus = "paid"
 )
 
@@ -53,7 +53,7 @@ func ResolveModels(cat *Catalog, cfgs map[string]providers.Config, costMap map[s
 	selectorRaw := strings.TrimSpace(opts.Selector)
 	selector := strings.ToLower(selectorRaw)
 	if selector == "" {
-		selector = "configured"
+		selector = configured1
 		selectorRaw = selector
 	}
 

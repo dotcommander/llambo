@@ -7,6 +7,15 @@ import (
 	"github.com/dotcommander/llambo/providers"
 )
 
+// Repeated string literals consolidated by goconst.
+const (
+	delta1       = "delta"
+	errorStr     = "error"
+	message1     = "message"
+	stopSequence = "stop_sequence"
+	typeStr      = "type"
+)
+
 type anthropicStreamState struct {
 	messageID     string
 	model         string
@@ -77,15 +86,15 @@ func (s *Server) handleAnthropicMessagesStream(w http.ResponseWriter, r *http.Re
 		}
 		state.model = model
 		if err := writeAnthropicSSEEvent(w, flusher, "message_start", map[string]any{
-			"type": "message_start",
-			"message": map[string]any{
-				"id":            state.messageID,
-				"type":          "message",
-				"role":          "assistant",
-				"content":       []any{},
-				"model":         state.model,
-				"stop_reason":   nil,
-				"stop_sequence": nil,
+			typeStr: "message_start",
+			message1: map[string]any{
+				"id":          state.messageID,
+				typeStr:       message1,
+				"role":        assistant1,
+				"content":     []any{},
+				"model":       state.model,
+				"stop_reason": nil,
+				stopSequence:  nil,
 				"usage": map[string]any{
 					"input_tokens":  0,
 					"output_tokens": 0,
@@ -119,10 +128,10 @@ func (s *Server) handleAnthropicMessagesStream(w http.ResponseWriter, r *http.Re
 			}
 			if td.ArgumentsDelta != "" {
 				if err := writeAnthropicSSEEvent(w, flusher, "content_block_delta", map[string]any{
-					"type":  "content_block_delta",
-					"index": blockIdx,
-					"delta": map[string]any{
-						"type":         "input_json_delta",
+					typeStr: "content_block_delta",
+					index1:  blockIdx,
+					delta1: map[string]any{
+						typeStr:        "input_json_delta",
 						"partial_json": td.ArgumentsDelta,
 					},
 				}); err != nil {
@@ -167,11 +176,11 @@ func (s *Server) handleAnthropicMessagesStream(w http.ResponseWriter, r *http.Re
 			return
 		}
 		_, message := sanitizeUpstreamError(err)
-		_ = writeAnthropicSSEEvent(w, flusher, "error", map[string]any{
-			"type": "error",
-			"error": map[string]any{
-				"type":    anthropicErrorTypeFromStatus(anthropicStatusFromError(err)),
-				"message": message,
+		_ = writeAnthropicSSEEvent(w, flusher, errorStr, map[string]any{
+			typeStr: errorStr,
+			errorStr: map[string]any{
+				typeStr:  anthropicErrorTypeFromStatus(anthropicStatusFromError(err)),
+				message1: message,
 			},
 			"request_id": parsed.RequestID,
 		})
@@ -205,10 +214,10 @@ func (s *Server) handleAnthropicMessagesStream(w http.ResponseWriter, r *http.Re
 		outputTokens = result.Usage.CompletionTokens
 	}
 	_ = writeAnthropicSSEEvent(w, flusher, "message_delta", map[string]any{
-		"type": "message_delta",
-		"delta": map[string]any{
-			"stop_reason":   stopReason,
-			"stop_sequence": state.matchedStop,
+		typeStr: "message_delta",
+		delta1: map[string]any{
+			"stop_reason": stopReason,
+			stopSequence:  state.matchedStop,
 		},
 		"usage": map[string]any{
 			"input_tokens":  inputTokens,
@@ -216,5 +225,5 @@ func (s *Server) handleAnthropicMessagesStream(w http.ResponseWriter, r *http.Re
 		},
 		"x_provider": result.Provider,
 	})
-	_ = writeAnthropicSSEEvent(w, flusher, "message_stop", map[string]any{"type": "message_stop"})
+	_ = writeAnthropicSSEEvent(w, flusher, "message_stop", map[string]any{typeStr: "message_stop"})
 }

@@ -9,20 +9,26 @@ import (
 	"github.com/dotcommander/llambo/internal/evals"
 )
 
+// Repeated string literals consolidated by goconst.
+const (
+	defaultStr = "default"
+	off1       = "off"
+)
+
 func applyWritingReasoningSettings(settings *evals.WritingGenerationSettings, effort string, thinkingBudget int) {
-	if (effort == "" || effort == "default") && thinkingBudget == 0 {
+	if (effort == "" || effort == defaultStr) && thinkingBudget == 0 {
 		return
 	}
 	if settings.ExtraBody == nil {
 		settings.ExtraBody = make(map[string]any)
 	}
-	if effort == "off" {
-		settings.ExtraBody["reasoning_effort"] = "off"
+	if effort == off1 {
+		settings.ExtraBody["reasoning_effort"] = off1
 		settings.ExtraBody["thinking_budget"] = 0
 		setWritingThinkingEnabled(settings.ExtraBody, false)
 		return
 	}
-	if effort != "" && effort != "default" {
+	if effort != "" && effort != defaultStr {
 		settings.ExtraBody["reasoning_effort"] = effort
 	}
 	if thinkingBudget > 0 {
@@ -99,8 +105,8 @@ func geminiReasoningOverrides(overrides map[string]any, model string) map[string
 		thinking["thinkingBudget"] = budget
 	}
 	switch effort, _ := overrides["reasoning_effort"].(string); effort {
-	case "", "default":
-	case "off":
+	case "", defaultStr:
+	case off1:
 		for key, value := range geminiThinkingDisabled(model) {
 			thinking[key] = value
 		}

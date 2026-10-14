@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -16,7 +17,7 @@ import (
 func authoritativeLocalPricing(model string) (evals.LocalPricing, bool, error) {
 	providerName, modelID, ok := strings.Cut(strings.TrimSpace(model), "/")
 	if !ok || providerName == "" || modelID == "" {
-		return evals.LocalPricing{}, false, fmt.Errorf("model must be exact provider/model")
+		return evals.LocalPricing{}, false, errors.New("model must be exact provider/model")
 	}
 	costMap, err := costs.LoadAll()
 	if err != nil {
@@ -29,7 +30,7 @@ func authoritativeLocalPricing(model string) (evals.LocalPricing, bool, error) {
 	if err != nil {
 		// A local, explicitly-zero OMLX run may use an isolated config home. Do
 		// not turn absent configuration into an invented hosted price.
-		return evals.LocalPricing{}, false, nil
+		return evals.LocalPricing{}, false, nil //nolint:nilerr // unknown pricing by design for isolated eval homes
 	}
 	cfg, ok := config.Providers[providerName]
 	if !ok || (cfg.InputCostPM == 0 && cfg.OutputCostPM == 0) {

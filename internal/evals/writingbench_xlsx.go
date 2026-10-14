@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -43,13 +44,13 @@ func ParseWritingBenchXLSX(data []byte) ([]WritingBenchScore, error) {
 		return nil, err
 	}
 	if len(rows) == 0 {
-		return nil, fmt.Errorf("WritingBench XLSX has no rows")
+		return nil, errors.New("WritingBench XLSX has no rows")
 	}
 	headers := normalizeXLSXHeaders(rows[0])
 	modelColumn, hasModel := headers["model"]
 	overallColumn, hasOverall := headers["overall"]
 	if !hasModel || !hasOverall {
-		return nil, fmt.Errorf("WritingBench XLSX requires Model and Overall headers")
+		return nil, errors.New("WritingBench XLSX requires Model and Overall headers")
 	}
 	organizationColumn, hasOrganization := headers["organization"]
 	results := make([]WritingBenchScore, 0, len(rows)-1)
@@ -85,7 +86,7 @@ func ParseWritingBenchXLSX(data []byte) ([]WritingBenchScore, error) {
 		results = append(results, WritingBenchScore{Model: model, Organization: organization, Result: BenchmarkResult{Score: &overall, Details: details}})
 	}
 	if len(results) == 0 {
-		return nil, fmt.Errorf("WritingBench XLSX has no scored models")
+		return nil, errors.New("WritingBench XLSX has no scored models")
 	}
 	return results, nil
 }
@@ -124,7 +125,7 @@ func readXLSXSharedStrings(reader *zip.Reader) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open XLSX shared strings: %w", err)
 	}
-	defer stream.Close()
+	defer func() { _ = stream.Close() }()
 	var document xlsxSharedStrings
 	if err := xml.NewDecoder(io.LimitReader(stream, 16<<20)).Decode(&document); err != nil {
 		return nil, fmt.Errorf("decode XLSX shared strings: %w", err)
@@ -148,7 +149,7 @@ func firstXLSXWorksheet(reader *zip.Reader) (*zip.File, error) {
 	}
 	sort.Slice(files, func(i, j int) bool { return path.Base(files[i].Name) < path.Base(files[j].Name) })
 	if len(files) == 0 {
-		return nil, fmt.Errorf("WritingBench XLSX has no worksheet")
+		return nil, errors.New("WritingBench XLSX has no worksheet")
 	}
 	return files[0], nil
 }
@@ -158,7 +159,7 @@ func readXLSXRows(file *zip.File, shared []string) ([][]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open XLSX worksheet: %w", err)
 	}
-	defer stream.Close()
+	defer func() { _ = stream.Close() }()
 	var sheet xlsxWorksheet
 	if err := xml.NewDecoder(io.LimitReader(stream, 32<<20)).Decode(&sheet); err != nil {
 		return nil, fmt.Errorf("decode XLSX worksheet: %w", err)

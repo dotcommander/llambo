@@ -31,7 +31,7 @@ func categoryPolicyFor(category string) categoryPolicy {
 	}
 
 	switch normalized {
-	case "free":
+	case free1:
 		policy.matches = func(providerName, modelID string, m *ModelEntry, costMap map[string]costs.ModelCost, _ time.Time) bool {
 			status, _, _ := modelCostStatusForEntry(costMap, providerName, modelID, m)
 			return status == CostFree

@@ -10,7 +10,7 @@ import (
 func buildTextRequest(ctx context.Context, cfg Config, systemPrompt, userContent string) whtypes.TextRequest {
 	messages := []whtypes.Message{whtypes.NewUserMessage(userContent)}
 	switch cfg.GetProviderType() {
-	case "anthropic", "gemini":
+	case anthropic1, gemini1:
 	default:
 		messages = append([]whtypes.Message{whtypes.NewSystemMessage(systemPrompt)}, messages...)
 	}

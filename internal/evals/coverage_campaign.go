@@ -4,6 +4,7 @@ import (
 	"bytes"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -73,7 +74,7 @@ func loadCoverageCampaignManifest() (coverageCampaignManifest, error) {
 	}
 	manifest.TargetVersion = strings.TrimSpace(manifest.TargetVersion)
 	if manifest.TargetVersion == "" || len(manifest.Targets) != 11 {
-		return coverageCampaignManifest{}, fmt.Errorf("coverage campaign must declare a target version and exactly 11 targets")
+		return coverageCampaignManifest{}, errors.New("coverage campaign must declare a target version and exactly 11 targets")
 	}
 	seen := make(map[string]struct{}, len(manifest.Targets))
 	for i := range manifest.Targets {
@@ -105,7 +106,7 @@ func loadCoverageCampaignManifest() (coverageCampaignManifest, error) {
 
 func validCoverageStatus(status string) bool {
 	switch status {
-	case "present", "research-pending", "source-absent", "identity-ambiguous", "inapplicable", "externally-blocked":
+	case present1, "research-pending", "source-absent", "identity-ambiguous", "inapplicable", "externally-blocked":
 		return true
 	default:
 		return false
@@ -136,7 +137,7 @@ func buildCoverageCampaign(rows []ReportModel) (*CoverageCampaign, error) {
 	if len(campaign.Unresolved) == 0 {
 		campaign.Status = "complete"
 	} else {
-		campaign.Status = "blocked"
+		campaign.Status = blocked1
 	}
 	sort.Slice(campaign.Unresolved, func(i, j int) bool {
 		if campaign.Unresolved[i].ModelKey == campaign.Unresolved[j].ModelKey {

@@ -32,11 +32,11 @@ const (
 	chatRetryWithoutNativeStops
 )
 
-func decideChatRetry(err error, cfg Config, attempt, maxRetries int, usedNativeStops, emitted bool) (chatRetryAction, error) {
+func decideChatRetry(err error, attempt, maxRetries int, usedNativeStops, emitted bool) (chatRetryAction, error) {
 	if usedNativeStops && !emitted && isUnsupportedStopError(err) {
 		return chatRetryWithoutNativeStops, nil
 	}
-	wrapped := wrapProviderError(err, cfg)
+	wrapped := wrapProviderError(err)
 	if emitted || !IsRetryable(wrapped) || attempt >= maxRetries {
 		return chatRetryStop, wrapped
 	}
@@ -73,7 +73,7 @@ func executeChatRequestWithIdentity(
 		usedNativeStops = false
 	}
 	start := time.Now()
-	slog.Debug("provider chat request: entry", "provider", cfg.GetProviderType(), "model", cfg.Model)
+	slog.DebugContext(ctx, "provider chat request: entry", "provider", cfg.GetProviderType(), "model", cfg.Model)
 
 	var lastErr error
 	for attempt := 0; attempt <= reqConfig.MaxRetries; attempt++ {
@@ -88,11 +88,11 @@ func executeChatRequestWithIdentity(
 			if err != nil {
 				outcome = "error"
 			}
-			slog.Debug("provider chat request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", outcome)
+			slog.DebugContext(ctx, "provider chat request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", outcome)
 			return content, usageOrEstimate(usage, systemPrompt, userContent, content), finishReason, toolCalls, identity, err
 		}
 
-		action, wrapped := decideChatRetry(err, cfg, attempt, reqConfig.MaxRetries, usedNativeStops, false)
+		action, wrapped := decideChatRetry(err, attempt, reqConfig.MaxRetries, usedNativeStops, false)
 		if action == chatRetryWithoutNativeStops {
 			request.Stop = nil
 			usedNativeStops = false
@@ -105,12 +105,12 @@ func executeChatRequestWithIdentity(
 			break
 		}
 		if err := waitChatBackoff(ctx, reqConfig, attempt); err != nil {
-			slog.Debug("provider chat request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "error")
+			slog.DebugContext(ctx, "provider chat request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "error")
 			return "", nil, "", nil, chatResponseIdentity{}, err
 		}
 	}
 
-	slog.Debug("provider chat request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", reqConfig.MaxRetries, "outcome", "error")
+	slog.DebugContext(ctx, "provider chat request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", reqConfig.MaxRetries, "outcome", "error")
 	return "", nil, "", nil, chatResponseIdentity{}, lastErr
 }
 
@@ -142,7 +142,7 @@ func executeChatStreamRequestWithIdentity(
 		usedNativeStops = false
 	}
 	start := time.Now()
-	slog.Debug("provider chat stream request: entry", "provider", cfg.GetProviderType(), "model", cfg.Model)
+	slog.DebugContext(ctx, "provider chat stream request: entry", "provider", cfg.GetProviderType(), "model", cfg.Model)
 
 	var lastErr error
 	for attempt := 0; attempt <= reqConfig.MaxRetries; attempt++ {
@@ -154,7 +154,7 @@ func executeChatStreamRequestWithIdentity(
 		stream, err := client.Stream(attemptCtx, attemptRequest)
 		if err != nil {
 			cancel()
-			action, wrapped := decideChatRetry(err, cfg, attempt, reqConfig.MaxRetries, usedNativeStops, false)
+			action, wrapped := decideChatRetry(err, attempt, reqConfig.MaxRetries, usedNativeStops, false)
 			if action == chatRetryWithoutNativeStops {
 				request.Stop = nil
 				usedNativeStops = false
@@ -163,11 +163,11 @@ func executeChatStreamRequestWithIdentity(
 			}
 			lastErr = wrapped
 			if action == chatRetryStop {
-				slog.Debug("provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "error")
+				slog.DebugContext(ctx, "provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "error")
 				return "", nil, "", nil, false, chatResponseIdentity{}, lastErr
 			}
 			if err := waitChatBackoff(ctx, reqConfig, attempt); err != nil {
-				slog.Debug("provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "error")
+				slog.DebugContext(ctx, "provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "error")
 				return "", nil, "", nil, false, chatResponseIdentity{}, err
 			}
 			continue
@@ -176,11 +176,11 @@ func executeChatStreamRequestWithIdentity(
 		content, usage, finishReason, toolCalls, emitted, identity, err := consumeTextStream(stream, cfg.Model, onChunk)
 		cancel()
 		if err == nil {
-			slog.Debug("provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "success")
+			slog.DebugContext(ctx, "provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "success")
 			return content, usageOrEstimate(usage, systemPrompt, userContent, content), finishReason, toolCalls, emitted, identity, nil
 		}
 
-		action, wrapped := decideChatRetry(err, cfg, attempt, reqConfig.MaxRetries, usedNativeStops, emitted)
+		action, wrapped := decideChatRetry(err, attempt, reqConfig.MaxRetries, usedNativeStops, emitted)
 		if action == chatRetryWithoutNativeStops {
 			request.Stop = nil
 			usedNativeStops = false
@@ -190,15 +190,15 @@ func executeChatStreamRequestWithIdentity(
 
 		lastErr = wrapped
 		if action == chatRetryStop {
-			slog.Debug("provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "error")
+			slog.DebugContext(ctx, "provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "error")
 			return "", nil, "", nil, emitted, chatResponseIdentity{}, lastErr
 		}
 		if err := waitChatBackoff(ctx, reqConfig, attempt); err != nil {
-			slog.Debug("provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "error")
+			slog.DebugContext(ctx, "provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "error")
 			return "", nil, "", nil, emitted, chatResponseIdentity{}, err
 		}
 	}
 
-	slog.Debug("provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", reqConfig.MaxRetries, "outcome", "error")
+	slog.DebugContext(ctx, "provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", reqConfig.MaxRetries, "outcome", "error")
 	return "", nil, "", nil, false, chatResponseIdentity{}, lastErr
 }

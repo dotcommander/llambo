@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -37,9 +38,9 @@ type EmbeddingEvaluation struct {
 
 func (a OMLXEmbeddingAdapter) Evaluate(ctx context.Context, model string, c EmbeddingCase) (EmbeddingEvaluation, error) {
 	if strings.TrimSpace(model) == "" || strings.TrimSpace(c.ID) == "" || len(c.Documents) == 0 || len(c.Queries) == 0 {
-		return EmbeddingEvaluation{}, fmt.Errorf("model, case id, documents, and queries are required")
+		return EmbeddingEvaluation{}, errors.New("model, case id, documents, and queries are required")
 	}
-	endpointModel, err := localProviderModel(model, "omlx")
+	endpointModel, err := localOMLXModel(model)
 	if err != nil {
 		return EmbeddingEvaluation{}, err
 	}
@@ -77,7 +78,7 @@ func (a OMLXEmbeddingAdapter) Evaluate(ctx context.Context, model string, c Embe
 		method:        http.MethodPost,
 		endpoint:      root + "/v1/embeddings",
 		body:          bytes.NewReader(body),
-		contentType:   "application/json",
+		contentType:   applicationJSON,
 		apiKey:        a.APIKey,
 		client:        a.Client,
 		responseLimit: localEmbeddingResponseLimit,
@@ -88,7 +89,7 @@ func (a OMLXEmbeddingAdapter) Evaluate(ctx context.Context, model string, c Embe
 		return EmbeddingEvaluation{}, err
 	}
 	response := httpResponse.response
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	responseBody := httpResponse.body
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		return EmbeddingEvaluation{}, fmt.Errorf("embeddings HTTP %d: %s", response.StatusCode, boundedErrorText(responseBody))
@@ -173,7 +174,7 @@ func indexedEmbeddingVectors(data []struct {
 
 func EmbeddingCosineScores(documents, queries map[string][]float64) (map[string]map[string]float64, error) {
 	if len(documents) == 0 || len(queries) == 0 {
-		return nil, fmt.Errorf("documents and queries are required")
+		return nil, errors.New("documents and queries are required")
 	}
 	scores := make(map[string]map[string]float64, len(queries))
 	for queryID, query := range queries {
@@ -192,26 +193,26 @@ func EmbeddingCosineScores(documents, queries map[string][]float64) (map[string]
 
 func cosineSimilarity(a, b []float64) (float64, error) {
 	if len(a) == 0 || len(a) != len(b) {
-		return 0, fmt.Errorf("vectors must be nonempty and have matching dimensions")
+		return 0, errors.New("vectors must be nonempty and have matching dimensions")
 	}
 	var dot, an, bn float64
 	for i := range a {
 		if math.IsNaN(a[i]) || math.IsNaN(b[i]) || math.IsInf(a[i], 0) || math.IsInf(b[i], 0) {
-			return 0, fmt.Errorf("vector contains a non-finite value")
+			return 0, errors.New("vector contains a non-finite value")
 		}
 		dot += a[i] * b[i]
 		an += a[i] * a[i]
 		bn += b[i] * b[i]
 	}
 	if an == 0 || bn == 0 {
-		return 0, fmt.Errorf("zero-norm vector")
+		return 0, errors.New("zero-norm vector")
 	}
 	return dot / math.Sqrt(an*bn), nil
 }
 
 func readBoundedLocalBody(body io.Reader, limit int64) ([]byte, error) {
 	if limit < 1 {
-		return nil, fmt.Errorf("positive response limit is required")
+		return nil, errors.New("positive response limit is required")
 	}
 	data, err := io.ReadAll(io.LimitReader(body, limit+1))
 	if err != nil {

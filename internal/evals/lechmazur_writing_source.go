@@ -3,6 +3,7 @@ package evals
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strings"
 )
@@ -17,7 +18,7 @@ func fetchLechMazurWriting(ctx context.Context, opts Options) (sourceSnapshot, e
 		return sourceSnapshot{}, fmt.Errorf("parse Lech Mazur writing leaderboard: %w", err)
 	}
 	sum := sha256.Sum256(body)
-	contentSHA := fmt.Sprintf("%x", sum)
+	contentSHA := hex.EncodeToString(sum[:])
 	version := normalizeHTTPETag(headers.Get("ETag"))
 	commit := strings.TrimSpace(headers.Get("X-Repo-Commit"))
 	if commit == "" {
@@ -43,9 +44,9 @@ func fetchLechMazurWriting(ctx context.Context, opts Options) (sourceSnapshot, e
 			FetchedAt:      fetchedAt,
 			Details:        map[string]float64{"rank": float64(row.Rank), "win_chance_percent": row.WinChance, "uncertainty_lower": row.Lower, "uncertainty_upper": row.Upper},
 			SourceClass:    string(SourceOwnerResult),
-			EvidenceGrade:  "owner",
+			EvidenceGrade:  owner1,
 			Unit:           "comparison score",
-			Direction:      "higher",
+			Direction:      higher1,
 			Cohort:         "lechmazur-writing-live",
 			Locator:        opts.LechMazurWritingURL,
 			SourceID:       WritingPrimaryID,

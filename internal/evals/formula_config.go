@@ -5,6 +5,19 @@ import (
 	"strings"
 )
 
+// Repeated string literals consolidated by goconst.
+const (
+	agents1              = "agents"
+	coding1              = "coding"
+	instructionFollowing = "instruction-following"
+	longContext          = "long-context"
+	price1               = "price"
+	reasoning1           = "reasoning"
+	writing1             = "writing"
+)
+
+const speed1 = "speed"
+
 type metricSpec struct {
 	name      string
 	dimension string
@@ -38,12 +51,12 @@ type benchmarkFamily struct {
 // Benchmarks within a family are alternatives, not additional votes. This keeps
 // mirrored or near-duplicate leaderboards from dominating a category.
 var categorySpecs = []categorySpec{
-	{name: "agents", families: []benchmarkFamily{{"tool-api-orchestration", []string{"bfcl-v4", "toolsandbox", "tau2-bench", "tau3-bench", "tau-bench-retail", "toolbench"}}, {"environment-task-completion", []string{"gaia", "webarena", "osworld"}}, {"computer-use", []string{"assistantbench", "webarena-lite"}}}},
-	{name: "coding", families: []benchmarkFamily{{"repository-editing", []string{"swe-bench-verified", "swe-bench-pro", "aider"}}, {"live-synthesis", []string{"livecodebench", "livecodebench-v6"}}, {"function-program-generation", []string{"humaneval", "mbpp", "bigcodebench"}}, {"scientific-coding", []string{"scicode", "multipl-e"}}}},
-	{name: "instruction-following", families: []benchmarkFamily{{"verifiable-constraints", []string{"ifeval-official", "ifeval", "ifbench"}}, {"structured-adherence", []string{"multi-if", "ifstruct"}}, {"preference-adherence", []string{"arena-hard", "alpacaeval"}}}},
-	{name: "long-context", families: []benchmarkFamily{{"retrieval-stress", []string{"ruler", "niah"}}, {"multi-document-reasoning", []string{"longbench", "longbench-v2"}}, {"persistent-state", []string{"babilong"}}}},
-	{name: "reasoning", families: []benchmarkFamily{{"advanced-science", []string{"gpqa"}}, {"competition-mathematics", []string{"aime", "aime-versioned", "math"}}, {"abstraction", []string{"arc"}}, {"broad-knowledge", []string{"mmlu-pro"}}}},
-	{name: "writing", families: []benchmarkFamily{{"rubric-long-form", []string{"writingbench"}}, {"fiction-narrative", []string{"eqbench-creative-v3", "fiction-live"}}, {"broad-generation", []string{"biggen"}}, {"human-preference", []string{"lmsys-writing"}}, {"style-calibration", []string{"aidanbench"}}}},
+	{name: agents1, families: []benchmarkFamily{{"tool-api-orchestration", []string{bfclV4, toolsandbox1, tau2Bench, "tau3-bench", tauBenchRetail, "toolbench"}}, {"environment-task-completion", []string{"gaia", "webarena", "osworld"}}, {"computer-use", []string{"assistantbench", "webarena-lite"}}}},
+	{name: coding1, families: []benchmarkFamily{{"repository-editing", []string{sweBenchVerified, sweBenchPro, aider1}}, {"live-synthesis", []string{"livecodebench", livecodebenchV6}}, {"function-program-generation", []string{"humaneval", "mbpp", "bigcodebench"}}, {"scientific-coding", []string{scicode1, "multipl-e"}}}},
+	{name: instructionFollowing, families: []benchmarkFamily{{"verifiable-constraints", []string{ifevalOfficial, ifeval1, ifbench1}}, {"structured-adherence", []string{multiIf, ifstruct1}}, {"preference-adherence", []string{"arena-hard", "alpacaeval"}}}},
+	{name: longContext, families: []benchmarkFamily{{"retrieval-stress", []string{ruler1, "niah"}}, {"multi-document-reasoning", []string{"longbench", longbenchV2}}, {"persistent-state", []string{"babilong"}}}},
+	{name: reasoning1, families: []benchmarkFamily{{"advanced-science", []string{gpqa1}}, {"competition-mathematics", []string{aime1, "aime-versioned", "math"}}, {"abstraction", []string{"arc"}}, {"broad-knowledge", []string{mmluPro}}}},
+	{name: writing1, families: []benchmarkFamily{{"rubric-long-form", []string{writingbench1}}, {"fiction-narrative", []string{eqbenchCreativeV3, "fiction-live"}}, {"broad-generation", []string{"biggen"}}, {"human-preference", []string{"lmsys-writing"}}, {"style-calibration", []string{"aidanbench"}}}},
 }
 
 func benchmarkDetailAverageValue(benchmark string, keys ...string) func(Model) (*float64, bool) {
@@ -94,16 +107,16 @@ func benchmarkDetailPrefixAverageValue(benchmark string, prefixes ...string) fun
 }
 
 var operationalMetrics = []metricSpec{
-	{name: "aa_output_speed", dimension: "speed", source: "artificial_analysis", higher: true, value: aaValue(func(v *ArtificialMetrics) *float64 { return v.OutputTokensPS })},
-	{name: "llm_output_speed", dimension: "speed", source: "llm_stats", higher: true, value: llmValue(func(v *LLMStatsMetrics) *float64 { return v.Throughput })},
-	{name: "aa_output_price", dimension: "price", source: "artificial_analysis", higher: false, value: aaValue(func(v *ArtificialMetrics) *float64 { return v.OutputPrice })},
-	{name: "llm_output_price", dimension: "price", source: "llm_stats", higher: false, value: llmValue(func(v *LLMStatsMetrics) *float64 { return v.OutputPrice })},
+	{name: "aa_output_speed", dimension: speed1, source: artificialAnalysisKey, higher: true, value: aaValue(func(v *ArtificialMetrics) *float64 { return v.OutputTokensPS })},
+	{name: "llm_output_speed", dimension: speed1, source: llmStatsKey, higher: true, value: llmValue(func(v *LLMStatsMetrics) *float64 { return v.Throughput })},
+	{name: "aa_output_price", dimension: price1, source: artificialAnalysis, higher: false, value: aaValue(func(v *ArtificialMetrics) *float64 { return v.OutputPrice })},
+	{name: "llm_output_price", dimension: price1, source: llmStats, higher: false, value: llmValue(func(v *LLMStatsMetrics) *float64 { return v.OutputPrice })},
 }
 
 var externalMetrics = operationalMetrics
 
 func SupportedRankingProfiles() []string {
-	return []string{"agents", "coding", "instruction-following", "long-context", "matrix", "price", "reasoning", "speed", "writing"}
+	return []string{agents1, coding1, instructionFollowing, longContext, matrix1, price1, reasoning1, speed1, writing1}
 }
 func isSupportedProfile(name string) bool {
 	for _, candidate := range SupportedRankingProfiles() {

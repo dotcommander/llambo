@@ -10,9 +10,15 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+)
+
+// Repeated string literals consolidated by goconst.
+const (
+	applicationJSON = "application/json"
 )
 
 type AccelerationChatClient interface {
@@ -42,9 +48,9 @@ type OMLXAccelerationChatClient struct {
 
 func (c OMLXAccelerationChatClient) AccelerationChat(ctx context.Context, request AccelerationChatRequest) (AccelerationChatResponse, error) {
 	if strings.TrimSpace(request.Prompt) == "" || request.MaxOutputTokens < 1 {
-		return AccelerationChatResponse{}, fmt.Errorf("prompt and positive maximum output tokens are required")
+		return AccelerationChatResponse{}, errors.New("prompt and positive maximum output tokens are required")
 	}
-	model, err := localProviderModel(request.Model, "omlx")
+	model, err := localOMLXModel(request.Model)
 	if err != nil {
 		return AccelerationChatResponse{}, err
 	}
@@ -67,7 +73,7 @@ func (c OMLXAccelerationChatClient) AccelerationChat(ctx context.Context, reques
 		method:        http.MethodPost,
 		endpoint:      root + "/v1/chat/completions",
 		body:          bytes.NewReader(body),
-		contentType:   "application/json",
+		contentType:   applicationJSON,
 		apiKey:        c.APIKey,
 		client:        c.Client,
 		responseLimit: localAdapterResponseLimit,
@@ -78,7 +84,7 @@ func (c OMLXAccelerationChatClient) AccelerationChat(ctx context.Context, reques
 		return AccelerationChatResponse{}, err
 	}
 	response := httpResponse.response
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	responseBody := httpResponse.body
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		return AccelerationChatResponse{}, fmt.Errorf("acceleration chat HTTP %d: %s", response.StatusCode, boundedErrorText(responseBody))
@@ -96,7 +102,7 @@ func (c OMLXAccelerationChatClient) AccelerationChat(ctx context.Context, reques
 		return AccelerationChatResponse{}, fmt.Errorf("parse acceleration response: %w", err)
 	}
 	if len(payload.Choices) != 1 || strings.TrimSpace(payload.Choices[0].Message.Content) == "" || payload.Usage.CompletionTokens < 1 {
-		return AccelerationChatResponse{}, fmt.Errorf("acceleration response requires one nonempty choice and completion usage")
+		return AccelerationChatResponse{}, errors.New("acceleration response requires one nonempty choice and completion usage")
 	}
 	return AccelerationChatResponse{Provider: "omlx", Model: firstNonEmpty(payload.Model, response.Header.Get("X-Llambo-Model")), Content: payload.Choices[0].Message.Content, OutputTokens: payload.Usage.CompletionTokens}, nil
 }
@@ -114,10 +120,10 @@ type AccelerationConditionRecord struct {
 // does not mutate OMLX state itself.
 func EvaluateAccelerationCondition(ctx context.Context, client AccelerationChatClient, request AccelerationChatRequest, c AccelerationCase, enabled, warmup bool, verifiedServedModel string) (AccelerationConditionRecord, error) {
 	if client == nil || strings.TrimSpace(request.Model) == "" || strings.TrimSpace(request.Prompt) == "" || strings.TrimSpace(c.ID) == "" || strings.TrimSpace(c.Oracle) == "" {
-		return AccelerationConditionRecord{}, fmt.Errorf("client, model, prompt, case id, and oracle are required")
+		return AccelerationConditionRecord{}, errors.New("client, model, prompt, case id, and oracle are required")
 	}
 	if request.MaxOutputTokens < 1 {
-		return AccelerationConditionRecord{}, fmt.Errorf("positive maximum output tokens are required")
+		return AccelerationConditionRecord{}, errors.New("positive maximum output tokens are required")
 	}
 	started := time.Now()
 	response, err := client.AccelerationChat(ctx, request)
@@ -130,7 +136,7 @@ func EvaluateAccelerationCondition(ctx context.Context, client AccelerationChatC
 		return AccelerationConditionRecord{}, err
 	}
 	if response.OutputTokens < 1 || latency <= 0 {
-		return AccelerationConditionRecord{}, fmt.Errorf("acceleration response requires positive output tokens and latency")
+		return AccelerationConditionRecord{}, errors.New("acceleration response requires positive output tokens and latency")
 	}
 	return AccelerationConditionRecord{CaseID: c.ID, MTPEnabled: enabled, Warmup: warmup, ServedModel: served, Result: PairedResult{AnswerCorrect: strings.TrimSpace(response.Content) == strings.TrimSpace(c.Oracle), LatencyMS: float64(latency) / float64(time.Millisecond), TokensPerSecond: float64(response.OutputTokens) / latency.Seconds()}}, nil
 }
@@ -148,7 +154,7 @@ type OMLXSettingsGuard struct {
 
 func (g OMLXSettingsGuard) WithMTPEnabled(ctx context.Context, enabled bool, run func(context.Context) error) (err error) {
 	if strings.TrimSpace(g.Path) == "" || strings.TrimSpace(g.ParentModel) == "" || g.Reload == nil || g.Health == nil || run == nil {
-		return fmt.Errorf("settings path, parent model, reload, health, and run are required")
+		return errors.New("settings path, parent model, reload, health, and run are required")
 	}
 	original, err := os.ReadFile(g.Path)
 	if err != nil {
@@ -178,7 +184,7 @@ func (g OMLXSettingsGuard) WithMTPEnabled(ctx context.Context, enabled bool, run
 			return fmt.Errorf("read unchanged model settings after run: %w", err)
 		}
 		if bytesSHA256(current) != originalHash {
-			return fmt.Errorf("model settings changed concurrently during guarded run")
+			return errors.New("model settings changed concurrently during guarded run")
 		}
 		return nil
 	}
@@ -187,7 +193,7 @@ func (g OMLXSettingsGuard) WithMTPEnabled(ctx context.Context, enabled bool, run
 		return fmt.Errorf("re-read model settings before mutation: %w", err)
 	}
 	if bytesSHA256(current) != originalHash {
-		return fmt.Errorf("model settings changed concurrently before mutation")
+		return errors.New("model settings changed concurrently before mutation")
 	}
 	if err := os.WriteFile(g.Path, changed, info.Mode().Perm()); err != nil {
 		return fmt.Errorf("write guarded model settings: %w", err)
@@ -201,7 +207,7 @@ func (g OMLXSettingsGuard) WithMTPEnabled(ctx context.Context, enabled bool, run
 			return
 		}
 		if bytesSHA256(current) != changedHash {
-			err = errors.Join(err, fmt.Errorf("model settings changed concurrently during guarded run; refusing overwrite"))
+			err = errors.Join(err, errors.New("model settings changed concurrently during guarded run; refusing overwrite"))
 			return
 		}
 		if writeErr := os.WriteFile(g.Path, original, info.Mode().Perm()); writeErr != nil {
@@ -213,7 +219,7 @@ func (g OMLXSettingsGuard) WithMTPEnabled(ctx context.Context, enabled bool, run
 			if verifyErr != nil {
 				err = errors.Join(err, fmt.Errorf("verify restored model settings: %w", verifyErr))
 			} else {
-				err = errors.Join(err, fmt.Errorf("restored model settings hash mismatch"))
+				err = errors.Join(err, errors.New("restored model settings hash mismatch"))
 			}
 			return
 		}
@@ -254,7 +260,7 @@ func (e *AccelerationLocalExecutor) ExecuteLocal(ctx context.Context, _ LocalRun
 		return LocalCall{}, err
 	}
 	if e.Client == nil || e.MaxTokens < 1 {
-		return LocalCall{}, fmt.Errorf("acceleration client and positive token limit are required")
+		return LocalCall{}, errors.New("acceleration client and positive token limit are required")
 	}
 	if e.warmed == nil {
 		e.warmed = make(map[bool]bool, 2)
@@ -301,7 +307,7 @@ func setMTPEnabled(data []byte, parent string, enabled bool) ([]byte, error) {
 		return nil, fmt.Errorf("parse model settings: %w", err)
 	}
 	if root == nil {
-		return nil, fmt.Errorf("parse model settings: root object is required")
+		return nil, errors.New("parse model settings: root object is required")
 	}
 	if raw, ok := root[parent]; ok {
 		updated, err := setMTPInModelObject(raw, enabled)
@@ -352,7 +358,7 @@ func setMTPEnabled(data []byte, parent string, enabled bool) ([]byte, error) {
 			continue
 		}
 		found++
-		entry["vlm_mtp_enabled"] = json.RawMessage(fmt.Sprintf("%t", enabled))
+		entry["vlm_mtp_enabled"] = json.RawMessage(strconv.FormatBool(enabled))
 	}
 	if found != 1 {
 		return nil, fmt.Errorf("model settings contain %d entries for parent %q", found, parent)
@@ -371,9 +377,9 @@ func setMTPInModelObject(raw json.RawMessage, enabled bool) (json.RawMessage, er
 		return nil, fmt.Errorf("parse model settings object: %w", err)
 	}
 	if object == nil {
-		return nil, fmt.Errorf("model settings must be an object")
+		return nil, errors.New("model settings must be an object")
 	}
-	object["vlm_mtp_enabled"] = json.RawMessage(fmt.Sprintf("%t", enabled))
+	object["vlm_mtp_enabled"] = json.RawMessage(strconv.FormatBool(enabled))
 	updated, err := json.Marshal(object)
 	return updated, err
 }

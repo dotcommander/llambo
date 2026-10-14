@@ -6,6 +6,7 @@ import (
 	_ "embed"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
@@ -83,7 +84,7 @@ type ScopedNullReceipt struct {
 // score observation.
 func LoadSourceResearchLedger() (SourceResearchLedger, error) {
 	if sourceResearchLedgerDigest == "" {
-		return SourceResearchLedger{}, fmt.Errorf("source research ledger digest is not pinned")
+		return SourceResearchLedger{}, errors.New("source research ledger digest is not pinned")
 	}
 	if got := sourceLedgerBytesDigest(sourceResearchLedgerJSON); got != sourceResearchLedgerContentDigest {
 		return SourceResearchLedger{}, fmt.Errorf("source research ledger content digest %s does not match pinned %s", got, sourceResearchLedgerContentDigest)

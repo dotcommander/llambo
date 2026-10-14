@@ -1,7 +1,7 @@
 package providers
 
 import (
-	"fmt"
+	"errors"
 	"log/slog"
 	"math"
 	"sync/atomic"
@@ -160,7 +160,7 @@ func (c executionCoordinator) plan(systemPrompt, userContent string, allowUnheal
 		}
 	}
 	if len(enabled) == 0 {
-		return chatExecutionPlan{}, fmt.Errorf("no enabled providers available")
+		return chatExecutionPlan{}, errors.New("no enabled providers available")
 	}
 
 	// Canary routing: deterministically route a fraction of requests to the canary provider

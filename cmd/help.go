@@ -10,6 +10,13 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// Repeated string literals consolidated by goconst.
+const (
+	commands1 = "commands"
+	options1  = "options"
+	usage1    = "usage"
+)
+
 type helpStyles struct {
 	section  lipgloss.Style
 	command  lipgloss.Style
@@ -81,7 +88,7 @@ func detailedHelp(rendered, command string) string {
 		help += "\nCommands:\n  simulate    Replay routing events against one or more routing modes\n  canary      Canary routing management\n"
 	case "prompt":
 		help = "Send the same prompt to multiple configured LLM providers and compare responses.\n\nExamples:\n  llambo prompt \"What is the capital of France?\"\n  llambo prompt --smart \"Compare these options and give me the best answer\"\n  llambo prompt \"Explain quantum computing in simple terms\"\n  llambo prompt --system \"Be concise\" \"What is the capital of France?\"\n\nThe prompt text can be provided as a positional argument or via stdin.\n\nFor lower-friction defaults, set LLAMBO_PROMPT_MODELS, LLAMBO_PROMPT_FUSE,\nor LLAMBO_PROMPT_FUSE_MODELS in your shell.\n\n" + help
-	case "ping":
+	case ping1:
 		help = "Test each enabled provider with a standard prompt and report timing/results.\n\nExample:\n  llambo ping\n  llambo ping --prompt \"What is 2+2?\"\n  llambo ping --output results.json\n  llambo ping --provider nvidia\n  llambo ping -P nvidia,groq\n\n" + help
 	case "jobs":
 		help = "Submit and monitor batch jobs to test the gateway's job processing.\n\nExamples:\n  llambo jobs run --count 10\n  llambo jobs stress --jobs 5 --requests-per-job 20\n\n" + help
@@ -114,15 +121,15 @@ func polishRootHelp(help string) string {
 	for _, line := range lines {
 		switch line {
 		case "Commands:":
-			section = "commands"
+			section = commands1
 		case "Flags:":
-			section = "options"
+			section = options1
 			line = "Options:"
 		}
 		if line == `Run "llambo <command> --help" for more information on a command.` {
 			line = `Run "llambo <command> --help" for command details.`
 		}
-		if section == "options" && strings.HasPrefix(strings.TrimSpace(line), "-h, --help") {
+		if section == options1 && strings.HasPrefix(strings.TrimSpace(line), "-h, --help") {
 			out = append(out,
 				"  -h, --help             Show context-sensitive help.",
 				"  -v, --version          Print version information.",
@@ -140,20 +147,20 @@ func styleHelp(help string, ctx *kong.Context, styles helpStyles) string {
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" {
-			if section == "usage" {
+			if section == usage1 {
 				section = ""
 			}
 			continue
 		}
 		if strings.HasPrefix(trimmed, "Usage: ") {
 			lines[i] = styleUsage(line, ctx, styles)
-			section = "usage"
+			section = usage1
 			continue
 		}
 		if line == trimmed && strings.HasSuffix(trimmed, ":") {
 			heading := strings.TrimSuffix(strings.ToLower(trimmed), ":")
 			switch heading {
-			case "usage", "commands", "flags", "options", "arguments":
+			case usage1, commands1, "flags", options1, "arguments":
 				section = heading
 			default:
 				section = ""
@@ -166,11 +173,11 @@ func styleHelp(help string, ctx *kong.Context, styles helpStyles) string {
 			continue
 		}
 		switch section {
-		case "usage":
+		case usage1:
 			lines[i] = styleUsageSyntax(line, ctx, styles)
-		case "commands":
+		case commands1:
 			lines[i] = styleColumns(line, styles.command, styles.syntax)
-		case "flags", "options":
+		case "flags", options1:
 			lines[i] = styleFlagColumns(line, styles)
 		case "arguments":
 			lines[i] = styleColumns(line, styles.syntax, styles.syntax)

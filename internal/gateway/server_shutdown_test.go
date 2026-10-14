@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/http"
 	"sync"
@@ -97,7 +98,7 @@ func TestServer_ShutdownWaitsForHTTPAndJobDrainBeforeClosingResources(t *testing
 
 	shutdownDone := make(chan error, 1)
 	go func() { shutdownDone <- server.Shutdown(context.Background()) }()
-	if err := <-serveDone; err != http.ErrServerClosed {
+	if err := <-serveDone; !errors.Is(err, http.ErrServerClosed) {
 		t.Fatalf("Serve() error = %v, want http.ErrServerClosed", err)
 	}
 	if queue.count() != 0 || provider.count() != 0 || embedder.count() != 0 {

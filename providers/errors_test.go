@@ -179,7 +179,6 @@ func TestIsModelUnsupportedError(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.errMsg, func(t *testing.T) {
 			t.Parallel()
 			if got := IsModelUnsupportedError(errors.New(tt.errMsg)); got != tt.want {

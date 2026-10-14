@@ -116,7 +116,7 @@ func TestProseScreenRunUsesAdapterOwnedSchemaAndControls(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	executor := &recordingProseScreenExecutor{}
 	if err := RunWritingEvaluation(t.Context(), manifest, []WritingPromptRecord{record}, adapter, executor, store); err != nil {
 		t.Fatal(err)
@@ -185,7 +185,7 @@ func TestProseScreenRunRejectsTruncatedGenerationAndJudgment(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer store.Close()
+		defer func() { _ = store.Close() }()
 		runErr := RunWritingEvaluation(t.Context(), manifest, []WritingPromptRecord{record}, adapter, executor, store)
 		generations, judgments := store.Records()
 		return generations, judgments, runErr

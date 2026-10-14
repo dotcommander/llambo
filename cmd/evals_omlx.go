@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,25 +12,31 @@ import (
 	"github.com/dotcommander/llambo/internal/evals"
 )
 
+// Repeated string literals consolidated by goconst.
+const (
+	json1     = "json"
+	markdown1 = "markdown"
+)
+
 func (c *evalsOMLXCommand) Run(parent *evalsCommand, io *commandIO) error {
-	for _, name := range []string{"refresh", "refresh-official-model-cards", "output", "export-prompts"} {
+	for _, name := range []string{refresh1, refreshOfficialModelCards, output1, exportPrompts1} {
 		if io.FlagChanged(name) {
 			return fmt.Errorf("--%s is not supported with evals omlx", name)
 		}
 	}
 	live := c.Live || parent.LiveOMLX
 	if live && parent.Offline {
-		return fmt.Errorf("--live and --offline cannot be used together")
+		return errors.New("--live and --offline cannot be used together")
 	}
 	if live && parent.NoOMLX {
-		return fmt.Errorf("--live and --no-omlx cannot be used together")
+		return errors.New("--live and --no-omlx cannot be used together")
 	}
 	format := strings.ToLower(strings.TrimSpace(parent.Format))
 	if format == "" {
-		format = "markdown"
+		format = markdown1
 	}
-	if format != "markdown" && format != "json" {
-		return fmt.Errorf("evals omlx supports only markdown and json formats")
+	if format != markdown1 && format != json1 {
+		return errors.New("evals omlx supports only markdown and json formats")
 	}
 	cacheDir, err := evaluationCacheDirectory(parent.CacheDir)
 	if err != nil {
@@ -45,7 +52,7 @@ func (c *evalsOMLXCommand) Run(parent *evalsCommand, io *commandIO) error {
 			return err
 		}
 		if snapshot == nil {
-			return fmt.Errorf("no cached OMLX score snapshot; run `llambo evals omlx --live`")
+			return errors.New("no cached OMLX score snapshot; run `llambo evals omlx --live`")
 		}
 		return writeOMLXScoreOutput(io, snapshot, format, nil)
 	}
@@ -91,7 +98,7 @@ func evaluationCacheDirectory(configured string) (string, error) {
 }
 
 func writeOMLXScoreOutput(io *commandIO, snapshot *evals.OMLXScoreSnapshot, format string, diagnostics *evals.OMLXDiagnostics) error {
-	if format == "json" {
+	if format == json1 {
 		data, err := json.MarshalIndent(snapshot, "", "  ")
 		if err != nil {
 			return err
@@ -162,5 +169,5 @@ func formatOMLXScore(score *evals.LlamboScore) string {
 }
 
 var categoryOrderForOMLXDisplay = []string{
-	"agents", "coding", "instruction-following", "long-context", "reasoning", "writing",
+	agents1, coding1, instructionFollowing, longContext, reasoningCategory, writingCategory,
 }

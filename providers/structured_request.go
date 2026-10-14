@@ -3,10 +3,12 @@ package providers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	whtypes "github.com/garyblankenship/wormhole/v3/types"
 	"reflect"
 	"strings"
+
+	whtypes "github.com/garyblankenship/wormhole/v3/types"
 )
 
 // StructuredChatRequest preserves the ordered conversation and wire options.
@@ -151,11 +153,11 @@ func (c executionCoordinator) withTarget(t ResolvedTarget) executionCoordinator 
 
 func (r StructuredChatRequest) Validate() error {
 	if len(r.Messages) == 0 {
-		return fmt.Errorf("messages must not be empty")
+		return errors.New("messages must not be empty")
 	}
 	for _, m := range r.Messages {
 		if m == nil || (reflect.ValueOf(m).Kind() == reflect.Pointer && reflect.ValueOf(m).IsNil()) {
-			return fmt.Errorf("nil message")
+			return errors.New("nil message")
 		}
 		switch m.GetRole() {
 		case whtypes.RoleSystem, whtypes.RoleUser, whtypes.RoleAssistant, whtypes.RoleTool:
@@ -163,7 +165,7 @@ func (r StructuredChatRequest) Validate() error {
 			return fmt.Errorf("unsupported message role %q", m.GetRole())
 		}
 		if _, ok := m.GetContent().(string); !ok {
-			return fmt.Errorf("unsupported message content")
+			return errors.New("unsupported message content")
 		}
 		if _, err := json.Marshal(m); err != nil {
 			return fmt.Errorf("unsupported message shape: %w", err)

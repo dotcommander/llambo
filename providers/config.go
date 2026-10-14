@@ -2,10 +2,17 @@ package providers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+)
+
+// Repeated string literals consolidated by goconst.
+const (
+	openai1     = "openai"
+	openrouter1 = "openrouter"
 )
 
 // GlobalConfig holds all provider configs
@@ -46,7 +53,7 @@ func ResolveModelsDevKey(name string, cfg Config) string {
 	if cfg.ModelsDevKey != "" {
 		return cfg.ModelsDevKey
 	}
-	if strings.EqualFold(cfg.ProviderType, "gemini") ||
+	if strings.EqualFold(cfg.ProviderType, gemini1) ||
 		strings.Contains(strings.ToLower(cfg.BaseURL), "generativelanguage.googleapis.com") {
 		return "google"
 	}
@@ -118,11 +125,11 @@ func loadGlobalConfig() (*GlobalConfig, error) {
 	}
 
 	if cfg.DefaultProvider == "" {
-		return nil, fmt.Errorf("config missing required field: default_provider")
+		return nil, errors.New("config missing required field: default_provider")
 	}
 
 	if len(cfg.Providers) == 0 {
-		return nil, fmt.Errorf("config has no providers defined")
+		return nil, errors.New("config has no providers defined")
 	}
 
 	cfg.Routing.ApplyDefaults()
@@ -151,7 +158,7 @@ func SaveGlobalConfig(cfg *GlobalConfig) error {
 func validateProviderNames(configs map[string]Config) error {
 	for name := range configs {
 		if strings.TrimSpace(name) == "" || strings.Contains(name, ":") {
-			return fmt.Errorf("invalid provider name: names must be non-empty and contain no ':'")
+			return errors.New("invalid provider name: names must be non-empty and contain no ':'")
 		}
 	}
 	return nil
@@ -161,8 +168,8 @@ func validateProviderNames(configs map[string]Config) error {
 // Users can add/remove providers freely - provider list comes entirely from config.json
 func InitDefaultConfig() error {
 	providers := map[string]Config{
-		"openai": {
-			ProviderType: "openai",
+		openai1: {
+			ProviderType: openai1,
 			BaseURL:      "https://api.openai.com",
 			Model:        "gpt-5.1-mini",
 			MaxTokens:    8192,
@@ -172,8 +179,8 @@ func InitDefaultConfig() error {
 			RequiresKey:  true,
 			APIKey:       "YOUR_OPENAI_API_KEY",
 		},
-		"openrouter": {
-			ProviderType: "openrouter",
+		openrouter1: {
+			ProviderType: openrouter1,
 			BaseURL:      "https://openrouter.ai/api",
 			Model:        "anthropic/claude-3.5-sonnet",
 			MaxTokens:    8192,
@@ -185,7 +192,7 @@ func InitDefaultConfig() error {
 			ExtraHeaders: map[string]string{"HTTP-Referer": "https://github.com/llambo"},
 		},
 		"lmstudio": {
-			ProviderType: "openai",
+			ProviderType: openai1,
 			BaseURL:      "http://localhost:1234",
 			Model:        "local-model",
 			MaxTokens:    4096,
@@ -195,7 +202,7 @@ func InitDefaultConfig() error {
 			RequiresKey:  false,
 		},
 		"synthetic": {
-			ProviderType: "openai",
+			ProviderType: openai1,
 			BaseURL:      "https://api.synthetic.new",
 			Model:        "hf:zai-org/glm-4.7",
 			MaxTokens:    8192,
@@ -206,7 +213,7 @@ func InitDefaultConfig() error {
 			APIKey:       "YOUR_SYNTHETIC_API_KEY",
 		},
 		"zai": {
-			ProviderType: "openai",
+			ProviderType: openai1,
 			BaseURL:      "https://api.z.ai/api/coding/paas/v4",
 			Model:        "GLM-5.2",
 			MaxTokens:    8192,
@@ -219,7 +226,7 @@ func InitDefaultConfig() error {
 	}
 
 	cfg := &GlobalConfig{
-		DefaultProvider: "openai",
+		DefaultProvider: openai1,
 		Providers:       providers,
 		Routing: RoutingConfig{
 			Mode:        string(RoutingModeBalanced),

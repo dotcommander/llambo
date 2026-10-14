@@ -105,13 +105,13 @@ func (l *RouteEventLogger) close() error {
 
 func ReadRouteEvents(path string) ([]RouteEvent, error) {
 	if path == "" {
-		return nil, fmt.Errorf("route events path is empty")
+		return nil, errors.New("route events path is empty")
 	}
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var events []RouteEvent
 	s := bufio.NewScanner(f)

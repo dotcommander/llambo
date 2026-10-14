@@ -26,5 +26,5 @@ func isGemini3SeriesModel(model string) bool {
 // model through the native Gemini provider. Those models reject temperature,
 // so the request must leave it unset instead of erroring.
 func rejectsGeminiTemperature(cfg Config) bool {
-	return cfg.GetProviderType() == "gemini" && isGemini3SeriesModel(cfg.Model)
+	return cfg.GetProviderType() == gemini1 && isGemini3SeriesModel(cfg.Model)
 }

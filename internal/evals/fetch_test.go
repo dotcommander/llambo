@@ -2,7 +2,7 @@ package evals
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"io"
 	"net/http"
 	"path/filepath"
@@ -94,7 +94,7 @@ func TestFetchUsesStaleCacheAndAllowsMissingAAKey(t *testing.T) {
 	if err := writeSnapshot(filepath.Join(dir, "llm-stats.json"), sourceSnapshot{FetchedAt: now.Add(-72 * time.Hour), Models: []Model{{Key: "cached", Name: "Cached", LLMStats: &LLMStatsMetrics{}}}}); err != nil {
 		t.Fatal(err)
 	}
-	opts := Options{CacheDir: dir, Refresh: true, AllowPartial: true, Client: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) { return nil, fmt.Errorf("offline") })}, Now: func() time.Time { return now }}
+	opts := Options{CacheDir: dir, Refresh: true, AllowPartial: true, Client: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) { return nil, errors.New("offline") })}, Now: func() time.Time { return now }}
 	result, err := Fetch(context.Background(), opts)
 	if err != nil {
 		t.Fatal(err)
@@ -193,7 +193,7 @@ func TestFetchOfflineUsesOnlyExistingSnapshots(t *testing.T) {
 		CacheDir: dir, Offline: true, Now: func() time.Time { return now },
 		Client: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 			requests.Add(1)
-			return nil, fmt.Errorf("network must not be used")
+			return nil, errors.New("network must not be used")
 		})},
 	})
 	if err != nil {
@@ -245,7 +245,7 @@ func TestFetchRefreshOfficialCardsRequestsOnlyPinnedCards(t *testing.T) {
 	var unexpected atomic.Int64
 	result, err := Fetch(context.Background(), Options{CacheDir: dir, RefreshOfficialCards: true, Now: func() time.Time { return now }, officialLFM8Fetcher: lfm8Fetcher, Client: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		unexpected.Add(1)
-		return nil, fmt.Errorf("non-card source must remain cache-only")
+		return nil, errors.New("non-card source must remain cache-only")
 	})}})
 	if err != nil {
 		t.Fatal(err)
@@ -265,7 +265,7 @@ func TestFetchRefreshOfficialCardsContinuePastFailure(t *testing.T) {
 	})
 	now := time.Date(2026, 9, 19, 6, 0, 0, 0, time.UTC)
 	fetchOfficialLFM25Source = func(context.Context, Options) (sourceSnapshot, error) {
-		return sourceSnapshot{}, fmt.Errorf("card unavailable")
+		return sourceSnapshot{}, errors.New("card unavailable")
 	}
 	fetchOfficialQwen38Source = func(_ context.Context, opts Options) (sourceSnapshot, error) {
 		return validOfficialSnapshot(t, "official-qwen3.8-27b"), nil
@@ -304,7 +304,7 @@ func TestRefreshOfficialModelCardsReturnsSuccessfulStatuses(t *testing.T) {
 	})
 	now := time.Date(2026, 9, 19, 6, 0, 0, 0, time.UTC)
 	fetchOfficialLFM25Source = func(context.Context, Options) (sourceSnapshot, error) {
-		return sourceSnapshot{}, fmt.Errorf("card unavailable")
+		return sourceSnapshot{}, errors.New("card unavailable")
 	}
 	fetchOfficialQwen38Source = func(_ context.Context, opts Options) (sourceSnapshot, error) {
 		return validOfficialSnapshot(t, "official-qwen3.8-27b"), nil

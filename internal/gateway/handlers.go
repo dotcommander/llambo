@@ -10,6 +10,11 @@ import (
 	"github.com/dotcommander/llambo/providers"
 )
 
+// Repeated string literals consolidated by goconst.
+const (
+	null1 = "null"
+)
+
 const defaultAnthropicVersion = "2023-06-01"
 
 // handleChatCompletion handles POST /v1/chat/completions
@@ -114,8 +119,8 @@ func responseFormatOverride(responseFormat *ResponseFormat) any {
 	if responseFormat == nil {
 		return nil
 	}
-	override := map[string]any{"type": responseFormat.Type}
-	if len(responseFormat.JSONSchema) == 0 || string(responseFormat.JSONSchema) == "null" {
+	override := map[string]any{typeStr: responseFormat.Type}
+	if len(responseFormat.JSONSchema) == 0 || string(responseFormat.JSONSchema) == null1 {
 		return override
 	}
 	var schema any
@@ -143,7 +148,7 @@ func responseFormatGenerationConfig(req ChatCompletionRequest) map[string]any {
 }
 
 func responseFormatSchema(raw json.RawMessage) map[string]any {
-	if len(raw) == 0 || string(raw) == "null" {
+	if len(raw) == 0 || string(raw) == null1 {
 		return nil
 	}
 	var wrapped struct {

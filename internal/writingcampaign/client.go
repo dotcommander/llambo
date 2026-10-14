@@ -75,7 +75,7 @@ func (c *Client) Execute(ctx context.Context, model Model, systemPrompt, source 
 		result.Error = err.Error()
 		return c.complete(result, started)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	result.HTTPStatus = resp.StatusCode
 	result.ResponseHeaders = safeResponseHeaders(resp.Header)
 	raw, readErr := io.ReadAll(io.LimitReader(resp.Body, 32<<20))

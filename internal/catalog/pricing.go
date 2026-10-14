@@ -9,12 +9,19 @@ import (
 	"github.com/dotcommander/llambo/internal/costs"
 )
 
+// Repeated string literals consolidated by goconst.
+const (
+	free1 = "free"
+)
+
 func PriceLabel(status CostStatus, input, output float64) string {
 	switch status {
 	case CostFree:
-		return "free"
+		return free1
 	case CostPaid:
 		return fmt.Sprintf("paid $%.4g/$%.4g per 1M", input, output)
+	case CostUnknown:
+		return "unknown"
 	default:
 		return "unknown"
 	}
@@ -91,11 +98,6 @@ func pricePer1M(raw string) (float64, bool) {
 		return 0, false
 	}
 	return price * 1_000_000, true
-}
-
-func isFree(costMap map[string]costs.ModelCost, providerName, modelID string) bool {
-	status, _, _ := modelCostStatus(costMap, providerName, modelID)
-	return status == CostFree
 }
 
 func validPrice(price float64) bool { return price >= 0 && !math.IsNaN(price) && !math.IsInf(price, 0) }

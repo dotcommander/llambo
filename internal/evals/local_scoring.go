@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -51,7 +52,7 @@ type ToolCase struct {
 
 func ScoreToolCase(c ToolCase) (bool, error) {
 	if c.ID == "" {
-		return false, fmt.Errorf("tool case id is required")
+		return false, errors.New("tool case id is required")
 	}
 	if c.Expected == nil {
 		return len(c.Calls) == 0, nil
@@ -71,7 +72,7 @@ func ScoreToolCase(c ToolCase) (bool, error) {
 }
 func ScoreTools(cases []ToolCase) (float64, error) {
 	if len(cases) == 0 {
-		return 0, fmt.Errorf("no tool cases")
+		return 0, errors.New("no tool cases")
 	}
 	pass := 0
 	for _, c := range cases {
@@ -130,7 +131,7 @@ type WAVMetadata struct {
 
 func ValidateWAV(data []byte) (WAVMetadata, error) {
 	if len(data) < 44 || string(data[:4]) != "RIFF" || string(data[8:12]) != "WAVE" {
-		return WAVMetadata{}, fmt.Errorf("not a RIFF/WAVE file")
+		return WAVMetadata{}, errors.New("not a RIFF/WAVE file")
 	}
 	var f WAVMetadata
 	foundFmt, foundData := false, false
@@ -139,13 +140,13 @@ func ValidateWAV(data []byte) (WAVMetadata, error) {
 		n := int(binary.LittleEndian.Uint32(data[p+4 : p+8]))
 		p += 8
 		if n < 0 || p+n > len(data) {
-			return WAVMetadata{}, fmt.Errorf("invalid WAV chunk")
+			return WAVMetadata{}, errors.New("invalid WAV chunk")
 		}
 		chunk := data[p : p+n]
 		switch id {
 		case "fmt ":
 			if len(chunk) < 16 {
-				return WAVMetadata{}, fmt.Errorf("short WAV fmt chunk")
+				return WAVMetadata{}, errors.New("short WAV fmt chunk")
 			}
 			f.Channels = binary.LittleEndian.Uint16(chunk[2:4])
 			f.SampleRate = binary.LittleEndian.Uint32(chunk[4:8])
@@ -161,12 +162,12 @@ func ValidateWAV(data []byte) (WAVMetadata, error) {
 		}
 	}
 	if !foundFmt || !foundData || f.Channels == 0 || f.SampleRate == 0 || f.BitsPerSample == 0 || f.DataBytes == 0 {
-		return WAVMetadata{}, fmt.Errorf("WAV requires nonempty fmt and data chunks")
+		return WAVMetadata{}, errors.New("WAV requires nonempty fmt and data chunks")
 	}
 	bytesPerSecond := float64(f.SampleRate) * float64(f.Channels) * float64(f.BitsPerSample) / 8
 	f.DurationSeconds = float64(f.DataBytes) / bytesPerSecond
 	if f.DurationSeconds <= 0 || math.IsInf(f.DurationSeconds, 0) || math.IsNaN(f.DurationSeconds) {
-		return WAVMetadata{}, fmt.Errorf("invalid WAV duration")
+		return WAVMetadata{}, errors.New("invalid WAV duration")
 	}
 	return f, nil
 }
@@ -178,11 +179,11 @@ type RetrievalQuery struct {
 
 func ScoreRetrieval(queries []RetrievalQuery, scores map[string]map[string]float64) (recall1, mrr10, ndcg10 float64, error error) {
 	if len(queries) == 0 {
-		return 0, 0, 0, fmt.Errorf("no retrieval queries")
+		return 0, 0, 0, errors.New("no retrieval queries")
 	}
 	for _, q := range queries {
 		if q.ID == "" || len(q.Relevant) == 0 {
-			return 0, 0, 0, fmt.Errorf("invalid retrieval query")
+			return 0, 0, 0, errors.New("invalid retrieval query")
 		}
 		ranked := rankScores(scores[q.ID])
 		rel := map[string]bool{}
@@ -248,12 +249,12 @@ type PairedScore struct {
 
 func ScorePaired(off, on []PairedResult) (PairedScore, error) {
 	if len(off) == 0 || len(off) != len(on) {
-		return PairedScore{}, fmt.Errorf("paired results must be nonempty and equal length")
+		return PairedScore{}, errors.New("paired results must be nonempty and equal length")
 	}
 	var p, lat, tps float64
 	for i := range off {
 		if off[i].LatencyMS <= 0 || on[i].LatencyMS <= 0 || off[i].TokensPerSecond <= 0 || on[i].TokensPerSecond <= 0 {
-			return PairedScore{}, fmt.Errorf("paired timing metrics must be positive")
+			return PairedScore{}, errors.New("paired timing metrics must be positive")
 		}
 		if on[i].AnswerCorrect {
 			p++
@@ -268,7 +269,7 @@ func ScorePaired(off, on []PairedResult) (PairedScore, error) {
 // ScoreLocalCalls deterministically derives the suite report from sealed inputs
 // and recorded outputs. Provider executors never supply their own final score.
 func ScoreLocalCalls(m LocalRunManifest, calls []LocalCall) (LocalReport, error) {
-	report := LocalReport{RunID: m.RunID, Suite: m.Identity.Suite, ScoreIdentity: string(m.Identity.Suite), Status: "complete_quality", Metrics: map[string]float64{}}
+	report := LocalReport{RunID: m.RunID, Suite: m.Identity.Suite, ScoreIdentity: string(m.Identity.Suite), Status: completeQuality, Metrics: map[string]float64{}}
 	if len(calls) != m.Identity.Limit {
 		return report, fmt.Errorf("have %d calls, want %d", len(calls), m.Identity.Limit)
 	}
@@ -336,7 +337,7 @@ func ScoreLocalCalls(m LocalRunManifest, calls []LocalCall) (LocalReport, error)
 			scores = append(scores, 100)
 			if out.IntelligibilityWER != nil {
 				if math.IsNaN(*out.IntelligibilityWER) || math.IsInf(*out.IntelligibilityWER, 0) || *out.IntelligibilityWER < 0 {
-					return report, fmt.Errorf("invalid TTS intelligibility WER")
+					return report, errors.New("invalid TTS intelligibility WER")
 				}
 				ttsRoundTripCases++
 				report.Metrics["intelligibility_wer"] += *out.IntelligibilityWER
@@ -424,7 +425,7 @@ func ScoreLocalCalls(m LocalRunManifest, calls []LocalCall) (LocalReport, error)
 		}
 	}
 	if m.Identity.Limit != requiredLocalCaseCount(m.Identity.Suite) {
-		report.Status = "partial"
+		report.Status = partial1
 		report.Errors = append(report.Errors, fmt.Sprintf("canary or incomplete suite: %d cases; coverage requires %d", m.Identity.Limit, requiredLocalCaseCount(m.Identity.Suite)))
 	}
 	return report, nil

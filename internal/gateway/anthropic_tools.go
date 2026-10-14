@@ -2,10 +2,20 @@ package gateway
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/dotcommander/llambo/providers"
 )
+
+// Repeated string literals consolidated by goconst.
+const (
+	anyStr = "any"
+	auto1  = "auto"
+	tool2  = "tool"
+)
+
+const none1 = "none"
 
 func parseAnthropicTooling(tools []AnthropicTool, rawChoice json.RawMessage) ([]providers.ToolDefinition, *providers.ToolChoice, error) {
 	if len(tools) > maxAnthropicTools {
@@ -35,9 +45,9 @@ func parseAnthropicTooling(tools []AnthropicTool, rawChoice json.RawMessage) ([]
 		return nil, nil, err
 	}
 	if choice != nil && len(parsedTools) == 0 {
-		return nil, nil, fmt.Errorf("tool_choice requires tools to be defined")
+		return nil, nil, errors.New("tool_choice requires tools to be defined")
 	}
-	if choice != nil && choice.Type == "tool" {
+	if choice != nil && choice.Type == tool2 {
 		for _, tool := range parsedTools {
 			if tool.Name == choice.Name {
 				return parsedTools, choice, nil
@@ -55,7 +65,7 @@ func parseAnthropicToolChoice(raw json.RawMessage) (*providers.ToolChoice, error
 	var asString string
 	if err := json.Unmarshal(raw, &asString); err == nil {
 		switch asString {
-		case "auto", "none", "any":
+		case auto1, none1, anyStr:
 			return &providers.ToolChoice{Type: asString}, nil
 		default:
 			return nil, fmt.Errorf("tool_choice string %q is not supported", asString)
@@ -66,16 +76,16 @@ func parseAnthropicToolChoice(raw json.RawMessage) (*providers.ToolChoice, error
 		Name string `json:"name,omitempty"`
 	}
 	if err := json.Unmarshal(raw, &payload); err != nil {
-		return nil, fmt.Errorf("tool_choice must be a string or object")
+		return nil, errors.New("tool_choice must be a string or object")
 	}
 	switch payload.Type {
-	case "auto", "none", "any":
+	case auto1, none1, anyStr:
 		return &providers.ToolChoice{Type: payload.Type}, nil
-	case "tool":
+	case tool2:
 		if payload.Name == "" {
-			return nil, fmt.Errorf("tool_choice.name is required when type is tool")
+			return nil, errors.New("tool_choice.name is required when type is tool")
 		}
-		return &providers.ToolChoice{Type: "tool", Name: payload.Name}, nil
+		return &providers.ToolChoice{Type: tool2, Name: payload.Name}, nil
 	default:
 		return nil, fmt.Errorf("tool_choice.type %q is not supported", payload.Type)
 	}

@@ -2,6 +2,7 @@ package evals
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -19,10 +20,10 @@ type writingEvidenceSource struct {
 
 func writingEvidenceSources() []writingEvidenceSource {
 	return []writingEvidenceSource{
-		{id: "writingbench", name: "WritingBench", url: func(opts Options) string { return opts.WritingBenchURL }, fetcher: fetchWritingBench},
-		{id: "eqbench-creative-v3", name: "EQ-Bench Creative v3", url: func(opts Options) string { return opts.EQBenchCreativeURL }, fetcher: fetchEQBenchCreative},
-		{id: WritingPrimaryID, name: "Lech Mazur Creative Story-Writing", url: func(opts Options) string { return opts.LechMazurWritingURL }, fetcher: fetchLechMazurWriting},
-		{id: ArenaCreativeSourceID, name: "Arena Creative Writing", url: func(opts Options) string { return opts.ArenaCreativeURL }, fetcher: fetchArenaCreative},
+		{id: writingbench1, name: writingBench1, url: func(opts Options) string { return opts.WritingBenchURL }, fetcher: fetchWritingBench},
+		{id: eqbenchCreativeV3, name: eQBenchCreativeV3, url: func(opts Options) string { return opts.EQBenchCreativeURL }, fetcher: fetchEQBenchCreative},
+		{id: WritingPrimaryID, name: lechMazurCreativeStoryWriting, url: func(opts Options) string { return opts.LechMazurWritingURL }, fetcher: fetchLechMazurWriting},
+		{id: ArenaCreativeSourceID, name: arenaCreativeWriting, url: func(opts Options) string { return opts.ArenaCreativeURL }, fetcher: fetchArenaCreative},
 	}
 }
 
@@ -79,8 +80,8 @@ func RefreshEvaluationSourcesWithOptions(ctx context.Context, opts Options, name
 		if !refreshOpts.Force && refreshOpts.TTL > 0 {
 			path := filepath.Join(opts.CacheDir, "llm-stats.json")
 			if snapshot, err := readSnapshot(path); err == nil && strings.HasPrefix(snapshot.Method, "LLM Stats Stats v1 models") && snapshot.RegistryVersion == SourceRegistryVersion {
-				if age := opts.Now().Sub(snapshot.FetchedAt); age >= 0 && age < refreshOpts.TTL && validateWritingEvidenceSnapshot("llm-stats-stats-v1", snapshot) == nil {
-					return []SourceStatus{statusFor("LLM Stats", opts.LLMStatsStatsV1ModelsURL, snapshot, "cached", nil)}, nil, nil
+				if age := opts.Now().Sub(snapshot.FetchedAt); age >= 0 && age < refreshOpts.TTL && validateWritingEvidenceSnapshot(snapshot) == nil {
+					return []SourceStatus{statusFor("LLM Stats", opts.LLMStatsStatsV1ModelsURL, snapshot, cached1, nil)}, nil, nil
 				}
 			}
 		}
@@ -96,7 +97,7 @@ func RefreshEvaluationSourcesWithOptions(ctx context.Context, opts Options, name
 	}
 	for _, name := range normalized {
 		if name == "llm-stats-stats-v1" {
-			return nil, nil, fmt.Errorf("llm-stats-stats-v1 must be refreshed alone")
+			return nil, nil, errors.New("llm-stats-stats-v1 must be refreshed alone")
 		}
 	}
 	if err := validateWritingEvidenceSourceNames(normalized); err != nil {
@@ -110,9 +111,9 @@ func RefreshEvaluationSourcesWithOptions(ctx context.Context, opts Options, name
 		if !refreshOpts.Force && refreshOpts.TTL > 0 {
 			path := filepath.Join(opts.CacheDir, name+".json")
 			if snapshot, err := readSnapshot(path); err == nil {
-				if age := opts.Now().Sub(snapshot.FetchedAt); age >= 0 && age < refreshOpts.TTL && validateWritingEvidenceSnapshot(name, snapshot) == nil {
+				if age := opts.Now().Sub(snapshot.FetchedAt); age >= 0 && age < refreshOpts.TTL && validateWritingEvidenceSnapshot(snapshot) == nil {
 					sourceDef, _ := writingEvidenceSourceFor(name)
-					cachedStatuses[name] = statusFor(sourceDef.name, sourceDef.url(opts), snapshot, "cached", nil)
+					cachedStatuses[name] = statusFor(sourceDef.name, sourceDef.url(opts), snapshot, cached1, nil)
 					continue
 				}
 			}
@@ -193,7 +194,7 @@ func refreshWritingEvidenceSources(ctx context.Context, opts Options, names []st
 			return nil, fmt.Errorf("fetch %s: %w", name, err)
 		}
 		snapshot.FetchedAt = opts.Now().UTC()
-		if err := validateWritingEvidenceSnapshot(name, snapshot); err != nil {
+		if err := validateWritingEvidenceSnapshot(snapshot); err != nil {
 			return nil, fmt.Errorf("validate %s: %w", name, err)
 		}
 		staged = append(staged, stagedSource{source: source, snapshot: snapshot})
@@ -219,9 +220,9 @@ func validateWritingEvidenceSourceNames(names []string) error {
 	return nil
 }
 
-func validateWritingEvidenceSnapshot(name string, snapshot sourceSnapshot) error {
+func validateWritingEvidenceSnapshot(snapshot sourceSnapshot) error {
 	if len(snapshot.Models) == 0 || strings.TrimSpace(snapshot.ContentSHA) == "" || strings.TrimSpace(snapshot.Method) == "" {
-		return fmt.Errorf("incomplete source snapshot")
+		return errors.New("incomplete source snapshot")
 	}
 	for _, model := range snapshot.Models {
 		for benchmark, result := range model.Benchmarks {
@@ -250,7 +251,7 @@ func RefreshLLMStatsStatsV1Source(ctx context.Context, opts Options) (SourceStat
 		return SourceStatus{}, "", fmt.Errorf("fetch llm-stats-stats-v1: %w", err)
 	}
 	snapshot.FetchedAt = opts.Now().UTC()
-	if err := validateWritingEvidenceSnapshot("llm-stats-stats-v1", snapshot); err != nil {
+	if err := validateWritingEvidenceSnapshot(snapshot); err != nil {
 		return SourceStatus{}, "", fmt.Errorf("validate llm-stats-stats-v1: %w", err)
 	}
 	cachePath := filepath.Join(opts.CacheDir, "llm-stats.json")

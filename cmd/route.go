@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -86,7 +87,7 @@ func (cliOpts *invocationOptions) runRouteSimulate(cmd *commandIO, args []string
 
 	modes := splitCSV(cliOpts.routeModes)
 	if len(modes) == 0 {
-		return fmt.Errorf("no --modes provided")
+		return errors.New("no --modes provided")
 	}
 
 	fmt.Fprintf(out, "Replay source: %s\n", eventsPath)
@@ -180,10 +181,6 @@ func routeDecisionLabel(provider string, cfg providers.Config) string {
 	return provider + "/" + cfg.Model
 }
 
-func printActualBaseline(events []providers.RouteEvent) {
-	printActualBaselineTo(os.Stdout, events)
-}
-
 func printActualBaselineTo(out io.Writer, events []providers.RouteEvent) {
 	b := calculateActualBaseline(events)
 
@@ -221,22 +218,22 @@ func calculateActualBaseline(events []providers.RouteEvent) actualBaseline {
 func buildRouteSimulationReport(reportPath, sourcePath string, events int, baseline actualBaseline, reports []modeReport) string {
 	var b strings.Builder
 	b.WriteString("# Routing Simulation Report\n\n")
-	b.WriteString(fmt.Sprintf("- Generated: %s\n", time.Now().Format(time.RFC3339)))
-	b.WriteString(fmt.Sprintf("- Source: `%s`\n", sourcePath))
-	b.WriteString(fmt.Sprintf("- Events replayed: %d\n", events))
-	b.WriteString(fmt.Sprintf("- Output: `%s`\n\n", reportPath))
+	fmt.Fprintf(&b, "- Generated: %s\n", time.Now().Format(time.RFC3339))
+	fmt.Fprintf(&b, "- Source: `%s`\n", sourcePath)
+	fmt.Fprintf(&b, "- Events replayed: %d\n", events)
+	fmt.Fprintf(&b, "- Output: `%s`\n\n", reportPath)
 
 	b.WriteString("## Actual Baseline\n\n")
-	b.WriteString(fmt.Sprintf("- Decisions: %d\n", baseline.decisions))
-	b.WriteString(fmt.Sprintf("- Avg latency: %dms\n", avgInt64(baseline.totalLatencyMs, baseline.decisions)))
-	b.WriteString(fmt.Sprintf("- Avg cost: $%.6f\n", avgFloat(baseline.totalCost, baseline.decisions)))
-	b.WriteString(fmt.Sprintf("- Provider distribution: %s\n\n", formatProviderCounts(baseline.providerCounts, baseline.decisions)))
+	fmt.Fprintf(&b, "- Decisions: %d\n", baseline.decisions)
+	fmt.Fprintf(&b, "- Avg latency: %dms\n", avgInt64(baseline.totalLatencyMs, baseline.decisions))
+	fmt.Fprintf(&b, "- Avg cost: $%.6f\n", avgFloat(baseline.totalCost, baseline.decisions))
+	fmt.Fprintf(&b, "- Provider distribution: %s\n\n", formatProviderCounts(baseline.providerCounts, baseline.decisions))
 
 	b.WriteString("## Mode Comparison\n\n")
 	b.WriteString("| Mode | Decisions | Diff vs Actual | Est Avg Latency | Est Avg Cost | Provider Distribution | Sample Reason |\n")
 	b.WriteString("| --- | ---: | ---: | ---: | ---: | --- | --- |\n")
 	for _, r := range reports {
-		b.WriteString(fmt.Sprintf("| %s | %d | %d (%.1f%%) | %dms | $%.6f | %s | %s |\n",
+		fmt.Fprintf(&b, "| %s | %d | %d (%.1f%%) | %dms | $%.6f | %s | %s |\n",
 			r.Mode,
 			r.Stats.decisions,
 			r.Stats.diffCount,
@@ -244,14 +241,8 @@ func buildRouteSimulationReport(reportPath, sourcePath string, events int, basel
 			avgInt64(r.Stats.totalLatencyMs, r.Stats.decisions),
 			avgFloat(r.Stats.totalCost, r.Stats.decisions),
 			formatProviderCounts(r.Stats.providerCounts, r.Stats.decisions),
-			markdownTableCell(sampleReason(r.Stats.sampleReasons)),
-		))
+			markdownTableCell(sampleReason(r.Stats.sampleReasons)))
 	}
 
 	return b.String()
-}
-
-// Scalar helpers retain their signatures with independent default options.
-func runRouteSimulate(cmd *commandIO, args []string) error {
-	return defaultInvocationOptions().runRouteSimulate(cmd, args)
 }

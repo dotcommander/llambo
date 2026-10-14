@@ -3,10 +3,17 @@ package evals
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
+)
+
+// Repeated string literals consolidated by goconst.
+const (
+	owner1 = "owner"
 )
 
 const (
@@ -31,10 +38,10 @@ func fetchArenaCreative(ctx context.Context, opts Options) (sourceSnapshot, erro
 	}
 	rows := categories["creative_writing"]
 	if len(rows) == 0 {
-		return sourceSnapshot{}, fmt.Errorf("Arena source has no creative_writing rows")
+		return sourceSnapshot{}, errors.New("Arena source has no creative_writing rows")
 	}
 	sum := sha256.Sum256(body)
-	contentSHA := fmt.Sprintf("%x", sum)
+	contentSHA := hex.EncodeToString(sum[:])
 	version := normalizeHTTPETag(headers.Get("ETag"))
 	commit := strings.TrimSpace(headers.Get("X-Repo-Commit"))
 	if version == "" {
@@ -56,7 +63,7 @@ func fetchArenaCreative(ctx context.Context, opts Options) (sourceSnapshot, erro
 			return sourceSnapshot{}, fmt.Errorf("Arena model %q has invalid rating bounds", name)
 		}
 		score := row.Rating
-		result := BenchmarkResult{Score: &score, Version: version, URL: opts.ArenaCreativeURL, CommitSHA: commit, ContentSHA: contentSHA, Method: "Arena human-preference Bradley-Terry creative_writing rating", FetchedAt: fetchedAt, Details: map[string]float64{"rating_q025": row.Lower, "rating_q975": row.Upper}, SourceClass: string(SourceOwnerResult), EvidenceGrade: "owner", Unit: "rating", Direction: "higher", Cohort: "arena-creative-writing-live", Locator: opts.ArenaCreativeURL, SourceID: ArenaCreativeSourceID, SourceRevision: version}
+		result := BenchmarkResult{Score: &score, Version: version, URL: opts.ArenaCreativeURL, CommitSHA: commit, ContentSHA: contentSHA, Method: "Arena human-preference Bradley-Terry creative_writing rating", FetchedAt: fetchedAt, Details: map[string]float64{"rating_q025": row.Lower, "rating_q975": row.Upper}, SourceClass: string(SourceOwnerResult), EvidenceGrade: owner1, Unit: "rating", Direction: higher1, Cohort: "arena-creative-writing-live", Locator: opts.ArenaCreativeURL, SourceID: ArenaCreativeSourceID, SourceRevision: version}
 		models = append(models, Model{Key: ArenaCreativeSourceID + ":" + canonicalKey(name), Name: name, Benchmarks: map[string]BenchmarkResult{"lmsys-writing": result}})
 	}
 	return sourceSnapshot{FetchedAt: fetchedAt, Models: models, URL: opts.ArenaCreativeURL, Version: version, CommitSHA: commit, ContentSHA: contentSHA, Method: "Arena human-preference Bradley-Terry creative_writing rating", Observations: len(models)}, nil

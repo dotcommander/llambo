@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"fmt"
+	"errors"
 	"strings"
 	"time"
 
@@ -47,7 +47,7 @@ type serveCommand struct {
 func (c *serveCommand) Run(io *commandIO) error {
 	cliOpts := &invocationOptions{}
 	cliOpts.servePort, cliOpts.serveHost, cliOpts.serveAllowRemote = c.Port, c.Host, c.AllowRemote
-	return cliOpts.runServe(io, nil)
+	return cliOpts.runServe(io)
 }
 
 type evalsCommand struct {
@@ -129,8 +129,8 @@ func (*evalsReportCommand) Run(c *evalsCommand, io *commandIO) error {
 }
 
 func (*evalsWritingCatalogCommand) Run(c *evalsCommand, io *commandIO) error {
-	if io.FlagChanged("refresh-official-model-cards") {
-		return fmt.Errorf("--refresh-official-model-cards is not supported with evals writing")
+	if io.FlagChanged(refreshOfficialModelCards) {
+		return errors.New("--refresh-official-model-cards is not supported with evals writing")
 	}
 	return runWritingCatalog(io, c.Format, c.Output, c.Refresh, c.ExportPrompts, c.PromptSource, c.PromptLimit, c.DiscoverModels, c.DiscoverLimit)
 }
@@ -154,7 +154,7 @@ type jobsRunCommand struct {
 func (c *jobsRunCommand) Run(io *commandIO) error {
 	cliOpts := &invocationOptions{}
 	cliOpts.runCount, cliOpts.runPrompt, cliOpts.runSystem, cliOpts.runServer, cliOpts.runWait, cliOpts.runPoll, cliOpts.runTimeout, cliOpts.runVerify = c.Count, c.Prompt, c.System, c.Server, c.Wait, c.Poll, c.Timeout, c.Verify
-	return cliOpts.runJobsRun(io, nil)
+	return cliOpts.runJobsRun(io)
 }
 
 type jobsStressCommand struct {
@@ -168,7 +168,7 @@ type jobsStressCommand struct {
 func (c *jobsStressCommand) Run(io *commandIO) error {
 	cliOpts := &invocationOptions{}
 	cliOpts.stressJobs, cliOpts.stressRequestsPerJob, cliOpts.stressPrompt, cliOpts.stressServer = c.Jobs, c.RequestsPerJob, c.Prompt, c.Server
-	return cliOpts.runJobsStress(io, nil)
+	return cliOpts.runJobsStress(io)
 }
 
 type modelsCommand struct {
@@ -243,7 +243,7 @@ func (c *catalogPairCommand) Run(k *kong.Context, io *commandIO) error {
 	case "unavoid":
 		return runModelsCatalogUnavoid(io, c.args())
 	}
-	return fmt.Errorf("unknown catalog operation")
+	return errors.New("unknown catalog operation")
 }
 
 type catalogAvoidCommand struct {

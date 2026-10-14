@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
-	"fmt"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -79,16 +79,16 @@ func TestConsumePingStreamDoesNotInventSpeedForBufferedResponse(t *testing.T) {
 }
 
 func TestPingShouldFallbackToNonStreamingForEmptyStream(t *testing.T) {
-	if !pingShouldFallbackToNonStreaming(fmt.Errorf("stream ended without generated output")) {
+	if !pingShouldFallbackToNonStreaming(errors.New("stream ended without generated output")) {
 		t.Fatal("expected empty stream to use non-streaming fallback")
 	}
-	if !pingShouldFallbackToNonStreaming(fmt.Errorf("PROVIDER_ERROR: provider does not support Stream")) {
+	if !pingShouldFallbackToNonStreaming(errors.New("PROVIDER_ERROR: provider does not support Stream")) {
 		t.Fatal("expected unsupported stream to use non-streaming fallback")
 	}
-	if !pingShouldFallbackToNonStreaming(fmt.Errorf("streaming not supported")) {
+	if !pingShouldFallbackToNonStreaming(errors.New("streaming not supported")) {
 		t.Fatal("expected streaming-not-supported error to use non-streaming fallback")
 	}
-	if pingShouldFallbackToNonStreaming(fmt.Errorf("context deadline exceeded")) {
+	if pingShouldFallbackToNonStreaming(errors.New("context deadline exceeded")) {
 		t.Fatal("unexpected fallback for a timeout")
 	}
 }

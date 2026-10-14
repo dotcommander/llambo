@@ -4,6 +4,7 @@ import (
 	"bytes"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -94,7 +95,7 @@ func loadProjectionRegistry(path string) (projectionRegistry, error) {
 		projection.Basis = strings.TrimSpace(projection.Basis)
 		projection.ReviewedAt = strings.TrimSpace(projection.ReviewedAt)
 		if projection.ArtifactKey == "" || projection.SourceKey == "" {
-			return projectionRegistry{}, fmt.Errorf("projection artifact_key and source_key must not be empty")
+			return projectionRegistry{}, errors.New("projection artifact_key and source_key must not be empty")
 		}
 		if projection.Basis == "" {
 			return projectionRegistry{}, fmt.Errorf("projection %q must declare a review basis", projection.ArtifactKey)
@@ -102,7 +103,7 @@ func loadProjectionRegistry(path string) (projectionRegistry, error) {
 		if _, err := time.Parse(time.RFC3339, projection.ReviewedAt); err != nil {
 			return projectionRegistry{}, fmt.Errorf("projection %q has invalid reviewed_at %q: %w", projection.ArtifactKey, projection.ReviewedAt, err)
 		}
-		if projection.Confidence != "high" && projection.Confidence != "medium" && projection.Confidence != "low" {
+		if projection.Confidence != high1 && projection.Confidence != medium1 && projection.Confidence != low1 {
 			return projectionRegistry{}, fmt.Errorf("projection %q has invalid confidence %q", projection.ArtifactKey, projection.Confidence)
 		}
 		if _, ok := seen[projection.ArtifactKey]; ok {
@@ -120,7 +121,7 @@ func requireJSONEOF(decoder *json.Decoder) error {
 	var extra any
 	if err := decoder.Decode(&extra); err != io.EOF {
 		if err == nil {
-			return fmt.Errorf("multiple JSON values")
+			return errors.New("multiple JSON values")
 		}
 		return err
 	}
@@ -159,7 +160,7 @@ func appendProjectedRows(rows []ReportModel, projections []projectionSpec) ([]Re
 			if score != nil {
 				multiplier := projectionMultiplier(projected.Projection)
 				score.TrustedCoverage *= multiplier
-				score.Confidence = "low"
+				score.Confidence = low1
 			}
 		}
 		removeProjectedOperationalEvidence(&projected)
@@ -169,10 +170,10 @@ func appendProjectedRows(rows []ReportModel, projections []projectionSpec) ([]Re
 }
 
 func removeProjectedOperationalEvidence(projected *ReportModel) {
-	projected.Scores["price"] = nil
-	projected.Scores["speed"] = nil
+	projected.Scores[price1] = nil
+	projected.Scores[speed1] = nil
 	for _, metric := range operationalMetrics {
-		if metric.dimension == "price" || metric.dimension == "speed" {
+		if metric.dimension == price1 || metric.dimension == speed1 {
 			delete(projected.MetricPercentiles, metric.name)
 		}
 	}
@@ -196,11 +197,11 @@ func projectionMultiplier(projection *ProjectionInfo) float64 {
 		return 1
 	}
 	switch projection.Confidence {
-	case "high":
+	case high1:
 		return 1
-	case "medium":
+	case medium1:
 		return .75
-	case "low":
+	case low1:
 		return .50
 	default:
 		return 0
@@ -315,7 +316,7 @@ func cloneBool(value *bool) *bool {
 }
 
 func lowerConfidence(left, right string) string {
-	rank := map[string]int{"low": 0, "medium": 1, "high": 2}
+	rank := map[string]int{low1: 0, medium1: 1, high1: 2}
 	if rank[left] <= rank[right] {
 		return left
 	}

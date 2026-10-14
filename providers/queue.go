@@ -2,6 +2,7 @@ package providers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync/atomic"
 	"time"
@@ -122,7 +123,6 @@ func (q *BackendQueue) Process(ctx context.Context, jobs []Job) []Result {
 	p := pool.NewWithResults[Result]().WithMaxGoroutines(q.WorkerCount())
 
 	for _, job := range jobs {
-		job := job // capture for closure
 		p.Go(func() Result {
 			plan, err := q.planJob(job)
 			if err != nil {
@@ -221,7 +221,7 @@ func (q *BackendQueue) chat(parent context.Context, backend Backend, cfg Config,
 		if structured, ok := ctx.Value(structuredRequestKey{}).(StructuredChatRequest); ok {
 			executor, ok := q.executor.(StructuredChatExecutor)
 			if !ok {
-				return chatRequestResult{}, fmt.Errorf("executor does not support ordered requests")
+				return chatRequestResult{}, errors.New("executor does not support ordered requests")
 			}
 			response, err := executor.ExecuteStructuredChat(ctx, backend.Name, cfg, structured)
 			return finalizeChatRequest(backend.Name, cfg, start, response.Content, response.Usage, response.FinishReason, response.ToolCalls, err)

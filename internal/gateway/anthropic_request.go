@@ -3,21 +3,30 @@ package gateway
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
-	whtypes "github.com/garyblankenship/wormhole/v3/types"
 	"sort"
 	"strings"
+
+	whtypes "github.com/garyblankenship/wormhole/v3/types"
+)
+
+// Repeated string literals consolidated by goconst.
+const (
+	system3 = "system"
+	toolUse = "tool_use"
+	user4   = "user"
 )
 
 func translateAnthropicRequest(req AnthropicMessagesRequest) (ChatCompletionRequest, error) {
 	if len(req.Messages) == 0 {
-		return ChatCompletionRequest{}, fmt.Errorf("messages array is required")
+		return ChatCompletionRequest{}, errors.New("messages array is required")
 	}
 	if len(req.Messages) > maxAnthropicMessages {
 		return ChatCompletionRequest{}, fmt.Errorf("messages exceeds maximum of %d", maxAnthropicMessages)
 	}
 	if req.MaxTokens <= 0 {
-		return ChatCompletionRequest{}, fmt.Errorf("max_tokens is required and must be > 0")
+		return ChatCompletionRequest{}, errors.New("max_tokens is required and must be > 0")
 	}
 
 	messages := make([]Message, 0, len(req.Messages)+1)
@@ -27,11 +36,11 @@ func translateAnthropicRequest(req AnthropicMessagesRequest) (ChatCompletionRequ
 		return ChatCompletionRequest{}, err
 	}
 	if system != "" {
-		messages = append(messages, Message{Role: "system", Content: system})
+		messages = append(messages, Message{Role: system3, Content: system})
 	}
 
 	for i, msg := range req.Messages {
-		if msg.Role != "user" && msg.Role != "assistant" {
+		if msg.Role != user4 && msg.Role != assistant1 {
 			return ChatCompletionRequest{}, fmt.Errorf("messages[%d].role must be user or assistant", i)
 		}
 
@@ -57,7 +66,7 @@ func parseAnthropicSystem(raw json.RawMessage) (string, error) {
 	if isRawNull(raw) {
 		return "", nil
 	}
-	return parseAnthropicContent(raw, "system")
+	return parseAnthropicContent(raw, system3)
 }
 
 func parseAnthropicContent(raw json.RawMessage, fieldName string) (string, error) {
@@ -95,22 +104,22 @@ func parseAnthropicContent(raw json.RawMessage, fieldName string) (string, error
 
 func blockToText(block AnthropicContentBlock) (string, error) {
 	if block.Type == "" {
-		return "", fmt.Errorf("type is required")
+		return "", errors.New("type is required")
 	}
 
 	switch block.Type {
-	case "text":
+	case text1:
 		return block.Text, nil
 	case "image":
-		return "", fmt.Errorf("image content blocks are not supported")
+		return "", errors.New("image content blocks are not supported")
 	case "document":
-		return "", fmt.Errorf("document content blocks are not supported")
-	case "tool_use":
+		return "", errors.New("document content blocks are not supported")
+	case toolUse:
 		if block.ID == "" {
-			return "", fmt.Errorf("tool_use.id is required")
+			return "", errors.New("tool_use.id is required")
 		}
 		if block.Name == "" {
-			return "", fmt.Errorf("tool_use.name is required")
+			return "", errors.New("tool_use.name is required")
 		}
 		input := compactJSON(block.Input)
 		if input == "" {
@@ -119,7 +128,7 @@ func blockToText(block AnthropicContentBlock) (string, error) {
 		return fmt.Sprintf("[tool_use id=%s name=%s input=%s]", block.ID, block.Name, input), nil
 	case "tool_result":
 		if block.ToolUseID == "" {
-			return "", fmt.Errorf("tool_result.tool_use_id is required")
+			return "", errors.New("tool_result.tool_use_id is required")
 		}
 		result := toolResultText(block.Content)
 		if result == "" {
@@ -174,18 +183,18 @@ func compactJSON(raw json.RawMessage) string {
 
 func validateAnthropicOptionalFields(req AnthropicMessagesRequest) error {
 	if req.TopK != nil && *req.TopK <= 0 {
-		return fmt.Errorf("top_k must be > 0")
+		return errors.New("top_k must be > 0")
 	}
 	if req.TopP != nil && (*req.TopP <= 0 || *req.TopP > 1) {
-		return fmt.Errorf("top_p must be > 0 and <= 1")
+		return errors.New("top_p must be > 0 and <= 1")
 	}
 	if req.Temperature != nil && *req.Temperature < 0 {
-		return fmt.Errorf("temperature must be >= 0")
+		return errors.New("temperature must be >= 0")
 	}
 	if !isRawNull(req.Thinking) {
 		var thinking map[string]any
 		if err := json.Unmarshal(req.Thinking, &thinking); err != nil {
-			return fmt.Errorf("thinking must be an object")
+			return errors.New("thinking must be an object")
 		}
 	}
 	return nil
@@ -272,20 +281,20 @@ func translateAnthropicMessage(msg AnthropicInputMessage, index int) ([]Message,
 	}
 	for _, b := range blocks {
 		switch b.Type {
-		case "text":
+		case text1:
 			current.Content += b.Text
-		case "tool_use":
-			if msg.Role != "assistant" || b.ID == "" || b.Name == "" {
-				return nil, fmt.Errorf("invalid tool_use block")
+		case toolUse:
+			if msg.Role != assistant1 || b.ID == "" || b.Name == "" {
+				return nil, errors.New("invalid tool_use block")
 			}
 			var args map[string]any
 			if json.Unmarshal(b.Input, &args) != nil || args == nil {
-				return nil, fmt.Errorf("tool_use.input must be an object")
+				return nil, errors.New("tool_use.input must be an object")
 			}
-			current.ToolCalls = append(current.ToolCalls, whtypes.ToolCall{Type: "function", ID: b.ID, Name: b.Name, Arguments: args, Function: &whtypes.ToolCallFunction{Name: b.Name, Arguments: string(b.Input)}})
+			current.ToolCalls = append(current.ToolCalls, whtypes.ToolCall{Type: function1, ID: b.ID, Name: b.Name, Arguments: args, Function: &whtypes.ToolCallFunction{Name: b.Name, Arguments: string(b.Input)}})
 		case "tool_result":
-			if msg.Role != "user" || b.ToolUseID == "" {
-				return nil, fmt.Errorf("invalid tool_result block")
+			if msg.Role != user4 || b.ToolUseID == "" {
+				return nil, errors.New("invalid tool_result block")
 			}
 			flush()
 			content, err := parseAnthropicContent(b.Content, "tool_result.content")
@@ -296,7 +305,7 @@ func translateAnthropicMessage(msg AnthropicInputMessage, index int) ([]Message,
 				}
 				content = compactJSON(b.Content)
 			}
-			out = append(out, Message{Role: "tool", ToolCallID: b.ToolUseID, Content: content})
+			out = append(out, Message{Role: tool2, ToolCallID: b.ToolUseID, Content: content})
 		default:
 			return nil, fmt.Errorf("unsupported content block %q", b.Type)
 		}

@@ -2,6 +2,7 @@ package evals
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -120,7 +121,7 @@ func TestFilterProjectedRowsToLiveOMLXTouchesOnlyProjections(t *testing.T) {
 
 func TestUnavailableOMLXOmitUnprovenProjectedRows(t *testing.T) {
 	report := Report{Models: []ReportModel{{Key: "canonical"}, {Key: "projected", Projection: &ProjectionInfo{SourceKey: "source", Confidence: "low"}}}}
-	FilterProjectedRowsToLiveOMLX(&report, OMLXDiscovery{Attempts: []string{"admin", "fallback"}}, fmt.Errorf("offline"))
+	FilterProjectedRowsToLiveOMLX(&report, OMLXDiscovery{Attempts: []string{"admin", "fallback"}}, errors.New("offline"))
 	if !slices.Equal(omlxModelKeys(report.Models), []string{"canonical"}) {
 		t.Fatalf("unavailable discovery retained unproven projections: %#v", report.Models)
 	}

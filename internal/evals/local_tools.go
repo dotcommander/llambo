@@ -3,6 +3,7 @@ package evals
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -59,10 +60,10 @@ type ToolEvaluationRequest struct {
 
 func EvaluateToolCase(ctx context.Context, client ToolChatClient, request ToolEvaluationRequest) (LocalCall, bool, error) {
 	if client == nil {
-		return LocalCall{}, false, fmt.Errorf("tool chat client is required")
+		return LocalCall{}, false, errors.New("tool chat client is required")
 	}
 	if strings.TrimSpace(request.Case.ID) == "" || strings.TrimSpace(request.Chat.Model) == "" {
-		return LocalCall{}, false, fmt.Errorf("tool case id and requested model are required")
+		return LocalCall{}, false, errors.New("tool case id and requested model are required")
 	}
 	for i, tool := range request.Chat.Tools {
 		if strings.TrimSpace(tool.Name) == "" || !json.Valid(tool.Parameters) {
@@ -125,13 +126,13 @@ func localServedIdentity(requested, provider, model, verified string) (string, e
 	return served, nil
 }
 
-// localProviderModel removes only the configured provider prefix before a
-// direct provider endpoint call. The remaining exact ID may itself contain
-// slashes, so SplitN/Cut is intentionally used just once.
-func localProviderModel(requested, provider string) (string, error) {
+// localOMLXModel removes the omlx provider prefix before a direct OMLX
+// endpoint call. The remaining exact ID may itself contain slashes, so Cut is
+// intentionally used just once.
+func localOMLXModel(requested string) (string, error) {
 	actualProvider, model, ok := strings.Cut(strings.TrimSpace(requested), "/")
-	if !ok || actualProvider != provider || strings.TrimSpace(model) == "" {
-		return "", fmt.Errorf("requested model %q must use %s/<exact-model-id>", requested, provider)
+	if !ok || actualProvider != "omlx" || strings.TrimSpace(model) == "" {
+		return "", fmt.Errorf("requested model %q must use omlx/<exact-model-id>", requested)
 	}
 	return model, nil
 }

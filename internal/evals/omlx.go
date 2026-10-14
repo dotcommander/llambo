@@ -3,6 +3,7 @@ package evals
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -73,7 +74,7 @@ func DiscoverOMLXModels(ctx context.Context, baseURL, apiKey string, client *htt
 		}
 		fallbackErr = parseErr
 	}
-	return discovery, fmt.Errorf("OMLX discovery failed: admin: %v; fallback: %v", adminErr, fallbackErr)
+	return discovery, fmt.Errorf("OMLX discovery failed: admin: %w; fallback: %w", adminErr, fallbackErr)
 }
 
 // VerifyOMLXExactModel proves an exact ID is present in the unfiltered live
@@ -125,21 +126,21 @@ func ValidateOMLXLoopbackBaseURL(baseURL string) error {
 		return fmt.Errorf("invalid OMLX base URL %q", baseURL)
 	}
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return fmt.Errorf("OMLX base URL must use http or https")
+		return errors.New("OMLX base URL must use http or https")
 	}
 	host := parsed.Hostname()
 	if !strings.EqualFold(host, "localhost") {
 		ip := net.ParseIP(host)
 		if ip == nil || !ip.IsLoopback() {
-			return fmt.Errorf("OMLX base URL must use a loopback host")
+			return errors.New("OMLX base URL must use a loopback host")
 		}
 	}
 	path := strings.TrimRight(parsed.Path, "/")
 	if path != "" && path != "/v1" {
-		return fmt.Errorf("OMLX base URL path must be empty or /v1")
+		return errors.New("OMLX base URL path must be empty or /v1")
 	}
 	if parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return fmt.Errorf("OMLX base URL must not include credentials, query, or fragment")
+		return errors.New("OMLX base URL must not include credentials, query, or fragment")
 	}
 	return nil
 }
@@ -161,7 +162,7 @@ func fetchOMLXJSON(ctx context.Context, client *http.Client, endpoint, apiKey st
 	if err != nil {
 		return nil, fmt.Errorf("build OMLX request: %w", err)
 	}
-	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Accept", applicationJSON)
 	if apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
@@ -169,7 +170,7 @@ func fetchOMLXJSON(ctx context.Context, client *http.Client, endpoint, apiKey st
 	if err != nil {
 		return nil, fmt.Errorf("request OMLX endpoint: %w", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	body, err := io.ReadAll(io.LimitReader(response.Body, omlxResponseLimit+1))
 	if err != nil {
 		return nil, fmt.Errorf("read OMLX response: %w", err)
@@ -197,7 +198,7 @@ func parseOMLXAdmin(body []byte) ([]string, []string, error) {
 		return nil, nil, fmt.Errorf("parse OMLX admin response: %w", err)
 	}
 	if payload.Models == nil {
-		return nil, nil, fmt.Errorf("admin response is missing models")
+		return nil, nil, errors.New("admin response is missing models")
 	}
 	models, excluded := make([]string, 0, len(payload.Models)), make([]string, 0)
 	for _, model := range payload.Models {
@@ -206,7 +207,7 @@ func parseOMLXAdmin(body []byte) ([]string, []string, error) {
 			continue
 		}
 		modelType := strings.ToLower(strings.TrimSpace(model.ModelType))
-		if (modelType != "llm" && modelType != "vlm") || model.IsHidden || model.IsHelper || model.Virtual || isUnresolvedLocalModel(id) {
+		if (modelType != llm1 && modelType != "vlm") || model.IsHidden || model.IsHelper || model.Virtual || isUnresolvedLocalModel(id) {
 			excluded = append(excluded, id)
 			continue
 		}
@@ -225,7 +226,7 @@ func parseOMLXFallback(body []byte) ([]string, []string, error) {
 		return nil, nil, fmt.Errorf("parse OMLX models response: %w", err)
 	}
 	if payload.Data == nil {
-		return nil, nil, fmt.Errorf("fallback response is missing data")
+		return nil, nil, errors.New("fallback response is missing data")
 	}
 	models, excluded := make([]string, 0, len(payload.Data)), make([]string, 0)
 	for _, model := range payload.Data {
@@ -281,7 +282,7 @@ func FilterProjectedRowsToLiveOMLX(report *Report, discovery OMLXDiscovery, disc
 	}
 	diagnostics := &OMLXDiagnostics{Attempts: append([]string(nil), discovery.Attempts...), ExcludedModels: append([]string(nil), discovery.Excluded...)}
 	if discoveryErr != nil {
-		diagnostics.Status = "unavailable"
+		diagnostics.Status = unavailable1
 		diagnostics.Error = discoveryErr.Error()
 		filtered := report.Models[:0]
 		for _, row := range report.Models {

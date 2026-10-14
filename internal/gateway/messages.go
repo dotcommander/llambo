@@ -9,23 +9,23 @@ func extractMessagesCore(msgs []Message, includeSystem, prefixRoles bool) (syste
 	var userParts []string
 	for _, msg := range msgs {
 		switch msg.Role {
-		case "system":
+		case system3:
 			if includeSystem {
 				systemParts = append(systemParts, msg.Content)
 			}
-		case "user":
+		case user4:
 			if prefixRoles {
 				userParts = append(userParts, "User: "+msg.Content)
 			} else {
 				userParts = append(userParts, msg.Content)
 			}
-		case "assistant":
+		case assistant1:
 			userParts = append(userParts, "Assistant: "+msg.Content)
 		}
 	}
 	system = strings.Join(systemParts, "\n")
 	user = strings.Join(userParts, "\n")
-	return
+	return system, user
 }
 
 // ExtractMessages extracts system and user content from a message array.

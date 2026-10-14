@@ -3,9 +3,10 @@ package gateway
 import (
 	"errors"
 	"fmt"
-	"github.com/dotcommander/llambo/providers"
 	"net/http"
 	"strings"
+
+	"github.com/dotcommander/llambo/providers"
 )
 
 func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
@@ -47,7 +48,7 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 
 func validateJobBatch(requests []JobRequest) error {
 	if len(requests) == 0 {
-		return fmt.Errorf("requests is required")
+		return errors.New("requests is required")
 	}
 	seenIDs := make(map[string]struct{}, len(requests))
 	for index, request := range requests {
@@ -62,7 +63,7 @@ func validateJobBatch(requests []JobRequest) error {
 			return fmt.Errorf("requests[%d].messages is required", index)
 		}
 		for messageIndex, message := range request.Messages {
-			if strings.TrimSpace(message.Content) == "" && !(message.Role == "assistant" && len(message.ToolCalls) > 0) {
+			if strings.TrimSpace(message.Content) == "" && (message.Role != assistant1 || len(message.ToolCalls) <= 0) {
 				return fmt.Errorf("requests[%d].messages[%d].content is required", index, messageIndex)
 			}
 		}

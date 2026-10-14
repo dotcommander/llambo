@@ -2,7 +2,8 @@ package gateway
 
 import (
 	"encoding/json"
-	"fmt"
+	"errors"
+
 	whtypes "github.com/garyblankenship/wormhole/v3/types"
 )
 
@@ -19,7 +20,7 @@ func (m Message) MarshalJSON() ([]byte, error) {
 			}
 			function = &whtypes.ToolCallFunction{Name: call.Name, Arguments: string(arguments)}
 		}
-		calls = append(calls, OpenAIToolCall{ID: call.ID, Type: "function", Function: function})
+		calls = append(calls, OpenAIToolCall{ID: call.ID, Type: function1, Function: function})
 	}
 	return json.Marshal(struct {
 		Role       string           `json:"role"`
@@ -41,11 +42,11 @@ func (m *Message) UnmarshalJSON(data []byte) error {
 	}
 	content := ""
 	if isRawNull(raw.Content) {
-		if raw.Role != "assistant" || len(raw.ToolCalls) == 0 {
-			return fmt.Errorf("message content must be a string")
+		if raw.Role != assistant1 || len(raw.ToolCalls) == 0 {
+			return errors.New("message content must be a string")
 		}
 	} else if err := json.Unmarshal(raw.Content, &content); err != nil {
-		return fmt.Errorf("message content must be a string")
+		return errors.New("message content must be a string")
 	}
 	*m = Message{Role: raw.Role, Content: content, ToolCalls: raw.ToolCalls, ToolCallID: raw.ToolCallID}
 	return nil

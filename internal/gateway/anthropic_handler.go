@@ -90,7 +90,7 @@ func (s *Server) parseAnthropicMessagesRequest(w http.ResponseWriter, r *http.Re
 	}
 	if toolChoice != nil {
 		kind := whtypes.ToolChoiceType(toolChoice.Type)
-		if kind == "tool" {
+		if kind == tool2 {
 			kind = whtypes.ToolChoiceTypeSpecific
 		}
 		translated.structured.ToolChoice = &whtypes.ToolChoice{Type: kind, ToolName: toolChoice.Name}

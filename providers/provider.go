@@ -88,7 +88,7 @@ type ChatStreamProvider interface {
 // Default values for Config fields
 const (
 	DefaultWorkers      = 2
-	DefaultProviderType = "openai"
+	DefaultProviderType = openai1
 	DefaultRequiresKey  = true
 )
 
@@ -177,7 +177,7 @@ func (c Config) GetProviderType() string {
 
 // IsGeminiProvider returns true when config identifies a native Gemini provider.
 func IsGeminiProvider(cfg Config) bool {
-	return cfg.ProviderType == "gemini"
+	return cfg.ProviderType == gemini1
 }
 
 // GetRequiresKey returns whether API key is required.
@@ -189,7 +189,7 @@ func (c Config) GetRequiresKey() bool {
 func (c Config) NeedsBaseURL() bool {
 	// Native providers don't need BaseURL override
 	switch c.GetProviderType() {
-	case "openrouter", "gemini":
+	case openrouter1, gemini1:
 		return false
 	default:
 		// OpenAI-compatible providers need BaseURL if it's not the default OpenAI URL

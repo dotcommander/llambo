@@ -102,7 +102,7 @@ func TestWritingRunStoreNormalizesLegacyEQBenchTemperatureIdentity(t *testing.T)
 	if err != nil {
 		t.Fatalf("legacy v2 resume failed: %v", err)
 	}
-	defer resumed.Close()
+	defer func() { _ = resumed.Close() }()
 
 	writingBench := testWritingManifest()
 	if normalized := normalizedWritingRunIdentity(writingBench.Identity); normalized.Generation.TemperatureSet {

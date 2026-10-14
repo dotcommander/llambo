@@ -299,7 +299,7 @@ func cloneJSONValue(v any) any {
 }
 
 func cloneJSONContainer(value reflect.Value) reflect.Value {
-	switch value.Kind() {
+	switch value.Kind() { //nolint:exhaustive // reflection walker handles remaining kinds via default
 	case reflect.Interface:
 		if value.IsNil() {
 			return reflect.Zero(value.Type())

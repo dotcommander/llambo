@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	whtypes "github.com/garyblankenship/wormhole/v3/types"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"sync/atomic"
 	"testing"
+
+	whtypes "github.com/garyblankenship/wormhole/v3/types"
 )
 
 func TestExactTargetPreservesCaseAndEmbeddedSlash(t *testing.T) {
@@ -78,7 +80,7 @@ func TestKeyRotationVisitsEveryDistinctKey(t *testing.T) {
 		if calls == 3 {
 			return chatRequestResult{content: "ok", clientKey: "third"}, nil
 		}
-		return chatRequestResult{clientKey: fmt.Sprint(calls)}, NewOpenAIError("quota", 429, nil)
+		return chatRequestResult{clientKey: strconv.Itoa(calls)}, NewOpenAIError("quota", 429, nil)
 	})
 	if err != nil || calls != 3 || result.content != "ok" {
 		t.Fatalf("calls=%d result=%+v err=%v", calls, result, err)

@@ -9,6 +9,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -16,6 +17,11 @@ import (
 
 	"github.com/dotcommander/llambo/internal/catalog"
 	"github.com/dotcommander/llambo/internal/costs"
+)
+
+// Repeated string literals consolidated by goconst.
+const (
+	pinned1 = "pinned"
 )
 
 func (cliOpts *invocationOptions) runModelsCatalog(cmd *commandIO, args []string) error {
@@ -83,7 +89,7 @@ func (cliOpts *invocationOptions) runModelsCatalog(cmd *commandIO, args []string
 
 			status := ""
 			if m.Pinned {
-				status = "pinned"
+				status = pinned1
 			}
 			if m.Avoid {
 				s := "avoid"
@@ -210,7 +216,7 @@ func runModelsCatalogImportQuality(cmd *commandIO, args []string) error {
 		return fmt.Errorf("parse quality import: %w", err)
 	}
 	if len(records) == 0 {
-		return fmt.Errorf("quality import contains no records")
+		return errors.New("quality import contains no records")
 	}
 
 	catPath, err := catalog.CatalogPath()
@@ -254,13 +260,4 @@ func mutateCatalogEntry(cmd *commandIO, providerName, modelID string, mutate fun
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "Updated %s/%s\n", providerName, modelID)
 	return nil
-}
-
-// Scalar helpers retain their signatures with independent default options.
-func runModelsCatalogAvoid(cmd *commandIO, args []string) error {
-	return defaultInvocationOptions().runModelsCatalogAvoid(cmd, args)
-}
-
-func runModelsCatalog(cmd *commandIO, args []string) error {
-	return defaultInvocationOptions().runModelsCatalog(cmd, args)
 }

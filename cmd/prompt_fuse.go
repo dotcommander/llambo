@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 
@@ -80,13 +81,6 @@ func defaultExecutePromptFusionControl(promptText, systemPrompt string, timeoutS
 
 var executePromptFusionControl = defaultExecutePromptFusionControl
 
-func (cliOpts *invocationOptions) executePromptFusionControlContext(ctx context.Context, promptText, systemPrompt string, timeoutSecs int, selector string) (*PromptFusionControl, error) {
-	if reflect.ValueOf(executePromptFusionControl).Pointer() != reflect.ValueOf(defaultExecutePromptFusionControl).Pointer() {
-		return executePromptFusionControl(promptText, systemPrompt, timeoutSecs, selector)
-	}
-	return cliOpts.executePromptFusionControlCore(ctx, promptText, systemPrompt, timeoutSecs, selector, nil)
-}
-
 func (cliOpts *invocationOptions) executePromptFusionControlWithRun(ctx context.Context, promptText, systemPrompt string, timeoutSecs int, selector string, run *promptRun) (*PromptFusionControl, error) {
 	if reflect.ValueOf(executePromptFusionControl).Pointer() != reflect.ValueOf(defaultExecutePromptFusionControl).Pointer() {
 		return executePromptFusionControl(promptText, systemPrompt, timeoutSecs, selector)
@@ -97,7 +91,7 @@ func (cliOpts *invocationOptions) executePromptFusionControlWithRun(ctx context.
 func (cliOpts *invocationOptions) executePromptFusionResponseCore(ctx context.Context, promptText, systemPrompt string, results []PromptResult, timeoutSecs int, selector string, run *promptRun) (*PromptFusion, error) {
 	successful := successfulPromptResults(results)
 	if len(successful) == 0 {
-		return nil, fmt.Errorf("cannot fuse responses: no successful model responses")
+		return nil, errors.New("cannot fuse responses: no successful model responses")
 	}
 
 	target, err := cliOpts.resolveFirstFusionTarget(selector)
@@ -246,10 +240,6 @@ func executePromptFusionResponseCore(ctx context.Context, promptText, systemProm
 
 func executePromptFusionControlWithRun(ctx context.Context, promptText, systemPrompt string, timeoutSecs int, selector string, run *promptRun) (*PromptFusionControl, error) {
 	return defaultInvocationOptions().executePromptFusionControlWithRun(ctx, promptText, systemPrompt, timeoutSecs, selector, run)
-}
-
-func executePromptFusionControlContext(ctx context.Context, promptText, systemPrompt string, timeoutSecs int, selector string) (*PromptFusionControl, error) {
-	return defaultInvocationOptions().executePromptFusionControlContext(ctx, promptText, systemPrompt, timeoutSecs, selector)
 }
 
 func executePromptFusionControlCore(ctx context.Context, promptText, systemPrompt string, timeoutSecs int, selector string, run *promptRun) (*PromptFusionControl, error) {

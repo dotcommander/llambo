@@ -27,7 +27,7 @@ func writeDurableFile(path string, data []byte, dirMode, fileMode os.FileMode, p
 		return err
 	}
 	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
+	defer func() { _ = os.Remove(tmpPath) }()
 	if err := tmp.Chmod(fileMode); err != nil {
 		_ = tmp.Close()
 		return err
@@ -50,6 +50,6 @@ func writeDurableFile(path string, data []byte, dirMode, fileMode os.FileMode, p
 	if err != nil {
 		return err
 	}
-	defer d.Close()
+	defer func() { _ = d.Close() }()
 	return d.Sync()
 }

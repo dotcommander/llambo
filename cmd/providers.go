@@ -9,6 +9,11 @@ import (
 	"github.com/dotcommander/llambo/providers"
 )
 
+// Repeated string literals consolidated by goconst.
+const (
+	never1 = "never"
+)
+
 func runProviders(cmd *commandIO, args []string) error {
 	out := cmd.OutOrStdout()
 	cfg, err := providers.LoadGlobalConfig()
@@ -31,13 +36,13 @@ func runProviders(cmd *commandIO, args []string) error {
 
 	for _, name := range sortedProviderNames(cfg.Providers) {
 		pcfg := cfg.Providers[name]
-		enabledStr := "no"
+		enabledStr := no1
 		if pcfg.Enabled {
-			enabledStr = "yes"
+			enabledStr = yes1
 		}
 
 		modelCount, pinned, avoided := 0, 0, 0
-		lastRefreshStr := "never"
+		lastRefreshStr := never1
 
 		if pc := cat.Providers[name]; pc != nil {
 			modelCount = len(pc.Models)
@@ -88,7 +93,7 @@ func runProvidersRefresh(cmd *commandIO, args []string, opts catalog.RefreshOpti
 			continue
 		}
 		if r.Cached {
-			refreshedAgo := "never"
+			refreshedAgo := never1
 			if !r.LastRefresh.IsZero() {
 				refreshedAgo = humanDuration(time.Since(r.LastRefresh)) + " ago"
 			}

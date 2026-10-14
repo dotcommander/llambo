@@ -2,6 +2,7 @@ package evals
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -12,7 +13,7 @@ import (
 const llmStatsFrozenCohortObservationRows = 5544
 
 func llmStatsFrozenCohortArtifactPath(cacheDir string) string {
-	return filepath.Join(cacheDir, "sealed", "llm-stats", "observations-"+llmStatsFrozenCohortsArtifactDigest+".jsonl")
+	return filepath.Join(cacheDir, "sealed", llmStats, "observations-"+llmStatsFrozenCohortsArtifactDigest+".jsonl")
 }
 
 // removeFrozenLLMStatsCohortResults prevents a legacy llm-stats.json row from
@@ -21,7 +22,7 @@ func llmStatsFrozenCohortArtifactPath(cacheDir string) string {
 func removeFrozenLLMStatsCohortResults(models []Model) {
 	for index := range models {
 		for benchmark := range frozenLLMStatsCohortPopulations {
-			if result := models[index].Benchmarks[benchmark]; result.SourceID == "llm-stats-benchmark-results" {
+			if result := models[index].Benchmarks[benchmark]; result.SourceID == llmStatsBenchmarkResults {
 				delete(models[index].Benchmarks, benchmark)
 			}
 		}
@@ -76,7 +77,7 @@ func readFrozenLLMStatsObservationArtifact(path, expectedDigest string, expected
 		return nil, fmt.Errorf("read sealed LLM Stats observations: %w", err)
 	}
 	if !info.Mode().IsRegular() {
-		return nil, fmt.Errorf("read sealed LLM Stats observations: not a regular file")
+		return nil, errors.New("read sealed LLM Stats observations: not a regular file")
 	}
 	if info.Size() > maxSourceBody {
 		return nil, fmt.Errorf("read sealed LLM Stats observations: artifact exceeds %d bytes", maxSourceBody)
@@ -85,7 +86,7 @@ func readFrozenLLMStatsObservationArtifact(path, expectedDigest string, expected
 	if err != nil {
 		return nil, fmt.Errorf("open sealed LLM Stats observations: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	data, err := io.ReadAll(io.LimitReader(file, maxSourceBody+1))
 	if err != nil {
 		return nil, fmt.Errorf("read sealed LLM Stats observations: %w", err)

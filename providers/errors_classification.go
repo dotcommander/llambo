@@ -2,9 +2,10 @@ package providers
 
 import (
 	"errors"
-	whtypes "github.com/garyblankenship/wormhole/v3/types"
 	"strings"
 	"time"
+
+	whtypes "github.com/garyblankenship/wormhole/v3/types"
 )
 
 // ErrorCategory classifies errors for handling decisions
@@ -32,6 +33,8 @@ func (c ErrorCategory) String() string {
 		return "config"
 	case AuthError:
 		return "auth"
+	case UnknownError:
+		return "unknown"
 	default:
 		return "unknown"
 	}

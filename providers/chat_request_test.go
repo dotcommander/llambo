@@ -378,7 +378,7 @@ func TestDecideChatRetry(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			action, err := decideChatRetry(test.err, Config{ProviderType: "openai", Model: "test-model"}, test.attempt, test.maxRetries, test.usedNativeStops, test.emitted)
+			action, err := decideChatRetry(test.err, test.attempt, test.maxRetries, test.usedNativeStops, test.emitted)
 			if action != test.wantAction || (err != nil) != test.wantErr {
 				t.Fatalf("decideChatRetry() = (%v, %v), want (%v, error=%t)", action, err, test.wantAction, test.wantErr)
 			}

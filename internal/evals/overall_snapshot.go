@@ -110,13 +110,13 @@ func SaveOMLXScoreSnapshot(path string, snapshot OMLXScoreSnapshot) error {
 		return fmt.Errorf("create LLAMBO score snapshot temp file: %w", err)
 	}
 	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
+	defer func() { _ = os.Remove(tmpPath) }()
 	if err := tmp.Chmod(0o644); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return fmt.Errorf("set LLAMBO score snapshot permissions: %w", err)
 	}
 	if _, err := tmp.Write(append(data, '\n')); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return fmt.Errorf("write LLAMBO score snapshot: %w", err)
 	}
 	if err := tmp.Close(); err != nil {

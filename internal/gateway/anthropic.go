@@ -22,7 +22,7 @@ const (
 
 // isRawNull reports whether a json.RawMessage is empty or the JSON literal null.
 func isRawNull(raw json.RawMessage) bool {
-	return len(raw) == 0 || string(raw) == "null"
+	return len(raw) == 0 || string(raw) == null1
 }
 
 // AnthropicMessagesRequest is the request shape for POST /v1/messages.

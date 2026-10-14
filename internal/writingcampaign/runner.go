@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -36,10 +37,10 @@ type Plan struct {
 
 func BuildPlan(roster Roster, _, _ string, options RunOptions) (Plan, error) {
 	if options.InitialTokens < 1 || options.RetryTokens < options.InitialTokens {
-		return Plan{}, fmt.Errorf("token limits must be positive and retry limit must not be lower than initial limit")
+		return Plan{}, errors.New("token limits must be positive and retry limit must not be lower than initial limit")
 	}
 	if options.Concurrency < 1 || options.Concurrency > 8 {
-		return Plan{}, fmt.Errorf("concurrency must be between 1 and 8")
+		return Plan{}, errors.New("concurrency must be between 1 and 8")
 	}
 	return Plan{Models: len(roster.Models), InitialMaxTokens: options.InitialTokens, LengthRetryMaxTokens: options.RetryTokens, Execute: options.Execute}, nil
 }
@@ -54,7 +55,7 @@ func Run(ctx context.Context, client *Client, roster Roster, source, systemPromp
 		return receipts, plan, err
 	}
 	if strings.TrimSpace(client.APIKey) == "" {
-		return nil, plan, fmt.Errorf("OpenRouter API key is required")
+		return nil, plan, errors.New("OpenRouter API key is required")
 	}
 	if err := os.MkdirAll(options.OutputDir, 0o755); err != nil {
 		return nil, plan, fmt.Errorf("create output directory: %w", err)
@@ -210,13 +211,13 @@ func writeAtomic(path string, data []byte) error {
 		return err
 	}
 	tmp := file.Name()
-	defer os.Remove(tmp)
+	defer func() { _ = os.Remove(tmp) }()
 	if _, err := file.Write(data); err != nil {
-		file.Close()
+		_ = file.Close()
 		return err
 	}
 	if err := file.Sync(); err != nil {
-		file.Close()
+		_ = file.Close()
 		return err
 	}
 	if err := file.Close(); err != nil {

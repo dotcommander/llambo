@@ -1,6 +1,7 @@
 package providers
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -95,10 +96,10 @@ func (r *RoutingConfig) ApplyDefaults() {
 func (g GatewayConfig) Normalize() (GatewayConfig, error) {
 	g.ApplyDefaults()
 	if g.MaxRetainedJobs <= 0 || g.MaxRetainedPayloadBytes <= 0 || g.HandlerTimeoutSeconds <= 0 || g.WriteTimeoutSeconds <= 0 || g.ShutdownTimeoutSeconds <= 0 {
-		return g, fmt.Errorf("gateway retention limits and timeouts must be positive")
+		return g, errors.New("gateway retention limits and timeouts must be positive")
 	}
 	if g.WriteTimeoutSeconds-g.HandlerTimeoutSeconds < 5 || g.ShutdownTimeoutSeconds-g.HandlerTimeoutSeconds < 5 {
-		return g, fmt.Errorf("gateway write and shutdown timeouts must exceed handler timeout by five seconds")
+		return g, errors.New("gateway write and shutdown timeouts must exceed handler timeout by five seconds")
 	}
 	return g, nil
 }

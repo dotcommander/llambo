@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"fmt"
+	"errors"
 	"time"
 
 	"github.com/dotcommander/llambo/internal/catalog"
@@ -24,7 +24,7 @@ type pingCommand struct {
 func (c *pingCommand) Run(io *commandIO) error {
 	cliOpts := &invocationOptions{}
 	cliOpts.pingPrompt, cliOpts.pingOutput, cliOpts.pingTimeout, cliOpts.pingProviders, cliOpts.pingModels, cliOpts.pingIncludeQuarantine, cliOpts.pingFreeOnly, cliOpts.pingIncludeUnknownCost, cliOpts.pingMaxOutputCost, cliOpts.pingRecordMetrics = c.Prompt, c.Output, c.TimeoutSeconds, c.Provider, c.Models, c.IncludeQuarantined, c.FreeOnly, c.IncludeUnknownCost, c.MaxOutputCost, c.RecordRoutingMetrics
-	return cliOpts.runPing(io, nil)
+	return cliOpts.runPing(io)
 }
 
 type promptCommand struct {
@@ -83,7 +83,7 @@ type routeQueryCommand struct {
 
 func (c *routeQueryCommand) Run(io *commandIO) error {
 	if c.Query == "" {
-		return fmt.Errorf("expected one argument")
+		return errors.New("expected one argument")
 	}
 	return runRouteQuery(io, []string{c.Query})
 }

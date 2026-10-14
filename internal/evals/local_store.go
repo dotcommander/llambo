@@ -17,6 +17,14 @@ import (
 	"time"
 )
 
+// Repeated string literals consolidated by goconst.
+const (
+	callsJsonl   = "calls.jsonl"
+	intentsJsonl = "intents.jsonl"
+)
+
+const reportJSON1 = "report.json"
+
 const localRunLockName = ".llambo-local-run.lock"
 
 // LocalRunStore owns an output directory for the life of a process. Its lock
@@ -40,7 +48,7 @@ type LocalDispatchIntent struct {
 
 func OpenLocalRunStore(dir string, manifest LocalRunManifest) (*LocalRunStore, error) {
 	if dir == "" || filepath.Clean(dir) == "." {
-		return nil, fmt.Errorf("--output-dir must be explicit")
+		return nil, errors.New("--output-dir must be explicit")
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
@@ -65,7 +73,7 @@ func OpenLocalRunStore(dir string, manifest LocalRunManifest) (*LocalRunStore, e
 }
 
 func (s *LocalRunStore) open() error {
-	manifestPath := filepath.Join(s.dir, "manifest.json")
+	manifestPath := filepath.Join(s.dir, manifestJSON)
 	b, err := os.ReadFile(manifestPath)
 	if os.IsNotExist(err) {
 		// The manifest is the durable start marker and must precede any call.
@@ -87,7 +95,7 @@ func (s *LocalRunStore) open() error {
 		if err := VerifyLocalReceipt(s.dir); err != nil {
 			return fmt.Errorf("completed output receipt is invalid: %w", err)
 		}
-		return fmt.Errorf("completed output directory is immutable; use a new --output-dir")
+		return errors.New("completed output directory is immutable; use a new --output-dir")
 	} else if !os.IsNotExist(err) {
 		return err
 	}
@@ -97,12 +105,12 @@ func (s *LocalRunStore) open() error {
 	if err := s.loadIntents(); err != nil {
 		return err
 	}
-	intents, err := os.OpenFile(filepath.Join(s.dir, "intents.jsonl"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	intents, err := os.OpenFile(filepath.Join(s.dir, intentsJsonl), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
 	}
 	s.intents = intents
-	calls, err := os.OpenFile(filepath.Join(s.dir, "calls.jsonl"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	calls, err := os.OpenFile(filepath.Join(s.dir, callsJsonl), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
 	}
@@ -111,14 +119,14 @@ func (s *LocalRunStore) open() error {
 }
 
 func (s *LocalRunStore) loadIntents() error {
-	f, err := os.Open(filepath.Join(s.dir, "intents.jsonl"))
+	f, err := os.Open(filepath.Join(s.dir, intentsJsonl))
 	if os.IsNotExist(err) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	scanner := bufio.NewScanner(f)
 	line := 0
 	for scanner.Scan() {
@@ -140,7 +148,7 @@ func (s *LocalRunStore) loadIntents() error {
 
 func (s *LocalRunStore) AppendIntent(intent LocalDispatchIntent) error {
 	if s.intents == nil {
-		return fmt.Errorf("local run store is closed")
+		return errors.New("local run store is closed")
 	}
 	if err := s.validateCaseID(intent.CaseID); err != nil {
 		return err
@@ -167,20 +175,20 @@ func sameLocalRunIdentity(existing, requested LocalRunManifest) error {
 		return fmt.Errorf("resume manifest schema mismatch: have %d, requested %d", existing.SchemaVersion, requested.SchemaVersion)
 	}
 	if LocalRunIdentityHash(existing) != LocalRunIdentityHash(requested) {
-		return fmt.Errorf("resume manifest identity mismatch; use a new --output-dir")
+		return errors.New("resume manifest identity mismatch; use a new --output-dir")
 	}
 	return nil
 }
 
 func (s *LocalRunStore) loadCalls() error {
-	f, err := os.Open(filepath.Join(s.dir, "calls.jsonl"))
+	f, err := os.Open(filepath.Join(s.dir, callsJsonl))
 	if os.IsNotExist(err) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 64<<10), 8<<20)
 	line := 0
@@ -210,7 +218,7 @@ func (s *LocalRunStore) loadCalls() error {
 
 func (s *LocalRunStore) AppendCall(call LocalCall) error {
 	if s.calls == nil {
-		return fmt.Errorf("local run store is closed")
+		return errors.New("local run store is closed")
 	}
 	if err := s.validateCaseID(call.CaseID); err != nil {
 		return err
@@ -258,10 +266,10 @@ func (s *LocalRunStore) validateCaseID(caseID string) error {
 // never silently retried from the same attempt.
 func RunStoredLocalEvaluation(ctx context.Context, manifest LocalRunManifest, in LocalInputManifest, exec LocalExecutor, store *LocalRunStore) ([]LocalCall, error) {
 	if exec == nil || store == nil {
-		return nil, fmt.Errorf("local executor and run store are required")
+		return nil, errors.New("local executor and run store are required")
 	}
 	if LocalRunIdentityHash(manifest) != LocalRunIdentityHash(store.manifest) {
-		return nil, fmt.Errorf("run store does not belong to manifest identity")
+		return nil, errors.New("run store does not belong to manifest identity")
 	}
 	if _, err := PlanLocalRun(manifest, in); err != nil {
 		return nil, err
@@ -282,7 +290,7 @@ func RunStoredLocalEvaluation(ctx context.Context, manifest LocalRunManifest, in
 		}
 	}
 	for i := 0; i < manifest.Identity.Limit; i++ {
-		caseID := fmt.Sprintf("%d", i+1)
+		caseID := strconv.Itoa(i + 1)
 		if _, exists := store.byCase[caseID]; exists {
 			continue
 		}
@@ -331,7 +339,7 @@ func RunStoredLocalEvaluation(ctx context.Context, manifest LocalRunManifest, in
 // output directory rather than overwrite completed evidence.
 func (s *LocalRunStore) Finalize(report LocalReport, finished time.Time) (LocalReceipt, error) {
 	if s.calls == nil {
-		return LocalReceipt{}, fmt.Errorf("local run store is closed")
+		return LocalReceipt{}, errors.New("local run store is closed")
 	}
 	if err := s.calls.Sync(); err != nil {
 		return LocalReceipt{}, err
@@ -340,12 +348,12 @@ func (s *LocalRunStore) Finalize(report LocalReport, finished time.Time) (LocalR
 		if err := VerifyLocalReceipt(s.dir); err != nil {
 			return LocalReceipt{}, fmt.Errorf("completed output receipt is invalid: %w", err)
 		}
-		return LocalReceipt{}, fmt.Errorf("completed output directory is immutable; use a new --output-dir")
+		return LocalReceipt{}, errors.New("completed output directory is immutable; use a new --output-dir")
 	} else if !os.IsNotExist(err) {
 		return LocalReceipt{}, err
 	}
-	if _, err := os.Stat(filepath.Join(s.dir, "report.json")); err == nil {
-		return LocalReceipt{}, fmt.Errorf("output directory already has a report without a receipt; preserve it and use a new --output-dir")
+	if _, err := os.Stat(filepath.Join(s.dir, reportJSON1)); err == nil {
+		return LocalReceipt{}, errors.New("output directory already has a report without a receipt; preserve it and use a new --output-dir")
 	} else if !os.IsNotExist(err) {
 		return LocalReceipt{}, err
 	}
@@ -370,11 +378,11 @@ func (s *LocalRunStore) Finalize(report LocalReport, finished time.Time) (LocalR
 	}
 	report.ServedModels = served.Served()
 	if len(calls) != s.manifest.Identity.Limit || len(report.Errors) > 0 || hasLocalCallError(calls) {
-		report.Status = "partial"
+		report.Status = partial1
 	} else if report.Status == "" {
-		report.Status = "complete_quality"
+		report.Status = completeQuality
 	}
-	if err := writeDurableLocalJSON(filepath.Join(s.dir, "report.json"), report); err != nil {
+	if err := writeDurableLocalJSON(filepath.Join(s.dir, reportJSON1), report); err != nil {
 		return LocalReceipt{}, err
 	}
 	var md strings.Builder
@@ -393,11 +401,11 @@ func (s *LocalRunStore) Finalize(report LocalReport, finished time.Time) (LocalR
 	if len(metricKeys) > 0 {
 		md.WriteByte('\n')
 	}
-	if err := writeDurableLocalFile(filepath.Join(s.dir, "report.md"), []byte(md.String()), 0o644); err != nil {
+	if err := writeDurableLocalFile(filepath.Join(s.dir, reportMd), []byte(md.String()), 0o644); err != nil {
 		return LocalReceipt{}, err
 	}
 	hashes := make(map[string]string, 5)
-	for _, name := range []string{"manifest.json", "intents.jsonl", "calls.jsonl", "report.json", "report.md"} {
+	for _, name := range []string{manifestJSON, intentsJsonl, callsJsonl, reportJSON1, reportMd} {
 		data, err := os.ReadFile(filepath.Join(s.dir, name))
 		if err != nil {
 			return LocalReceipt{}, err

@@ -3,7 +3,7 @@ package gateway
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"errors"
 	"strings"
 	"time"
 
@@ -37,7 +37,7 @@ func reasoningOverride(req ChatCompletionRequest) (*whtypes.Reasoning, error) {
 	}
 	var parsed whtypes.Reasoning
 	if err := json.Unmarshal(req.Reasoning, &parsed); err != nil {
-		return nil, fmt.Errorf("reasoning must be an object")
+		return nil, errors.New("reasoning must be an object")
 	}
 	if parsed.Effort == "" && effortOnly != nil {
 		parsed.Effort = effortOnly.Effort

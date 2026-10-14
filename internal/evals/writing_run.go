@@ -25,7 +25,7 @@ func LoadWritingPromptFile(path string) ([]WritingPromptRecord, string, error) {
 	if err != nil {
 		return nil, "", fmt.Errorf("read writing prompt input: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	data, err := io.ReadAll(io.LimitReader(f, maxWritingRunInputSize+1))
 	if err != nil {
 		return nil, "", fmt.Errorf("read writing prompt input: %w", err)
@@ -54,7 +54,7 @@ func LoadWritingPromptFile(path string) ([]WritingPromptRecord, string, error) {
 		return nil, "", fmt.Errorf("scan writing prompt input: %w", err)
 	}
 	if len(records) == 0 {
-		return nil, "", fmt.Errorf("writing prompt input is empty")
+		return nil, "", errors.New("writing prompt input is empty")
 	}
 	return records, hex.EncodeToString(hash[:]), nil
 }
@@ -113,13 +113,13 @@ func PlanWritingRun(manifest WritingRunManifest, records []WritingPromptRecord, 
 		return WritingRunPlan{}, err
 	}
 	if len(manifest.Identity.Models) == 0 {
-		return WritingRunPlan{}, fmt.Errorf("at least one generation model is required")
+		return WritingRunPlan{}, errors.New("at least one generation model is required")
 	}
 	if manifest.Identity.Judge.Provider == "" || manifest.Identity.Judge.Model == "" {
-		return WritingRunPlan{}, fmt.Errorf("an exact judge model is required")
+		return WritingRunPlan{}, errors.New("an exact judge model is required")
 	}
 	if manifest.Identity.Iterations < 1 || manifest.Identity.Concurrency < 1 || manifest.Identity.TimeoutSeconds < 1 {
-		return WritingRunPlan{}, fmt.Errorf("iterations, concurrency, and timeout must be positive")
+		return WritingRunPlan{}, errors.New("iterations, concurrency, and timeout must be positive")
 	}
 	judgeExecution := manifest.Identity.JudgeExecution
 	if judgeExecution == "" {
@@ -130,10 +130,10 @@ func PlanWritingRun(manifest WritingRunManifest, records []WritingPromptRecord, 
 	}
 	for _, model := range append(append([]WritingModelSpec(nil), manifest.Identity.Models...), manifest.Identity.Judge) {
 		if model.Provider == "" || model.Model == "" || model.MaxOutputTokens < 1 {
-			return WritingRunPlan{}, fmt.Errorf("writing model identity and max output tokens are required")
+			return WritingRunPlan{}, errors.New("writing model identity and max output tokens are required")
 		}
 		if model.InputPer1M < 0 || model.OutputPer1M < 0 {
-			return WritingRunPlan{}, fmt.Errorf("writing model prices cannot be negative")
+			return WritingRunPlan{}, errors.New("writing model prices cannot be negative")
 		}
 	}
 	plan := WritingRunPlan{

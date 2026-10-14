@@ -3,6 +3,7 @@ package evals
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -228,7 +229,7 @@ func WriteNormalizedDataset(result Result, report Report, outputDir string) (*No
 	if err != nil {
 		return nil, fmt.Errorf("encode normalized dataset manifest: %w", err)
 	}
-	files["manifest.json"] = append(manifestData, '\n')
+	files[manifestJSON] = append(manifestData, '\n')
 	if err := writeNormalizedDatasetDirectory(outputDir, files); err != nil {
 		return nil, err
 	}
@@ -241,7 +242,7 @@ func encodeNormalizedJSONL(rows any) ([]byte, int, error) {
 		value = value.Elem()
 	}
 	if value.Kind() != reflect.Slice {
-		return nil, 0, fmt.Errorf("normalized rows must be a slice")
+		return nil, 0, errors.New("normalized rows must be a slice")
 	}
 	var output bytes.Buffer
 	encoder := json.NewEncoder(&output)
@@ -257,7 +258,7 @@ func encodeNormalizedJSONL(rows any) ([]byte, int, error) {
 func writeNormalizedDatasetDirectory(outputDir string, files map[string][]byte) error {
 	clean := filepath.Clean(outputDir)
 	if clean == "" || clean == "." || filepath.Dir(clean) == clean {
-		return fmt.Errorf("--output-dir must be an explicit new directory")
+		return errors.New("--output-dir must be an explicit new directory")
 	}
 	if _, err := os.Stat(clean); err == nil {
 		return fmt.Errorf("normalized dataset output directory already exists: %s", clean)

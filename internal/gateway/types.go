@@ -2,10 +2,11 @@ package gateway
 
 import (
 	"encoding/json"
-	"fmt"
+	"errors"
+	"time"
+
 	"github.com/dotcommander/llambo/providers"
 	whtypes "github.com/garyblankenship/wormhole/v3/types"
-	"time"
 )
 
 // OpenAI-compatible request/response types
@@ -130,7 +131,7 @@ func (r *EmbeddingRequest) UnmarshalJSON(data []byte) error {
 	}
 
 	r.Model = raw.Model
-	if len(raw.Input) == 0 || string(raw.Input) == "null" {
+	if len(raw.Input) == 0 || string(raw.Input) == null1 {
 		r.Input = nil
 		return nil
 	}
@@ -147,7 +148,7 @@ func (r *EmbeddingRequest) UnmarshalJSON(data []byte) error {
 		return nil
 	}
 
-	return fmt.Errorf("input must be a string or array of strings")
+	return errors.New("input must be a string or array of strings")
 }
 
 // EmbeddingResponse matches OpenAI's embedding response format

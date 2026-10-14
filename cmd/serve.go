@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -16,7 +17,7 @@ import (
 	"github.com/dotcommander/llambo/providers"
 )
 
-func (cliOpts *invocationOptions) runServe(cmd *commandIO, args []string) error {
+func (cliOpts *invocationOptions) runServe(cmd *commandIO) error {
 	if err := validateServeBind(cliOpts.serveHost, cliOpts.serveAllowRemote); err != nil {
 		return err
 	}
@@ -39,7 +40,7 @@ func (cliOpts *invocationOptions) runServe(cmd *commandIO, args []string) error 
 	}
 
 	if len(enabledConfigs) == 0 {
-		return fmt.Errorf("no providers enabled - ensure at least one provider in ~/.config/llambo/config.json has \"enabled\": true")
+		return errors.New("no providers enabled - ensure at least one provider in ~/.config/llambo/config.json has \"enabled\": true")
 	}
 
 	// Create gateway server
@@ -105,10 +106,6 @@ func isLoopbackBindHost(host string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-func printBanner(addr string, backends []string) {
-	printBannerTo(os.Stdout, addr, backends)
-}
-
 func printBannerTo(out io.Writer, addr string, backends []string) {
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, styles.Header.Render("Llambo Gateway"))
@@ -130,9 +127,4 @@ func printBannerTo(out io.Writer, addr string, backends []string) {
 
 	fmt.Fprintln(out, styles.Dim.Render("  Press Ctrl+C to stop"))
 	fmt.Fprintln(out)
-}
-
-// Scalar helpers retain their signatures with independent default options.
-func runServe(cmd *commandIO, args []string) error {
-	return defaultInvocationOptions().runServe(cmd, args)
 }

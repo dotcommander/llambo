@@ -10,6 +10,13 @@ import (
 	"time"
 )
 
+// Repeated string literals consolidated by goconst.
+const (
+	failed1     = "failed"
+	generation1 = "generation"
+	judgment1   = "judgment"
+)
+
 type writingJudgmentJob struct {
 	record     WritingPromptRecord
 	generation WritingGenerationRecord
@@ -18,7 +25,7 @@ type writingJudgmentJob struct {
 
 func RunWritingEvaluation(ctx context.Context, manifest WritingRunManifest, records []WritingPromptRecord, adapter WritingBenchmarkAdapter, executor WritingExecutor, store *WritingRunStore) error {
 	if executor == nil || store == nil {
-		return fmt.Errorf("writing executor and store are required")
+		return errors.New("writing executor and store are required")
 	}
 	if err := ValidateWritingPromptRecords(records, adapter); err != nil {
 		return err
@@ -90,12 +97,12 @@ func pendingWritingJudgmentJobs(manifest WritingRunManifest, records []WritingPr
 func executeWritingGeneration(ctx context.Context, manifest WritingRunManifest, adapter WritingBenchmarkAdapter, executor WritingExecutor, store *WritingRunStore, budget *writingBudget, record WritingPromptRecord, model WritingModelSpec, iteration int) error {
 	key := writingGenerationKey(adapter.ID(), record.ID, model.ID(), iteration)
 	attempt := store.NextGenerationAttempt(key)
-	call := WritingExecutionCall{Kind: "generation", Model: model, SystemPrompt: strings.TrimSpace(writingGenerationSystemPrompt), UserPrompt: record.Prompt, MaxOutputTokens: model.MaxOutputTokens, Settings: manifest.Identity.Generation}
+	call := WritingExecutionCall{Kind: generation1, Model: model, SystemPrompt: strings.TrimSpace(writingGenerationSystemPrompt), UserPrompt: record.Prompt, MaxOutputTokens: model.MaxOutputTokens, Settings: manifest.Identity.Generation}
 	estimate := estimateWritingCallCost(call.SystemPrompt+"\n"+call.UserPrompt, call.MaxOutputTokens, model)
 	if err := budget.reserve(estimate); err != nil {
 		return err
 	}
-	if err := store.AppendDispatchIntent(WritingDispatchIntent{Kind: "generation", Key: key, Attempt: attempt, CallSHA256: writingExecutionCallHash(call), DispatchedAt: time.Now().UTC()}); err != nil {
+	if err := store.AppendDispatchIntent(WritingDispatchIntent{Kind: generation1, Key: key, Attempt: attempt, CallSHA256: writingExecutionCallHash(call), DispatchedAt: time.Now().UTC()}); err != nil {
 		return err
 	}
 	started := time.Now().UTC()
@@ -115,10 +122,10 @@ func executeWritingGeneration(ctx context.Context, manifest WritingRunManifest, 
 		callErr = fmt.Errorf("generation returned truncating finish reason %q", result.FinishReason)
 	}
 	if callErr != nil {
-		recordOut.Status, recordOut.Error = "failed", callErr.Error()
+		recordOut.Status, recordOut.Error = failed1, callErr.Error()
 		recordOut.Content = result.Content
 	} else {
-		recordOut.Status, recordOut.Content = "success", result.Content
+		recordOut.Status, recordOut.Content = success1, result.Content
 		recordOut.ContentSHA256 = writingHash(result.Content)
 	}
 	appendErr := store.AppendGeneration(recordOut)
@@ -139,12 +146,12 @@ func executeWritingJudgment(ctx context.Context, manifest WritingRunManifest, ad
 		if err != nil {
 			return err
 		}
-		call := WritingExecutionCall{Kind: "judgment", Model: manifest.Identity.Judge, SystemPrompt: system, UserPrompt: user, MaxOutputTokens: manifest.Identity.Judge.MaxOutputTokens, Settings: settings}
+		call := WritingExecutionCall{Kind: judgment1, Model: manifest.Identity.Judge, SystemPrompt: system, UserPrompt: user, MaxOutputTokens: manifest.Identity.Judge.MaxOutputTokens, Settings: settings}
 		estimate := estimateWritingCallCost(system+"\n"+user, call.MaxOutputTokens, call.Model)
 		if err := budget.reserve(estimate); err != nil {
 			return err
 		}
-		if err := store.AppendDispatchIntent(WritingDispatchIntent{Kind: "judgment", Key: key, Attempt: attempt, CallSHA256: writingExecutionCallHash(call), DispatchedAt: time.Now().UTC()}); err != nil {
+		if err := store.AppendDispatchIntent(WritingDispatchIntent{Kind: judgment1, Key: key, Attempt: attempt, CallSHA256: writingExecutionCallHash(call), DispatchedAt: time.Now().UTC()}); err != nil {
 			return err
 		}
 		started := time.Now().UTC()
@@ -164,13 +171,13 @@ func executeWritingJudgment(ctx context.Context, manifest WritingRunManifest, ad
 			callErr = fmt.Errorf("judgment returned truncating finish reason %q", result.FinishReason)
 		}
 		if callErr != nil {
-			judgment.Status, judgment.Error = "failed", callErr.Error()
+			judgment.Status, judgment.Error = failed1, callErr.Error()
 		} else {
 			results, err := parseWritingAdapterJudgment(adapter, result.Content, generation.Content, criteria)
 			if err != nil {
-				judgment.Status, judgment.Error = "failed", err.Error()
+				judgment.Status, judgment.Error = failed1, err.Error()
 			} else {
-				judgment.Status = "success"
+				judgment.Status = success1
 				judgment.Results = results
 			}
 		}
@@ -180,7 +187,7 @@ func executeWritingJudgment(ctx context.Context, manifest WritingRunManifest, ad
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		if judgment.Status == "success" {
+		if judgment.Status == success1 {
 			return nil
 		}
 	}
@@ -205,7 +212,7 @@ func writingExecutionCallHash(call WritingExecutionCall) string {
 
 func runWritingJobs[T any](ctx context.Context, concurrency int, jobs []T, fn func(context.Context, T) error) error {
 	if concurrency < 1 {
-		return fmt.Errorf("writing concurrency must be positive")
+		return errors.New("writing concurrency must be positive")
 	}
 	jobCh := make(chan T)
 	workerCtx, cancel := context.WithCancel(ctx)
@@ -307,7 +314,7 @@ func (b *writingBudget) reserve(estimate float64) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.max <= 0 {
-		return fmt.Errorf("writing run cost limit must be positive")
+		return errors.New("writing run cost limit must be positive")
 	}
 	if b.spent+b.reserved+estimate > b.max+1e-12 {
 		return fmt.Errorf("writing run cost gate: estimated admission $%.6f would exceed $%.6f limit", b.spent+b.reserved+estimate, b.max)

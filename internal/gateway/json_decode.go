@@ -2,7 +2,7 @@ package gateway
 
 import (
 	"encoding/json"
-	"fmt"
+	"errors"
 	"io"
 )
 
@@ -21,7 +21,7 @@ func decodeSingleJSON(r io.Reader, dst any, strictUnknownFields bool) error {
 	var extra any
 	if err := dec.Decode(&extra); err != io.EOF {
 		if err == nil {
-			return fmt.Errorf("request body must contain a single JSON value")
+			return errors.New("request body must contain a single JSON value")
 		}
 		return err
 	}

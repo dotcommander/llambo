@@ -51,7 +51,7 @@ func TestRefreshEvaluationSourcesIsScopedAndValidatesProvenance(t *testing.T) {
 	eqBench := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		eqBenchRequests++
 		w.Header().Set("Content-Type", "application/javascript")
-		_, _ = w.Write([]byte(syntheticEQBenchCreativeJS()))
+		_, _ = w.Write(syntheticEQBenchCreativeJS())
 	}))
 	defer eqBench.Close()
 	lech := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

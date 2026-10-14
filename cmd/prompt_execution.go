@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -23,7 +24,7 @@ func (cliOpts *invocationOptions) executePromptAgainstAllProvidersCore(ctx conte
 	// Get enabled providers
 	enabled := providers.FilterEnabledProviders(globalCfg.Providers)
 	if len(enabled) == 0 {
-		return nil, fmt.Errorf("no enabled providers found in config")
+		return nil, errors.New("no enabled providers found in config")
 	}
 	cat, err := loadCatalogForPingFilter()
 	if err != nil {
@@ -34,7 +35,7 @@ func (cliOpts *invocationOptions) executePromptAgainstAllProvidersCore(ctx conte
 	})
 	writeTextChatSkippedSummary(errOut, skippedNonChat)
 	if len(enabled) == 0 {
-		return nil, fmt.Errorf("no enabled text chat-capable providers found in config")
+		return nil, errors.New("no enabled text chat-capable providers found in config")
 	}
 
 	results := runOrderedParallel(enabled, func(index int, entry providers.ProviderEntry) PromptResult {
@@ -66,7 +67,7 @@ func (cliOpts *invocationOptions) executePromptAgainstSelectedModelsCore(ctx con
 	}
 	selector := cliOpts.promptModels
 	if selector == "" && cliOpts.promptFreeOnly {
-		selector = "free"
+		selector = free1
 	}
 
 	globalCfg, err := providers.LoadGlobalConfig()
@@ -198,16 +199,8 @@ func executePromptAgainstSelectedModelsWithRun(ctx context.Context, errOut io.Wr
 	return defaultInvocationOptions().executePromptAgainstSelectedModelsWithRun(ctx, errOut, promptText, systemPrompt, timeoutSecs, run)
 }
 
-func executePromptAgainstSelectedModelsTo(ctx context.Context, errOut io.Writer, promptText, systemPrompt string, timeoutSecs int) ([]PromptResult, error) {
-	return defaultInvocationOptions().executePromptAgainstSelectedModelsTo(ctx, errOut, promptText, systemPrompt, timeoutSecs)
-}
-
 func executePromptAgainstSelectedModelsCore(ctx context.Context, errOut io.Writer, promptText, systemPrompt string, timeoutSecs int, run *promptRun) ([]PromptResult, error) {
 	return defaultInvocationOptions().executePromptAgainstSelectedModelsCore(ctx, errOut, promptText, systemPrompt, timeoutSecs, run)
-}
-
-func executePromptAgainstAllProvidersTo(ctx context.Context, errOut io.Writer, promptText, systemPrompt string, timeoutSecs int) ([]PromptResult, error) {
-	return defaultInvocationOptions().executePromptAgainstAllProvidersTo(ctx, errOut, promptText, systemPrompt, timeoutSecs)
 }
 
 func executePromptAgainstAllProvidersCore(ctx context.Context, errOut io.Writer, promptText, systemPrompt string, timeoutSecs int, run *promptRun) ([]PromptResult, error) {

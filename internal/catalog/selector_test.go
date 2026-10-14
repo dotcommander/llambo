@@ -72,7 +72,7 @@ func TestResolveModelsTagCategoryAndQuarantine(t *testing.T) {
 	cat := testSelectorCatalog()
 	AddTag(cat.Providers["openai"].Models["smart"], "smart")
 	cat.Providers["openai"].Models["speed"].LastPing = PingState{Success: true, LatencyMS: 400, CheckedAt: now}
-	cat.Providers["openai"].Models["slow"].LastPing = PingState{Success: true, LatencyMS: int64((6 * time.Second).Milliseconds()), CheckedAt: now}
+	cat.Providers["openai"].Models["slow"].LastPing = PingState{Success: true, LatencyMS: (6 * time.Second).Milliseconds(), CheckedAt: now}
 	cat.Providers["openai"].Models["quarantined"].QuarantineUntil = now.Add(time.Hour)
 
 	tagged, err := ResolveModels(cat, testSelectorConfigs(), nil, SelectorOptions{Selector: "tag:smart", Now: now})

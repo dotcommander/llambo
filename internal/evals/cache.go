@@ -10,19 +10,39 @@ import (
 	"strings"
 )
 
+// Repeated string literals consolidated by goconst.
+const (
+	arenaCreativeWriting          = "Arena Creative Writing"
+	artificialAnalysisName        = "Artificial Analysis"
+	eQBenchCreativeV3             = "EQ-Bench Creative v3"
+	googleGemmaX4ModelCard        = "Google Gemma 4 model card"
+	lechMazurCreativeStoryWriting = "Lech Mazur Creative Story-Writing"
+	liquidAILFM2X5VLX3BCard       = "LiquidAI LFM2.5-VL-3B card"
+	liquidAILFM2X5X2X6BCard       = "LiquidAI LFM2.5-2.6B card"
+	officialGemma4                = "official-gemma4"
+	officialGptOssX20b            = "official-gpt-oss-20b"
+	officialLfm25VlX3b            = "official-lfm25-vl-3b"
+	officialLfm25X2X6b            = "official-lfm25-2.6b"
+	officialQwen3X8X27b           = "official-qwen3.8-27b"
+	openAIGptOssModelCard         = "OpenAI gpt-oss model card"
+	qwen3X8X27BCard               = "Qwen3.8-27B card"
+	unavailable1                  = "unavailable"
+	writingBench1                 = "WritingBench"
+)
+
 func loadArtificialAnalysis(ctx context.Context, opts Options) (sourceSnapshot, SourceStatus, error) {
 	cache, cacheErr := readSnapshot(filepath.Join(opts.CacheDir, "artificial-analysis.json"))
 	if !opts.Refresh && cacheErr == nil && opts.Now().Sub(cache.FetchedAt) < opts.TTL {
-		return cache, statusFor("Artificial Analysis", ArtificialAnalysisURL, cache, "fresh", nil), nil
+		return cache, statusFor(artificialAnalysisName, ArtificialAnalysisURL, cache, "fresh", nil), nil
 	}
 	if strings.TrimSpace(opts.AAAPIKey) == "" {
 		err := errors.New("AA_API_KEY is not set")
 		if cacheErr == nil {
-			return cache, statusFor("Artificial Analysis", ArtificialAnalysisURL, cache, "stale", err), nil
+			return cache, statusFor(artificialAnalysisName, ArtificialAnalysisURL, cache, stale1, err), nil
 		}
-		return sourceSnapshot{}, SourceStatus{Name: "Artificial Analysis", URL: ArtificialAnalysisURL, Cache: "unavailable", Error: err.Error()}, err
+		return sourceSnapshot{}, SourceStatus{Name: artificialAnalysisName, URL: ArtificialAnalysisURL, Cache: unavailable1, Error: err.Error()}, err
 	}
-	return loadSource(ctx, opts, "artificial-analysis", func(ctx context.Context) (sourceSnapshot, error) {
+	return loadSource(ctx, opts, artificialAnalysis, func(ctx context.Context) (sourceSnapshot, error) {
 		return fetchArtificialAnalysis(ctx, opts)
 	})
 }
@@ -31,35 +51,35 @@ func loadSource(ctx context.Context, opts Options, cacheName string, fetch func(
 	path := filepath.Join(opts.CacheDir, cacheName+".json")
 	cached, cacheErr := readSnapshot(path)
 	name, url := "LLM Stats", LLMStatsLeaderboardURL
-	if cacheName == "artificial-analysis" {
-		name, url = "Artificial Analysis", ArtificialAnalysisURL
+	if cacheName == artificialAnalysis {
+		name, url = artificialAnalysisName, ArtificialAnalysisURL
 	}
-	if cacheName == "writingbench" {
-		name, url = "WritingBench", opts.WritingBenchURL
+	if cacheName == writingbench1 {
+		name, url = writingBench1, opts.WritingBenchURL
 	}
-	if cacheName == "eqbench-creative-v3" {
-		name, url = "EQ-Bench Creative v3", opts.EQBenchCreativeURL
+	if cacheName == eqbenchCreativeV3 {
+		name, url = eQBenchCreativeV3, opts.EQBenchCreativeURL
 	}
 	if cacheName == WritingPrimaryID {
-		name, url = "Lech Mazur Creative Story-Writing", opts.LechMazurWritingURL
+		name, url = lechMazurCreativeStoryWriting, opts.LechMazurWritingURL
 	}
 	if cacheName == ArenaCreativeSourceID {
-		name, url = "Arena Creative Writing", opts.ArenaCreativeURL
+		name, url = arenaCreativeWriting, opts.ArenaCreativeURL
 	}
-	if cacheName == "official-lfm25-2.6b" {
-		name, url = "LiquidAI LFM2.5-2.6B card", opts.OfficialLFMURL
+	if cacheName == officialLfm25X2X6b {
+		name, url = liquidAILFM2X5X2X6BCard, opts.OfficialLFMURL
 	}
-	if cacheName == "official-qwen3.8-27b" {
-		name, url = "Qwen3.8-27B card", opts.OfficialQwenURL
+	if cacheName == officialQwen3X8X27b {
+		name, url = qwen3X8X27BCard, opts.OfficialQwenURL
 	}
-	if cacheName == "official-gpt-oss-20b" {
-		name, url = "OpenAI gpt-oss model card", opts.OfficialGPTOSSURL
+	if cacheName == officialGptOssX20b {
+		name, url = openAIGptOssModelCard, opts.OfficialGPTOSSURL
 	}
-	if cacheName == "official-lfm25-vl-3b" {
-		name, url = "LiquidAI LFM2.5-VL-3B card", opts.OfficialLFMVLURL
+	if cacheName == officialLfm25VlX3b {
+		name, url = liquidAILFM2X5VLX3BCard, opts.OfficialLFMVLURL
 	}
-	if cacheName == "official-gemma4" {
-		name, url = "Google Gemma 4 model card", opts.OfficialGemmaURL
+	if cacheName == officialGemma4 {
+		name, url = googleGemmaX4ModelCard, opts.OfficialGemmaURL
 	}
 	if cacheName == officialLFM25A1BCacheName {
 		name, url = "LiquidAI LFM2.5-8B-A1B card", opts.OfficialLFM8URL
@@ -79,9 +99,9 @@ func loadSource(ctx context.Context, opts Options, cacheName string, fetch func(
 		return next, statusFor(name, url, next, "fetched", nil), nil
 	}
 	if cacheErr == nil {
-		return cached, statusFor(name, url, cached, "stale", err), nil
+		return cached, statusFor(name, url, cached, stale1, err), nil
 	}
-	return sourceSnapshot{}, SourceStatus{Name: name, URL: url, Cache: "unavailable", Error: err.Error()}, fmt.Errorf("fetch %s: %w", name, err)
+	return sourceSnapshot{}, SourceStatus{Name: name, URL: url, Cache: unavailable1, Error: err.Error()}, fmt.Errorf("fetch %s: %w", name, err)
 }
 
 // loadOptionalOfficialSource preserves an otherwise usable catalog when a
@@ -104,36 +124,36 @@ func readOptionalOfficialSnapshot(opts Options, cacheName string) (sourceSnapsho
 	snapshot, err := readSnapshot(path)
 	name, url := "", ""
 	switch cacheName {
-	case "official-lfm25-2.6b":
-		name, url = "LiquidAI LFM2.5-2.6B card", opts.OfficialLFMURL
-	case "official-qwen3.8-27b":
-		name, url = "Qwen3.8-27B card", opts.OfficialQwenURL
-	case "official-gpt-oss-20b":
-		name, url = "OpenAI gpt-oss model card", opts.OfficialGPTOSSURL
-	case "official-lfm25-vl-3b":
-		name, url = "LiquidAI LFM2.5-VL-3B card", opts.OfficialLFMVLURL
-	case "official-gemma4":
-		name, url = "Google Gemma 4 model card", opts.OfficialGemmaURL
+	case officialLfm25X2X6b:
+		name, url = liquidAILFM2X5X2X6BCard, opts.OfficialLFMURL
+	case officialQwen3X8X27b:
+		name, url = qwen3X8X27BCard, opts.OfficialQwenURL
+	case officialGptOssX20b:
+		name, url = openAIGptOssModelCard, opts.OfficialGPTOSSURL
+	case officialLfm25VlX3b:
+		name, url = liquidAILFM2X5VLX3BCard, opts.OfficialLFMVLURL
+	case officialGemma4:
+		name, url = googleGemmaX4ModelCard, opts.OfficialGemmaURL
 	case officialLFM25A1BCacheName:
 		name, url = "LiquidAI LFM2.5-8B-A1B card", opts.OfficialLFM8URL
 	}
 	if err != nil {
-		return sourceSnapshot{}, SourceStatus{Name: name, URL: url, Cache: "unavailable", Error: err.Error()}
+		return sourceSnapshot{}, SourceStatus{Name: name, URL: url, Cache: unavailable1, Error: err.Error()}
 	}
 	if err := validateOfficialCardSnapshot(cacheName, snapshot); err != nil {
-		return sourceSnapshot{}, SourceStatus{Name: name, URL: url, Cache: "unavailable", Error: "invalid official card cache: " + err.Error()}
+		return sourceSnapshot{}, SourceStatus{Name: name, URL: url, Cache: unavailable1, Error: "invalid official card cache: " + err.Error()}
 	}
 	stale := opts.Now().Sub(snapshot.FetchedAt) > opts.TTL
 	markSnapshotStale(&snapshot, stale)
-	cache := "cached"
+	cache := cached1
 	if stale {
-		cache = "stale"
+		cache = stale1
 	}
 	return snapshot, statusFor(name, url, snapshot, cache, nil)
 }
 
 func invalidOfficialCardStatus(status SourceStatus, err error) SourceStatus {
-	status.Cache = "unavailable"
+	status.Cache = unavailable1
 	status.Models = 0
 	status.Error = "invalid official card cache: " + err.Error()
 	return status
@@ -182,13 +202,13 @@ func writeSnapshot(path string, snapshot sourceSnapshot) error {
 		return err
 	}
 	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
+	defer func() { _ = os.Remove(tmpPath) }()
 	if err := tmp.Chmod(0o600); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return err
 	}
 	if _, err := tmp.Write(append(b, '\n')); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return err
 	}
 	if err := tmp.Close(); err != nil {

@@ -169,7 +169,7 @@ func (oc *OpenAIClients) rotateLeasedKeyWithError(provider, usedKey string, expe
 
 	client, err := oc.newClient(provider, cfg, newKey)
 	if err != nil {
-		return false, fmt.Errorf("%w: %s: %v", ErrKeyClientInit, provider, err)
+		return false, fmt.Errorf("%w: %s: %w", ErrKeyClientInit, provider, err)
 	}
 
 	oc.mu.Lock()
@@ -262,7 +262,7 @@ func createOpenAIClientsWithRoutingMetricsAndFactory(configs map[string]Config, 
 	}
 
 	if len(clients) == 0 {
-		return nil, fmt.Errorf("no backends enabled - check ~/.config/llambo/config.json and ensure at least one provider has \"enabled\": true")
+		return nil, errors.New("no backends enabled - check ~/.config/llambo/config.json and ensure at least one provider has \"enabled\": true")
 	}
 
 	routing.ApplyDefaults()

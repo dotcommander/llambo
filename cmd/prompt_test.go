@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -502,10 +501,10 @@ func TestPromptCommand_FuseControlFailureReturnsErrorAfterOutput(t *testing.T) {
 			Result: PromptResult{
 				Provider: "zai",
 				Model:    "GLM-5.2",
-				Error:    fmt.Errorf("control provider failed"),
+				Error:    errors.New("control provider failed"),
 				Latency:  20 * time.Millisecond,
 			},
-		}, fmt.Errorf("fusion control failed: control provider failed")
+		}, errors.New("fusion control failed: control provider failed")
 	}
 
 	rootCmd.SetArgs([]string{"prompt", "--fuse-control", "answer this"})
@@ -545,9 +544,9 @@ func TestPromptCommand_FuseFailureReturnsErrorAfterOutput(t *testing.T) {
 				Provider: "smart",
 				Model:    "smart-model",
 				Latency:  5 * time.Millisecond,
-				Error:    fmt.Errorf("fusion provider failed"),
+				Error:    errors.New("fusion provider failed"),
 			},
-		}, fmt.Errorf("fusion failed: fusion provider failed")
+		}, errors.New("fusion failed: fusion provider failed")
 	}
 
 	rootCmd.SetArgs([]string{"prompt", "--fuse", "answer this"})
@@ -927,7 +926,7 @@ func TestOutputPromptResults_WithErrors(t *testing.T) {
 			Model:    "some-model",
 			Response: "",
 			Latency:  50 * time.Millisecond,
-			Error:    fmt.Errorf("connection timeout"),
+			Error:    errors.New("connection timeout"),
 		},
 	}
 
@@ -1032,14 +1031,14 @@ func TestOutputPromptResults_MarkdownFormat_MixedResults(t *testing.T) {
 			Model:    "error-model",
 			Response: "",
 			Latency:  75 * time.Millisecond,
-			Error:    fmt.Errorf("API key invalid"),
+			Error:    errors.New("API key invalid"),
 		},
 		{
 			Provider: "timeout-provider",
 			Model:    "timeout-model",
 			Response: "",
 			Latency:  30000 * time.Millisecond,
-			Error:    fmt.Errorf("request timeout after 30s"),
+			Error:    errors.New("request timeout after 30s"),
 		},
 	}
 
@@ -1137,7 +1136,7 @@ func TestOutputPromptResults_RateLimitError(t *testing.T) {
 			Model:    "claude-3-5-sonnet",
 			Response: "",
 			Latency:  50 * time.Millisecond,
-			Error:    fmt.Errorf("rate limit exceeded: 429 Too Many Requests"),
+			Error:    errors.New("rate limit exceeded: 429 Too Many Requests"),
 		},
 	}
 
@@ -1192,7 +1191,7 @@ func TestOutputPromptResults_TimeoutError(t *testing.T) {
 			Model:    "slow-model",
 			Response: "",
 			Latency:  30 * time.Second,
-			Error:    fmt.Errorf("context deadline exceeded"),
+			Error:    errors.New("context deadline exceeded"),
 		},
 	}
 
@@ -1233,21 +1232,21 @@ func TestPromptCommand_AllProvidersFail_NonZeroExit(t *testing.T) {
 				Model:    "model-1",
 				Response: "",
 				Latency:  50 * time.Millisecond,
-				Error:    fmt.Errorf("rate limit exceeded"),
+				Error:    errors.New("rate limit exceeded"),
 			},
 			{
 				Provider: "provider-2",
 				Model:    "model-2",
 				Response: "",
 				Latency:  100 * time.Millisecond,
-				Error:    fmt.Errorf("authentication failed"),
+				Error:    errors.New("authentication failed"),
 			},
 			{
 				Provider: "provider-3",
 				Model:    "model-3",
 				Response: "",
 				Latency:  75 * time.Millisecond,
-				Error:    fmt.Errorf("service unavailable"),
+				Error:    errors.New("service unavailable"),
 			},
 		}, nil
 	}
@@ -1691,7 +1690,7 @@ func TestPromptCommand_OutputFlag_WithErrors(t *testing.T) {
 				Model:    "failed-model",
 				Response: "",
 				Latency:  50 * time.Millisecond,
-				Error:    fmt.Errorf("rate limit exceeded"),
+				Error:    errors.New("rate limit exceeded"),
 			},
 		}, nil
 	}
@@ -1738,7 +1737,7 @@ func TestPromptCommand_TimeoutFlag_ProviderTimesOut(t *testing.T) {
 				Model:    "slow-model",
 				Response: "",
 				Latency:  30 * time.Second,
-				Error:    fmt.Errorf("context deadline exceeded"),
+				Error:    errors.New("context deadline exceeded"),
 			},
 		}, nil
 	}

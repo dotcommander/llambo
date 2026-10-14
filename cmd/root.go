@@ -10,6 +10,11 @@ import (
 	"github.com/dotcommander/llambo/providers"
 )
 
+// Repeated string literals consolidated by goconst.
+const (
+	config1 = "--config"
+)
+
 const rootDescription = "High-performance LLM gateway with parallel job processing."
 
 type commandIO struct {
@@ -21,9 +26,9 @@ type commandIO struct {
 
 type commandPrinter struct{ io.Writer }
 
-func (p commandPrinter) Println(values ...any) (int, error) { return fmt.Fprintln(p.Writer, values...) }
-func (p commandPrinter) Printf(format string, values ...any) (int, error) {
-	return fmt.Fprintf(p.Writer, format, values...)
+func (p commandPrinter) Println(values ...any) { fmt.Fprintln(p.Writer, values...) }
+func (p commandPrinter) Printf(format string, values ...any) {
+	fmt.Fprintf(p.Writer, format, values...)
 }
 func (p commandPrinter) Sprintf(format string, values ...any) string {
 	return fmt.Sprintf(format, values...)
@@ -109,17 +114,17 @@ func execute(ctx context.Context, args []string, stdout, stderr io.Writer) error
 }
 
 func normalizeBranchPositionals(args []string) []string {
-	root := firstPositional(args, 0, map[string]bool{"--config": true})
+	root := firstPositional(args, 0, map[string]bool{config1: true})
 	if root < 0 {
 		return args
 	}
 	if args[root] == "models" {
-		branch := firstPositional(args, root+1, map[string]bool{"--config": true})
+		branch := firstPositional(args, root+1, map[string]bool{config1: true})
 		if branch < 0 {
 			return insertArg(args, root+1, "list")
 		}
 		if args[branch] == "catalog" {
-			leaf := firstPositional(args, branch+1, map[string]bool{"--config": true, "--tag": true})
+			leaf := firstPositional(args, branch+1, map[string]bool{config1: true, "--tag": true})
 			if leaf < 0 {
 				return insertArg(args, branch+1, "list")
 			}
@@ -140,7 +145,7 @@ func normalizeBranchPositionals(args []string) []string {
 		}
 	}
 	if args[root] == "route" {
-		branch := firstPositional(args, root+1, map[string]bool{"--config": true})
+		branch := firstPositional(args, root+1, map[string]bool{config1: true})
 		if branch < 0 {
 			return insertArg(args, root+1, "query")
 		}
@@ -154,12 +159,12 @@ func normalizeBranchPositionals(args []string) []string {
 		}
 	}
 	if args[root] == "providers" {
-		branch := firstPositional(args, root+1, map[string]bool{"--config": true})
+		branch := firstPositional(args, root+1, map[string]bool{config1: true})
 		if branch < 0 {
 			return insertArg(args, root+1, "list")
 		}
 		switch args[branch] {
-		case "list", "refresh":
+		case "list", refresh1:
 			return args
 		default:
 			return insertArg(args, root+1, "list")

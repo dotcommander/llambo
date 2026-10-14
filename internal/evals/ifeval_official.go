@@ -3,6 +3,7 @@ package evals
 import (
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 )
 
@@ -15,10 +16,10 @@ func loadOfficialIFEvalSnapshot() (sourceSnapshot, error) {
 		return sourceSnapshot{}, fmt.Errorf("decode official IFEval snapshot: %w", err)
 	}
 	if len(snapshot.Models) == 0 || snapshot.CommitSHA == "" || snapshot.ContentSHA == "" {
-		return sourceSnapshot{}, fmt.Errorf("official IFEval snapshot is incomplete")
+		return sourceSnapshot{}, errors.New("official IFEval snapshot is incomplete")
 	}
 	for i := range snapshot.Models {
-		result, ok := snapshot.Models[i].Benchmarks["ifeval-official"]
+		result, ok := snapshot.Models[i].Benchmarks[ifevalOfficial]
 		if !ok || result.Score == nil {
 			return sourceSnapshot{}, fmt.Errorf("official IFEval snapshot row %d has no score", i+1)
 		}
@@ -41,11 +42,11 @@ func loadOfficialIFEvalSnapshot() (sourceSnapshot, error) {
 		if result.FetchedAt.IsZero() {
 			result.FetchedAt = snapshot.FetchedAt
 		}
-		result.SourceID = "ifeval-official"
+		result.SourceID = ifevalOfficial
 		result.SourceClass = string(SourceFirstPartyResult)
-		result.EvidenceGrade = "first_party"
+		result.EvidenceGrade = firstParty
 		result.SourceRevision = snapshot.CommitSHA
-		snapshot.Models[i].Benchmarks["ifeval-official"] = result
+		snapshot.Models[i].Benchmarks[ifevalOfficial] = result
 	}
 	return snapshot, nil
 }

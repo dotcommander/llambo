@@ -54,7 +54,7 @@ func Load(path string) (map[string]ModelCost, error) {
 		}
 		return nil, fmt.Errorf("open model-costs CSV %q: %w", path, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	r := csv.NewReader(f)
 	r.Comment = '#'

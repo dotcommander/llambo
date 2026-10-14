@@ -11,6 +11,11 @@ import (
 	"github.com/dotcommander/llambo/internal/evals"
 )
 
+// Repeated string literals consolidated by goconst.
+const (
+	partial1 = "partial"
+)
+
 // evalsLocalRunCommand is wired into evalsCommand by the owning command-tree
 // change. It is kept here so local evaluation mechanics remain independently
 // testable and dry runs never contact a provider.
@@ -36,8 +41,8 @@ type evalsLocalRunCommand struct {
 }
 
 func (c *evalsLocalRunCommand) Run(parent *evalsCommand, io *commandIO) error {
-	if io.FlagChanged("refresh-official-model-cards") {
-		return fmt.Errorf("--refresh-official-model-cards is not supported with evals local run")
+	if io.FlagChanged(refreshOfficialModelCards) {
+		return errors.New("--refresh-official-model-cards is not supported with evals local run")
 	}
 	// Kong binds the inherited evals --limit flag on the parent command. Copy
 	// its explicitly positive value into the leaf runner before planning.
@@ -58,17 +63,17 @@ func runLocalEvaluationCommandAt(io *commandIO, o *evalsLocalRunCommand, omlxURL
 		}
 	}
 	if o.Concurrency != 1 {
-		return fmt.Errorf("local runs require --concurrency 1")
+		return errors.New("local runs require --concurrency 1")
 	}
 	if o.Limit < 1 || o.Timeout <= 0 || strings.TrimSpace(o.Model) == "" || filepath.Clean(o.OutputDir) == "." {
-		return fmt.Errorf("positive limit, timeout, exact model, and explicit output directory are required")
+		return errors.New("positive limit, timeout, exact model, and explicit output directory are required")
 	}
 	in, inputHash, err := evals.LoadLocalInputManifest(o.Input, o.Suite)
 	if err != nil {
 		return err
 	}
 	if !io.FlagChanged("input-per-1m") || !io.FlagChanged("output-per-1m") {
-		return fmt.Errorf("known pricing requires --input-per-1m and --output-per-1m (explicit zero is valid for local models)")
+		return errors.New("known pricing requires --input-per-1m and --output-per-1m (explicit zero is valid for local models)")
 	}
 	pricing := evals.LocalPricing{InputPer1M: o.InputPer1M, OutputPer1M: o.OutputPer1M, Known: true}
 	if o.Execute {
@@ -97,19 +102,19 @@ func runLocalEvaluationCommandAt(io *commandIO, o *evalsLocalRunCommand, omlxURL
 		}{"dry-run", m, plan, 0})
 	}
 	if o.MaxRunCost <= 0 {
-		return fmt.Errorf("--execute requires positive --max-run-cost")
+		return errors.New("--execute requires positive --max-run-cost")
 	}
 	if o.MaxCampaignCost <= 0 {
-		return fmt.Errorf("--execute requires positive --max-campaign-cost")
+		return errors.New("--execute requires positive --max-campaign-cost")
 	}
 	if strings.TrimSpace(o.LocalUseCase) == "" {
-		return fmt.Errorf("--execute requires a specific --local-use-case")
+		return errors.New("--execute requires a specific --local-use-case")
 	}
 	if plan.WorstCaseCostUSD > o.MaxRunCost+1e-12 {
 		return fmt.Errorf("worst-case run estimate $%.6f exceeds --max-run-cost $%.6f", plan.WorstCaseCostUSD, o.MaxRunCost)
 	}
 	if strings.TrimSpace(o.CampaignLedger) == "" {
-		return fmt.Errorf("--execute requires --campaign-ledger")
+		return errors.New("--execute requires --campaign-ledger")
 	}
 	verified := ""
 	verifiedReference := ""
@@ -152,7 +157,7 @@ func runLocalEvaluationCommandAt(io *commandIO, o *evalsLocalRunCommand, omlxURL
 	if err != nil {
 		return err
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	owner, err := evals.NewCampaignReservationOwner(m.RunID, evals.LocalRunIdentityHash(m), o.OutputDir)
 	if err != nil {
 		return err
@@ -163,13 +168,13 @@ func runLocalEvaluationCommandAt(io *commandIO, o *evalsLocalRunCommand, omlxURL
 	calls, runErr := evals.RunStoredLocalEvaluation(io.Context(), m, in, executor, store)
 	report, scoreErr := evals.ScoreLocalCalls(m, calls)
 	if scoreErr != nil {
-		report.Status = "partial"
+		report.Status = partial1
 		report.Errors = append(report.Errors, scoreErr.Error())
 	}
 	receipt, artifactErr := store.Finalize(report, time.Now())
 	status := receipt.Status
 	if runErr != nil || scoreErr != nil || artifactErr != nil {
-		status = "partial"
+		status = partial1
 	}
 	observedPtr, observedErr := evals.ObservedLocalCost(m.Identity.Pricing, calls)
 	if observedErr != nil && runErr == nil && artifactErr == nil {

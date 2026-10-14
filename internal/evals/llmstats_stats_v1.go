@@ -14,6 +14,15 @@ import (
 	"time"
 )
 
+// Repeated string literals consolidated by goconst.
+const (
+	benchmark1 = "benchmark"
+	blocked1   = "blocked"
+	reason1    = "reason"
+)
+
+const status1 = "status"
+
 const (
 	llmStatsStatsV1SourceID                      = "llm-stats-stats-v1-scores"
 	llmStatsStatsV1BenchmarkVersion              = "stats-v1"
@@ -121,7 +130,7 @@ func fetchLLMStatsStatsV1Snapshot(ctx context.Context, opts Options) (sourceSnap
 		Method:          "LLM Stats Stats v1 models and reviewed benchmark scores; verification status supplied per row",
 		Observations:    len(observations),
 		RegistryVersion: SourceRegistryVersion,
-		EvidenceGrade:   "graded_aggregator",
+		EvidenceGrade:   gradedAggregator,
 	}, nil
 }
 
@@ -169,7 +178,7 @@ func fetchLLMStatsStatsV1Models(ctx context.Context, opts Options) ([]Model, [][
 		if strings.TrimSpace(row.ID) == "" || strings.TrimSpace(row.Name) == "" || strings.TrimSpace(row.Organization.Name) == "" {
 			return nil, nil, errors.New("Stats v1 model row is malformed")
 		}
-		if row.ModelType != "llm" {
+		if row.ModelType != llm1 {
 			continue
 		}
 		if _, duplicate := seen[row.ID]; duplicate {
@@ -227,9 +236,9 @@ func fetchLLMStatsStatsV1BenchmarkLeads(ctx context.Context, opts Options) ([]Ob
 		}
 		if benchmark.ModelCount < 5 {
 			blocked = append(blocked, map[string]string{
-				"benchmark": benchmark.ID,
-				"status":    "blocked",
-				"reason":    fmt.Sprintf("Stats v1 catalog has %d models, want at least 5", benchmark.ModelCount),
+				benchmark1: benchmark.ID,
+				status1:    blocked1,
+				reason1:    fmt.Sprintf("Stats v1 catalog has %d models, want at least 5", benchmark.ModelCount),
 			})
 			continue
 		}
@@ -238,19 +247,19 @@ func fetchLLMStatsStatsV1BenchmarkLeads(ctx context.Context, opts Options) ([]Ob
 	for name := range reviewed {
 		if _, ok := seen[name]; !ok {
 			blocked = append(blocked, map[string]string{
-				"benchmark": name,
-				"status":    "blocked",
-				"reason":    "Stats v1 catalog does not contain this reviewed benchmark",
+				benchmark1: name,
+				status1:    blocked1,
+				reason1:    "Stats v1 catalog does not contain this reviewed benchmark",
 			})
 		}
 	}
-	sort.Slice(blocked, func(i, j int) bool { return blocked[i]["benchmark"] < blocked[j]["benchmark"] })
+	sort.Slice(blocked, func(i, j int) bool { return blocked[i][benchmark1] < blocked[j][benchmark1] })
 	if len(blocked) > 0 {
 		receipts, err := encodeJSONLMaps(blocked)
 		if err != nil {
 			return nil, err
 		}
-		if err := writeSealed(sealedRevisionPath(root, "blocked", receipts, ".jsonl"), receipts); err != nil {
+		if err := writeSealed(sealedRevisionPath(root, blocked1, receipts, ".jsonl"), receipts); err != nil {
 			return nil, err
 		}
 	}
@@ -407,7 +416,7 @@ func llmStatsStatsV1ScoresEndpoint(base, benchmark, cursor string) (string, erro
 		return "", fmt.Errorf("invalid LLM Stats Stats v1 scores URL %q", base)
 	}
 	query := parsed.Query()
-	query.Set("benchmark", benchmark)
+	query.Set(benchmark1, benchmark)
 	query.Set("limit", strconv.Itoa(llmStatsStatsV1ScoresPageLimit))
 	if cursor != "" {
 		query.Set("cursor", cursor)
@@ -441,7 +450,7 @@ func llmStatsStatsV1Observation(row llmStatsStatsV1ScoreRow, benchmark llmStatsS
 	if row.ScoredAt.IsZero() || now == nil {
 		return Observation{}, errors.New("score timestamp or collection clock is missing")
 	}
-	score := row.Score
+	var score float64
 	if row.NormalizedScore != nil {
 		score = *row.NormalizedScore
 	} else {
@@ -454,11 +463,11 @@ func llmStatsStatsV1Observation(row llmStatsStatsV1ScoreRow, benchmark llmStatsS
 	if !finite(score) || score < 0 || score > 100 {
 		return Observation{}, fmt.Errorf("normalized score %v is outside 0..100", score)
 	}
-	grade := "aggregator_unspecified"
+	grade := aggregatorUnspecified
 	if row.Verified {
-		grade = "aggregator_verified"
+		grade = aggregatorVerified
 	} else if row.IsSelfReported {
-		grade = "aggregator_self_reported"
+		grade = aggregatorSelfReported
 	}
 	return Observation{
 		SourceID:         llmStatsStatsV1SourceID,
@@ -471,7 +480,7 @@ func llmStatsStatsV1Observation(row llmStatsStatsV1ScoreRow, benchmark llmStatsS
 		OrganizationID:   row.Organization,
 		RawScore:         score,
 		Unit:             "percent",
-		Direction:        "higher",
+		Direction:        higher1,
 		Methodology:      llmStatsStatsV1Methodology,
 		EvidenceGrade:    grade,
 		FetchedAt:        now().UTC(),

@@ -249,7 +249,3 @@ func reportModelByKey(rows []ReportModel, key string) (ReportModel, bool) {
 	}
 	return ReportModel{}, false
 }
-
-func confidenceRank(value string) int {
-	return map[string]int{"low": 0, "medium": 1, "high": 2}[value]
-}

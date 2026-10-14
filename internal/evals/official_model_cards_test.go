@@ -174,9 +174,10 @@ func TestV3OfficialCardTargetRowsAndSixColumnCohortsAreSealed(t *testing.T) {
 			}
 			for _, model := range snapshot.Models {
 				categories := []string{"agents", "coding", "reasoning"}
-				if model.Key == "lfm-2.5-vl-3b" {
+				switch model.Key {
+				case "lfm-2.5-vl-3b":
 					categories = []string{"agents"}
-				} else if model.Key == "lfm-2.5-8b-a1b" {
+				case "lfm-2.5-8b-a1b":
 					categories = []string{"instruction-following", "reasoning"}
 				}
 				for _, category := range categories {
@@ -363,7 +364,6 @@ func validOfficialSnapshot(t *testing.T, cacheName string) sourceSnapshot {
 	for _, target := range spec.cardTargets() {
 		benchmarks := make(map[string]BenchmarkResult, len(officialCardTargetScores[cacheName][target.modelKey]))
 		for benchmark, score := range officialCardTargetScores[cacheName][target.modelKey] {
-			score := score
 			benchmarks[benchmark] = BenchmarkResult{Score: &score, Identity: IdentityMatchExact, Version: spec.revision, URL: pinnedOfficialCardURL(spec), ContentSHA: spec.contentSHA, Method: modelCardSourceType, EvidenceGrade: modelCardEvidence, Unit: modelCardUnit, Direction: modelCardDirection, Cohort: "official-comparison-table", Locator: "published benchmark table: " + benchmark, SourceID: spec.sourceID, SourceRevision: spec.revision, SourceClass: string(SourceFirstPartyResult)}
 		}
 		models = append(models, Model{Key: target.modelKey, Name: target.modelName, Organization: target.organization, IdentityMatch: IdentityMatchExact, Benchmarks: benchmarks})
@@ -388,7 +388,6 @@ func cardModel(t *testing.T, key, name, organization, sourceID, revision, sha st
 	t.Helper()
 	benchmarks := make(map[string]BenchmarkResult, len(values))
 	for benchmark, value := range values {
-		value := value
 		benchmarks[benchmark] = BenchmarkResult{Score: &value, Identity: IdentityMatchExact, Version: revision, ContentSHA: sha, Method: modelCardSourceType, EvidenceGrade: modelCardEvidence, Direction: modelCardDirection, SourceID: sourceID, SourceRevision: revision, SourceClass: string(SourceFirstPartyResult), FetchedAt: time.Unix(1, 0).UTC()}
 	}
 	return Model{Key: key, Name: name, Organization: organization, IdentityMatch: IdentityMatchExact, Benchmarks: benchmarks}

@@ -2,6 +2,7 @@ package evals
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -9,6 +10,19 @@ import (
 	"strings"
 	"time"
 )
+
+// Repeated string literals consolidated by goconst.
+const (
+	apacheX2X0         = "Apache-2.0"
+	candidateVariant   = "candidate variant"
+	high1              = "high"
+	mIT                = "MIT"
+	primaryLeaderboard = "primary leaderboard"
+	qwen1              = "Qwen"
+	variant1           = "variant"
+)
+
+const lechMazurWritingStylesURL = "https://github.com/lechmazur/writing_styles"
 
 const (
 	WritingCatalogVersion = 3
@@ -111,7 +125,7 @@ func DefaultWritingCatalog(now time.Time) WritingCatalog {
 		Benchmarks: []WritingBenchmark{
 			{
 				ID:            WritingPrimaryID,
-				Name:          "Lech Mazur Creative Story-Writing",
+				Name:          lechMazurCreativeStoryWriting,
 				URL:           "https://github.com/lechmazur/writing",
 				DataURL:       WritingPrimaryURL,
 				PromptURL:     "https://github.com/lechmazur/writing/tree/main/prompts_wc",
@@ -125,8 +139,8 @@ func DefaultWritingCatalog(now time.Time) WritingCatalog {
 				Notes:         "Primary live source. Each brief requires ten elements including character, setting, motivation, and tone.",
 			},
 			{
-				ID:            "writingbench",
-				Name:          "WritingBench",
+				ID:            writingbench1,
+				Name:          writingBench1,
 				URL:           "https://github.com/X-PLUG/WritingBench",
 				DataURL:       "https://raw.githubusercontent.com/X-PLUG/WritingBench/main/benchmark_query/benchmark_all.jsonl",
 				PromptURL:     "https://raw.githubusercontent.com/X-PLUG/WritingBench/main/benchmark_query/benchmark_all.jsonl",
@@ -141,7 +155,7 @@ func DefaultWritingCatalog(now time.Time) WritingCatalog {
 				Notes:         "Broadest practical writing coverage in this registry. The public query set is better suited to reproducible reruns than a stale leaderboard.",
 			},
 			{
-				ID:            "eqbench-creative-v3",
+				ID:            eqbenchCreativeV3,
 				Name:          "EQ-Bench Creative Writing v3",
 				URL:           "https://github.com/EQ-bench/creative-writing-bench",
 				DataURL:       "https://raw.githubusercontent.com/EQ-bench/creative-writing-bench/main/data/creative_writing_prompts_v3.json",
@@ -173,7 +187,7 @@ func DefaultWritingCatalog(now time.Time) WritingCatalog {
 			},
 			{
 				ID:            "arena-creative-writing",
-				Name:          "Arena Creative Writing",
+				Name:          arenaCreativeWriting,
 				URL:           "https://arena.ai/leaderboard/text/creative-writing",
 				PromptURL:     "https://arena.ai/leaderboard/text/creative-writing",
 				PromptFormat:  "live pairwise web conversations",
@@ -186,7 +200,7 @@ func DefaultWritingCatalog(now time.Time) WritingCatalog {
 				Notes:         "Good external cross-check, but the prompt corpus and sampling are less reproducible than a fixed benchmark release.",
 			},
 			{
-				ID:            "ifeval",
+				ID:            ifeval1,
 				Name:          "IFEval",
 				URL:           "https://github.com/google-research/google-research/tree/master/instruction_following_eval",
 				DataURL:       "https://raw.githubusercontent.com/google-research/google-research/master/instruction_following_eval/data/input_data.jsonl",
@@ -201,8 +215,8 @@ func DefaultWritingCatalog(now time.Time) WritingCatalog {
 				Notes:         "Auxiliary writing signal. It measures brief adherence, not prose quality.",
 			},
 			{
-				ID:            "ifbench",
-				Name:          "IFBench",
+				ID:            ifbench1,
+				Name:          iFBench,
 				URL:           "https://github.com/allenai/IFBench",
 				DataURL:       "https://huggingface.co/datasets/allenai/IFBench_test",
 				PromptURL:     "https://huggingface.co/datasets/allenai/IFBench_test",
@@ -218,9 +232,9 @@ func DefaultWritingCatalog(now time.Time) WritingCatalog {
 			{
 				ID:            "lechmazur-writing-styles",
 				Name:          "Lech Mazur Writing Styles",
-				URL:           "https://github.com/lechmazur/writing_styles",
-				DataURL:       "https://github.com/lechmazur/writing_styles",
-				PromptURL:     "https://github.com/lechmazur/writing_styles",
+				URL:           lechMazurWritingStylesURL,
+				DataURL:       lechMazurWritingStylesURL,
+				PromptURL:     lechMazurWritingStylesURL,
 				PromptFormat:  "story corpus and CSV feature artifacts",
 				RunMode:       "Generate a comparable story corpus and measure style fingerprints and within-model diversity.",
 				RunNotes:      "Treat diversity as a separate axis. It is not a quality score.",
@@ -237,9 +251,9 @@ func DefaultWritingCatalog(now time.Time) WritingCatalog {
 				Name:           "DeepSeek V4.1 Flash",
 				Provider:       "DeepSeek",
 				HuggingFaceURL: "https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash",
-				License:        "MIT",
+				License:        mIT,
 				Coverage:       "new candidate",
-				Priority:       "high",
+				Priority:       high1,
 				Notes:          "Newest verified public-weight candidate in this registry; not present in the primary story leaderboard snapshot.",
 			},
 			{
@@ -248,8 +262,8 @@ func DefaultWritingCatalog(now time.Time) WritingCatalog {
 				Provider:           "Moonshot AI",
 				HuggingFaceURL:     "https://huggingface.co/moonshotai/Kimi-K3",
 				License:            "other",
-				Coverage:           "primary leaderboard",
-				Priority:           "high",
+				Coverage:           primaryLeaderboard,
+				Priority:           high1,
 				LeaderboardAliases: []string{"Kimi K3"},
 				Notes:              "Hugging Face currently reports an `other` license with a kimi-k3 tag. Review terms before redistribution.",
 			},
@@ -258,11 +272,11 @@ func DefaultWritingCatalog(now time.Time) WritingCatalog {
 				Name:                 "GLM-5.2",
 				Provider:             "Z.ai",
 				HuggingFaceURL:       "https://huggingface.co/zai-org/GLM-5.2",
-				License:              "MIT",
-				Coverage:             "primary leaderboard",
-				Priority:             "high",
+				License:              mIT,
+				Coverage:             primaryLeaderboard,
+				Priority:             high1,
 				LeaderboardAliases:   []string{"GLM-5.2"},
-				LeaderboardMatchType: "variant",
+				LeaderboardMatchType: variant1,
 			},
 			{
 				ID:                 "MiniMaxAI/MiniMax-M3",
@@ -270,29 +284,29 @@ func DefaultWritingCatalog(now time.Time) WritingCatalog {
 				Provider:           "MiniMax",
 				HuggingFaceURL:     "https://huggingface.co/MiniMaxAI/MiniMax-M3",
 				License:            "other",
-				Coverage:           "primary leaderboard",
-				Priority:           "high",
+				Coverage:           primaryLeaderboard,
+				Priority:           high1,
 				LeaderboardAliases: []string{"MiniMax-M3"},
 				Notes:              "Hugging Face currently reports an `other` license with a minimax-m3 tag. Review terms before redistribution.",
 			},
 			{
 				ID:             "Qwen/Qwen3.6-35B-A3B",
 				Name:           "Qwen3.6 35B A3B",
-				Provider:       "Qwen",
+				Provider:       qwen1,
 				HuggingFaceURL: "https://huggingface.co/Qwen/Qwen3.6-35B-A3B",
-				License:        "Apache-2.0",
-				Coverage:       "candidate variant",
-				Priority:       "high",
+				License:        apacheX2X0,
+				Coverage:       candidateVariant,
+				Priority:       high1,
 				Notes:          "The primary leaderboard has hosted Qwen 3.6 variants but not this exact public-weight ID.",
 			},
 			{
 				ID:             "Qwen/Qwen3.6-27B",
 				Name:           "Qwen3.6 27B",
-				Provider:       "Qwen",
+				Provider:       qwen1,
 				HuggingFaceURL: "https://huggingface.co/Qwen/Qwen3.6-27B",
-				License:        "Apache-2.0",
-				Coverage:       "candidate variant",
-				Priority:       "high",
+				License:        apacheX2X0,
+				Coverage:       candidateVariant,
+				Priority:       high1,
 				Notes:          "Exact public-weight variant to run alongside the larger Qwen3.6 release.",
 			},
 			{
@@ -300,11 +314,11 @@ func DefaultWritingCatalog(now time.Time) WritingCatalog {
 				Name:                 "Gemma 4 31B it",
 				Provider:             "Google",
 				HuggingFaceURL:       "https://huggingface.co/google/gemma-4-31B-it",
-				License:              "Apache-2.0",
+				License:              apacheX2X0,
 				Coverage:             "primary variant",
-				Priority:             "high",
+				Priority:             high1,
 				LeaderboardAliases:   []string{"Gemma 4 31B"},
-				LeaderboardMatchType: "variant",
+				LeaderboardMatchType: variant1,
 				Notes:                "The primary leaderboard includes a Gemma 4 31B reasoning setting; verify the serving mode when comparing runs.",
 			},
 			{
@@ -312,20 +326,20 @@ func DefaultWritingCatalog(now time.Time) WritingCatalog {
 				Name:                 "Mistral Large 3 675B Instruct",
 				Provider:             "Mistral AI",
 				HuggingFaceURL:       "https://huggingface.co/mistralai/Mistral-Large-3-675B-Instruct-2512",
-				License:              "Apache-2.0",
-				Coverage:             "primary leaderboard",
-				Priority:             "medium",
+				License:              apacheX2X0,
+				Coverage:             primaryLeaderboard,
+				Priority:             medium1,
 				LeaderboardAliases:   []string{"Mistral Large 3"},
-				LeaderboardMatchType: "variant",
+				LeaderboardMatchType: variant1,
 			},
 			{
 				ID:                 "XiaomiMiMo/MiMo-V2.5-Pro",
 				Name:               "Xiaomi MiMo V2.5 Pro",
 				Provider:           "Xiaomi",
 				HuggingFaceURL:     "https://huggingface.co/XiaomiMiMo/MiMo-V2.5-Pro",
-				License:            "MIT",
-				Coverage:           "primary leaderboard",
-				Priority:           "medium",
+				License:            mIT,
+				Coverage:           primaryLeaderboard,
+				Priority:           medium1,
 				LeaderboardAliases: []string{"Xiaomi MiMo V2.5 Pro"},
 			},
 			{
@@ -333,9 +347,9 @@ func DefaultWritingCatalog(now time.Time) WritingCatalog {
 				Name:               "GPT-OSS-120B",
 				Provider:           "OpenAI",
 				HuggingFaceURL:     "https://huggingface.co/openai/gpt-oss-120b",
-				License:            "Apache-2.0",
-				Coverage:           "primary leaderboard",
-				Priority:           "medium",
+				License:            apacheX2X0,
+				Coverage:           primaryLeaderboard,
+				Priority:           medium1,
 				LeaderboardAliases: []string{"GPT-OSS-120B"},
 			},
 			{
@@ -343,19 +357,19 @@ func DefaultWritingCatalog(now time.Time) WritingCatalog {
 				Name:           "GPT-OSS-20B",
 				Provider:       "OpenAI",
 				HuggingFaceURL: "https://huggingface.co/openai/gpt-oss-20b",
-				License:        "Apache-2.0",
+				License:        apacheX2X0,
 				Coverage:       "new candidate",
-				Priority:       "high",
+				Priority:       high1,
 				Notes:          "The primary leaderboard covers the 120B sibling; add the 20B model as a size-efficiency comparison.",
 			},
 			{
 				ID:             "Qwen/Qwen3-235B-A22B-Instruct-2507",
 				Name:           "Qwen3 235B A22B Instruct 2507",
-				Provider:       "Qwen",
+				Provider:       qwen1,
 				HuggingFaceURL: "https://huggingface.co/Qwen/Qwen3-235B-A22B-Instruct-2507",
-				License:        "Apache-2.0",
-				Coverage:       "candidate variant",
-				Priority:       "medium",
+				License:        apacheX2X0,
+				Coverage:       candidateVariant,
+				Priority:       medium1,
 				Notes:          "Large open-weight baseline for broad writing and instruction-following reruns.",
 			},
 		},
@@ -393,7 +407,7 @@ func FetchWritingCatalog(ctx context.Context, opts WritingCatalogOptions) (Writi
 		BenchmarkID: WritingPrimaryID,
 		SourceURL:   url,
 		FetchedAt:   artifact.FetchedAt,
-		Status:      "available",
+		Status:      available1,
 		HTTPStatus:  artifact.HTTPStatus,
 		ContentType: artifact.ContentType,
 		Bytes:       artifact.Bytes,
@@ -442,7 +456,7 @@ func ParseWritingLeaderboard(markdown string) ([]WritingLeaderboardRow, error) {
 		}
 	}
 	if headerIndex < 0 {
-		return nil, fmt.Errorf("writing leaderboard table header not found")
+		return nil, errors.New("writing leaderboard table header not found")
 	}
 
 	rankColumn := findWritingColumn(headers, "rank")
@@ -451,7 +465,7 @@ func ParseWritingLeaderboard(markdown string) ([]WritingLeaderboardRow, error) {
 	winChanceColumn := findWritingColumn(headers, "estimated win chance")
 	uncertaintyColumn := findWritingColumn(headers, "uncertainty")
 	if rankColumn < 0 || modelColumn < 0 || scoreColumn < 0 || winChanceColumn < 0 || uncertaintyColumn < 0 {
-		return nil, fmt.Errorf("writing leaderboard table is missing required columns")
+		return nil, errors.New("writing leaderboard table is missing required columns")
 	}
 
 	rows := make([]WritingLeaderboardRow, 0, 32)
@@ -490,7 +504,7 @@ func ParseWritingLeaderboard(markdown string) ([]WritingLeaderboardRow, error) {
 		})
 	}
 	if len(rows) == 0 {
-		return nil, fmt.Errorf("writing leaderboard table contained no data rows")
+		return nil, errors.New("writing leaderboard table contained no data rows")
 	}
 	return rows, nil
 }

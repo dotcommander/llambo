@@ -3,7 +3,7 @@ package evals
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"errors"
 )
 
 type ToolLocalExecutor struct {
@@ -96,5 +96,5 @@ func (e TTSLocalExecutor) ExecuteLocal(ctx context.Context, manifest LocalRunMan
 type UnsupportedAccelerationExecutor struct{}
 
 func (UnsupportedAccelerationExecutor) ExecuteLocal(context.Context, LocalRunManifest, json.RawMessage) (LocalCall, error) {
-	return LocalCall{}, fmt.Errorf("acceleration execution requires a separately authorized exclusive OMLX settings window")
+	return LocalCall{}, errors.New("acceleration execution requires a separately authorized exclusive OMLX settings window")
 }

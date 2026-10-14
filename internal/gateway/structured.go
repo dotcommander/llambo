@@ -3,11 +3,18 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/dotcommander/llambo/providers"
 	whtypes "github.com/garyblankenship/wormhole/v3/types"
+)
+
+// Repeated string literals consolidated by goconst.
+const (
+	assistant1 = "assistant"
+	function1  = "function"
 )
 
 type structuredChatProvider interface {
@@ -38,18 +45,18 @@ func (s *Server) prepareChat(req *ChatCompletionRequest) error {
 func structuredRequest(req ChatCompletionRequest) (providers.StructuredChatRequest, error) {
 	out := providers.StructuredChatRequest{Tools: req.Tools, ResponseFormat: responseFormatOverride(req.ResponseFormat), Temperature: req.Temperature, TopP: req.TopP, MaxTokens: req.MaxTokens}
 	if len(req.Messages) == 0 {
-		return out, fmt.Errorf("messages is required")
+		return out, errors.New("messages is required")
 	}
 	for i, m := range req.Messages {
 		switch m.Role {
-		case "system":
+		case system3:
 			out.Messages = append(out.Messages, whtypes.NewSystemMessage(m.Content))
-		case "user":
+		case user4:
 			out.Messages = append(out.Messages, whtypes.NewUserMessage(m.Content))
-		case "assistant":
+		case assistant1:
 			calls := make([]whtypes.ToolCall, 0, len(m.ToolCalls))
 			for _, call := range m.ToolCalls {
-				if call.ID == "" || (call.Name == "" && (call.Function == nil || call.Function.Name == "")) || (call.Type != "" && call.Type != "function") {
+				if call.ID == "" || (call.Name == "" && (call.Function == nil || call.Function.Name == "")) || (call.Type != "" && call.Type != function1) {
 					return out, fmt.Errorf("messages[%d]: invalid tool call", i)
 				}
 				normalized, err := whtypes.NormalizeToolCall(call)
@@ -59,7 +66,7 @@ func structuredRequest(req ChatCompletionRequest) (providers.StructuredChatReque
 				calls = append(calls, normalized)
 			}
 			out.Messages = append(out.Messages, &whtypes.AssistantMessage{Content: m.Content, ToolCalls: calls})
-		case "tool":
+		case tool2:
 			if m.ToolCallID == "" {
 				return out, fmt.Errorf("messages[%d].tool_call_id is required", i)
 			}
@@ -67,16 +74,16 @@ func structuredRequest(req ChatCompletionRequest) (providers.StructuredChatReque
 		default:
 			return out, fmt.Errorf("messages[%d].role is unsupported", i)
 		}
-		if m.Role != "assistant" && len(m.ToolCalls) > 0 {
-			return out, fmt.Errorf("tool_calls requires assistant role")
+		if m.Role != assistant1 && len(m.ToolCalls) > 0 {
+			return out, errors.New("tool_calls requires assistant role")
 		}
 	}
 	for _, tool := range req.Tools {
-		if tool.Type != "" && tool.Type != "function" {
-			return out, fmt.Errorf("unsupported tool type")
+		if tool.Type != "" && tool.Type != function1 {
+			return out, errors.New("unsupported tool type")
 		}
 		if tool.Name == "" && (tool.Function == nil || tool.Function.Name == "") {
-			return out, fmt.Errorf("tool name is required")
+			return out, errors.New("tool name is required")
 		}
 	}
 	if !isRawNull(req.Stop) {
@@ -84,7 +91,7 @@ func structuredRequest(req ChatCompletionRequest) (providers.StructuredChatReque
 		if json.Unmarshal(req.Stop, &single) == nil {
 			out.Stop = []string{single}
 		} else if err := json.Unmarshal(req.Stop, &out.Stop); err != nil {
-			return out, fmt.Errorf("stop must be a string or string array")
+			return out, errors.New("stop must be a string or string array")
 		}
 	}
 	if !isRawNull(req.ToolChoice) {
@@ -96,9 +103,9 @@ func structuredRequest(req ChatCompletionRequest) (providers.StructuredChatReque
 	}
 	if req.ResponseFormat != nil {
 		switch strings.ToLower(req.ResponseFormat.Type) {
-		case "text", "json_object", "json_schema":
+		case text1, "json_object", "json_schema":
 		default:
-			return out, fmt.Errorf("unsupported response_format")
+			return out, errors.New("unsupported response_format")
 		}
 	}
 	return out, nil
@@ -108,7 +115,7 @@ func (s *Server) executeChat(ctx context.Context, req ChatCompletionRequest) (pr
 		return p.ChatStructuredWithInfoContext(ctx, req.structured, req.target)
 	}
 	if req.Model != "" || len(req.Tools) > 0 {
-		return providers.ChatResult{}, fmt.Errorf("structured requests unavailable")
+		return providers.ChatResult{}, errors.New("structured requests unavailable")
 	}
 	system, user := ExtractPrompts(req.Messages)
 	return s.provider.ChatWithInfoContext(ctx, system, user)
@@ -119,19 +126,19 @@ func (s *Server) executeChatStream(ctx context.Context, req ChatCompletionReques
 	}
 	p, ok := s.provider.(providers.ChatStreamProvider)
 	if !ok {
-		return providers.ChatResult{}, fmt.Errorf("streaming unavailable")
+		return providers.ChatResult{}, errors.New("streaming unavailable")
 	}
 	if req.Model != "" || len(req.Tools) > 0 {
-		return providers.ChatResult{}, fmt.Errorf("structured requests unavailable")
+		return providers.ChatResult{}, errors.New("structured requests unavailable")
 	}
 	system, user := ExtractPrompts(req.Messages)
 	return p.ChatStreamWithInfoContext(ctx, system, user, callback)
 }
 
 func openAIResultMessage(result providers.ChatResult) *Message {
-	message := &Message{Role: "assistant", Content: result.Content}
+	message := &Message{Role: assistant1, Content: result.Content}
 	for _, call := range result.ToolCalls {
-		message.ToolCalls = append(message.ToolCalls, whtypes.ToolCall{ID: call.ID, Type: "function", Function: &whtypes.ToolCallFunction{Name: call.Name, Arguments: call.Arguments}})
+		message.ToolCalls = append(message.ToolCalls, whtypes.ToolCall{ID: call.ID, Type: function1, Function: &whtypes.ToolCallFunction{Name: call.Name, Arguments: call.Arguments}})
 	}
 	return message
 }
@@ -143,7 +150,7 @@ func (r JobRequest) chatRequest() ChatCompletionRequest {
 func openAIResultToolCalls(calls []providers.ToolCall) []OpenAIToolCall {
 	out := make([]OpenAIToolCall, 0, len(calls))
 	for _, call := range calls {
-		out = append(out, OpenAIToolCall{ID: call.ID, Type: "function", Function: &whtypes.ToolCallFunction{Name: call.Name, Arguments: call.Arguments}})
+		out = append(out, OpenAIToolCall{ID: call.ID, Type: function1, Function: &whtypes.ToolCallFunction{Name: call.Name, Arguments: call.Arguments}})
 	}
 	return out
 }
@@ -154,12 +161,12 @@ func parseToolChoice(raw json.RawMessage) (*whtypes.ToolChoice, error) {
 	var choice string
 	if json.Unmarshal(raw, &choice) == nil {
 		switch choice {
-		case "auto", "none":
+		case auto1, none1:
 			return &whtypes.ToolChoice{Type: whtypes.ToolChoiceType(choice)}, nil
-		case "required", "any":
+		case "required", anyStr:
 			return &whtypes.ToolChoice{Type: whtypes.ToolChoiceTypeAny}, nil
 		default:
-			return nil, fmt.Errorf("unsupported tool_choice")
+			return nil, errors.New("unsupported tool_choice")
 		}
 	}
 	var named struct {
@@ -168,8 +175,8 @@ func parseToolChoice(raw json.RawMessage) (*whtypes.ToolChoice, error) {
 			Name string `json:"name"`
 		} `json:"function"`
 	}
-	if json.Unmarshal(raw, &named) != nil || named.Type != "function" || named.Function.Name == "" {
-		return nil, fmt.Errorf("unsupported tool_choice")
+	if json.Unmarshal(raw, &named) != nil || named.Type != function1 || named.Function.Name == "" {
+		return nil, errors.New("unsupported tool_choice")
 	}
 	return &whtypes.ToolChoice{Type: whtypes.ToolChoiceTypeSpecific, ToolName: named.Function.Name}, nil
 }

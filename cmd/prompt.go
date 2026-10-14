@@ -159,9 +159,9 @@ func (cliOpts *invocationOptions) applyPromptUXDefaults(cmd *commandIO) {
 
 func boolEnv(name string) (bool, bool) {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv(name))) {
-	case "1", "true", "yes", "on":
+	case "1", "true", yes1, "on":
 		return true, true
-	case "0", "false", "no", "off":
+	case "0", "false", no1, off1:
 		return false, true
 	default:
 		return false, false
@@ -172,7 +172,7 @@ func promptTextFromArgsOrStdin(args []string) (string, error) {
 	if len(args) > 0 {
 		promptText := strings.TrimSpace(strings.Join(args, " "))
 		if promptText == "" {
-			return "", fmt.Errorf("prompt text cannot be empty")
+			return "", errors.New("prompt text cannot be empty")
 		}
 		return promptText, nil
 	}
@@ -182,7 +182,7 @@ func promptTextFromArgsOrStdin(args []string) (string, error) {
 		return "", fmt.Errorf("inspect stdin: %w", err)
 	}
 	if stat.Mode()&os.ModeCharDevice != 0 {
-		return "", fmt.Errorf("prompt text required - usage: llambo prompt <text>")
+		return "", errors.New("prompt text required - usage: llambo prompt <text>")
 	}
 
 	data, err := io.ReadAll(io.LimitReader(os.Stdin, 1<<20))
@@ -191,7 +191,7 @@ func promptTextFromArgsOrStdin(args []string) (string, error) {
 	}
 	promptText := strings.TrimSpace(string(data))
 	if promptText == "" {
-		return "", fmt.Errorf("prompt text cannot be empty")
+		return "", errors.New("prompt text cannot be empty")
 	}
 	return promptText, nil
 }
@@ -206,7 +206,7 @@ func checkAllFailed(results []PromptResult) error {
 		}
 	}
 	if allFailed && len(results) > 0 {
-		return fmt.Errorf("all providers failed")
+		return errors.New("all providers failed")
 	}
 	return nil
 }
@@ -238,12 +238,3 @@ func writeResultsToFile(_ *commandIO, promptText string, results []PromptResult,
 
 // executePromptAgainstAllProviders sends the prompt to all enabled providers concurrently
 // This is a variable to allow mocking in tests
-
-// Scalar helpers retain their signatures with independent default options.
-func applyPromptUXDefaults(cmd *commandIO) {
-	defaultInvocationOptions().applyPromptUXDefaults(cmd)
-}
-
-func runPromptCommand(cmd *commandIO, args []string) error {
-	return defaultInvocationOptions().runPromptCommand(cmd, args)
-}

@@ -114,7 +114,7 @@ func fetchWritingOpenModelDiscovery(ctx context.Context, client *http.Client, ca
 	discovery := WritingOpenModelDiscovery{
 		SourceURL: sourceURL,
 		FetchedAt: fetchedAt,
-		Status:    "error",
+		Status:    errorStr,
 	}
 	artifact, err := fetchWritingArtifact(ctx, client, sourceURL, fetchedAt)
 	discovery.HTTPStatus = artifact.HTTPStatus
@@ -159,7 +159,7 @@ func fetchWritingOpenModelDiscovery(ctx context.Context, client *http.Client, ca
 			break
 		}
 	}
-	discovery.Status = "available"
+	discovery.Status = available1
 	discovery.Candidates = len(candidates)
 	return discovery, candidates
 }

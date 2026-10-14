@@ -19,7 +19,7 @@ func fetchWritingEvidenceHTTP(ctx context.Context, client *http.Client, url, sou
 	if err != nil {
 		return nil, nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return nil, nil, fmt.Errorf("GET %s: HTTP %d", url, resp.StatusCode)
 	}

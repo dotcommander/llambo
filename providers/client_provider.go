@@ -15,6 +15,12 @@ import (
 	whtypes "github.com/garyblankenship/wormhole/v3/types"
 )
 
+// Repeated string literals consolidated by goconst.
+const (
+	anthropic1 = "anthropic"
+	gemini1    = "gemini"
+)
+
 func noWormholeRetries() *int {
 	noRetries := 0
 	return &noRetries
@@ -42,18 +48,18 @@ func createProviderForConfigWithKey(name string, cfg Config, apiKey string) (wht
 	}
 
 	switch cfg.GetProviderType() {
-	case "anthropic":
+	case anthropic1:
 		client := whanthropic.New(providerConfig)
-		client.BaseProvider = newBaseProvider("anthropic", providerConfig)
+		client.BaseProvider = newBaseProvider(anthropic1, providerConfig)
 		slog.Debug("provider client construction: exit", "provider", name, "model", cfg.Model, "outcome", "success")
 		return client, nil
-	case "gemini":
+	case gemini1:
 		client := whgemini.New(apiKey, providerConfig)
 		slog.Debug("provider client construction: exit", "provider", name, "model", cfg.Model, "outcome", "success")
 		return client, nil
 	default:
 		client := whopenai.New(providerConfig)
-		client.BaseProvider = newBaseProvider("openai", providerConfig)
+		client.BaseProvider = newBaseProvider(openai1, providerConfig)
 		slog.Debug("provider client construction: exit", "provider", name, "model", cfg.Model, "outcome", "success")
 		return client, nil
 	}
@@ -62,9 +68,9 @@ func createProviderForConfigWithKey(name string, cfg Config, apiKey string) (wht
 func newBaseProvider(providerType string, cfg whtypes.ProviderConfig) *whproviders.BaseProvider {
 	var authStrategy whproviders.AuthStrategy
 	switch providerType {
-	case "anthropic":
-		authStrategy = (&whproviders.AuthStrategyFactory{}).CreateAuthStrategy("anthropic", cfg)
-	case "gemini":
+	case anthropic1:
+		authStrategy = (&whproviders.AuthStrategyFactory{}).CreateAuthStrategy(anthropic1, cfg)
+	case gemini1:
 		authStrategy = &whproviders.NoAuthStrategy{}
 	}
 	return whproviders.NewBaseProviderWithAuth(providerType, cfg, nil, authStrategy, &http.Client{Timeout: providerHTTPTimeout(cfg)})
@@ -72,12 +78,12 @@ func newBaseProvider(providerType string, cfg whtypes.ProviderConfig) *whprovide
 
 func providerConfigBaseURL(cfg Config) string {
 	switch cfg.GetProviderType() {
-	case "anthropic":
+	case anthropic1:
 		if cfg.BaseURL == "" {
 			return defaultAnthropicBaseURL
 		}
 		return strings.TrimSuffix(cfg.BaseURL, "/")
-	case "gemini":
+	case gemini1:
 		if cfg.BaseURL == "" {
 			return defaultGeminiBaseURL
 		}

@@ -2,31 +2,39 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/dotcommander/llambo/internal/evals"
 )
 
+// Repeated string literals consolidated by goconst.
+const (
+	no1  = "no"
+	yes1 = "yes"
+)
+
 func runWritingCatalog(cmd *commandIO, format, output string, refresh bool, exportPrompts, promptSource string, promptLimit int, discoverModels bool, discoverLimit int) error {
 	if exportPrompts != "" && !refresh {
-		return fmt.Errorf("--export-prompts requires --refresh so the public prompt artifact is fetched")
+		return errors.New("--export-prompts requires --refresh so the public prompt artifact is fetched")
 	}
 	if discoverModels && !refresh {
-		return fmt.Errorf("--discover-open-models requires --refresh so the public model listing is fetched")
+		return errors.New("--discover-open-models requires --refresh so the public model listing is fetched")
 	}
 	if promptLimit < 0 {
-		return fmt.Errorf("--prompt-limit cannot be negative")
+		return errors.New("--prompt-limit cannot be negative")
 	}
 	if discoverLimit < 0 {
-		return fmt.Errorf("--discover-limit cannot be negative")
+		return errors.New("--discover-limit cannot be negative")
 	}
 	if exportPrompts != "" && output != "" && filepath.Clean(exportPrompts) == filepath.Clean(output) {
-		return fmt.Errorf("--export-prompts and --output must name different files")
+		return errors.New("--export-prompts and --output must name different files")
 	}
 	catalog := evals.DefaultWritingCatalog(time.Now().UTC())
 	if refresh {
@@ -103,9 +111,9 @@ func encodeWritingPromptRecords(records []evals.WritingPromptRecord, source stri
 
 func encodeWritingCatalog(catalog evals.WritingCatalog, format string) ([]byte, error) {
 	switch strings.ToLower(strings.TrimSpace(format)) {
-	case "markdown", "md":
+	case markdown1, "md":
 		return []byte(renderWritingCatalogMarkdown(catalog)), nil
-	case "json":
+	case json1:
 		data, err := json.MarshalIndent(catalog, "", "  ")
 		if err != nil {
 			return nil, err
@@ -306,14 +314,14 @@ func writingCatalogCount(value int) string {
 	if value == 0 {
 		return "—"
 	}
-	return fmt.Sprintf("%d", value)
+	return strconv.Itoa(value)
 }
 
 func writingCatalogNumber(value int) string {
 	if value == 0 {
 		return "—"
 	}
-	return fmt.Sprintf("%d", value)
+	return strconv.Itoa(value)
 }
 
 func writingCatalogFloat(value *float64) string {
@@ -335,9 +343,9 @@ func writingCatalogLicenseMatch(check evals.WritingModelStatus) string {
 		return "—"
 	}
 	if check.LicenseMatch {
-		return "yes"
+		return yes1
 	}
-	return "no"
+	return no1
 }
 
 func writingCatalogTime(value time.Time) string {

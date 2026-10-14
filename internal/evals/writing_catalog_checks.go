@@ -1,7 +1,6 @@
 package evals
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -9,6 +8,13 @@ import (
 	"net/http"
 	"strings"
 	"time"
+)
+
+// Repeated string literals consolidated by goconst.
+const (
+	available1 = "available"
+	errorStr   = "error"
+	invalid1   = "invalid"
 )
 
 const huggingFaceModelAPI = "https://huggingface.co/api/models/"
@@ -64,7 +70,7 @@ func fetchWritingArtifact(ctx context.Context, client *http.Client, sourceURL st
 	if err != nil {
 		return artifact, err
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	artifact.HTTPStatus = response.StatusCode
 	artifact.ContentType = response.Header.Get("Content-Type")
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
@@ -101,7 +107,7 @@ func fetchWritingSourceChecks(ctx context.Context, client *http.Client, catalog 
 			BenchmarkID: benchmark.ID,
 			SourceURL:   sourceURL,
 			FetchedAt:   artifact.FetchedAt,
-			Status:      "error",
+			Status:      errorStr,
 			HTTPStatus:  artifact.HTTPStatus,
 			ContentType: artifact.ContentType,
 			Bytes:       artifact.Bytes,
@@ -119,10 +125,10 @@ func fetchWritingSourceChecks(ctx context.Context, client *http.Client, catalog 
 			check.Records, err = inspectWritingArtifact(benchmark.ID, artifact.Body)
 		}
 		if err != nil {
-			check.Status = "invalid"
+			check.Status = invalid1
 			check.Error = err.Error()
 		} else {
-			check.Status = "available"
+			check.Status = available1
 			if opts.IncludePromptRecords {
 				promptRecords = append(promptRecords, records...)
 			}
@@ -150,35 +156,11 @@ func applyWritingPromptCounts(catalog *WritingCatalog) {
 				continue
 			}
 			switch check.BenchmarkID {
-			case "writingbench", "eqbench-creative-v3", "ifeval":
+			case writingbench1, eqbenchCreativeV3, ifeval1:
 				catalog.Benchmarks[index].PromptCount = check.Records
 			}
 		}
 	}
-}
-
-func countWritingJSONL(body []byte) (int, error) {
-	scanner := bufio.NewScanner(strings.NewReader(string(body)))
-	scanner.Buffer(make([]byte, 64<<10), 8<<20)
-	count := 0
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
-		var record json.RawMessage
-		if err := json.Unmarshal([]byte(line), &record); err != nil {
-			return count, fmt.Errorf("parse JSONL record %d: %w", count+1, err)
-		}
-		count++
-	}
-	if err := scanner.Err(); err != nil {
-		return count, fmt.Errorf("read JSONL: %w", err)
-	}
-	if count == 0 {
-		return 0, fmt.Errorf("JSONL contained no records")
-	}
-	return count, nil
 }
 
 func fetchWritingModelChecks(ctx context.Context, client *http.Client, models []WritingOpenModel, opts WritingCatalogOptions, fetchedAt time.Time) []WritingModelStatus {
@@ -194,7 +176,7 @@ func fetchWritingModelChecks(ctx context.Context, client *http.Client, models []
 			ModelName:       model.Name,
 			MetadataURL:     metadataURL,
 			FetchedAt:       artifact.FetchedAt,
-			Status:          "error",
+			Status:          errorStr,
 			HTTPStatus:      artifact.HTTPStatus,
 			RegistryLicense: model.License,
 		}
@@ -205,18 +187,18 @@ func fetchWritingModelChecks(ctx context.Context, client *http.Client, models []
 		}
 		var metadata huggingFaceModelMetadata
 		if err := json.Unmarshal(artifact.Body, &metadata); err != nil {
-			check.Status = "invalid"
+			check.Status = invalid1
 			check.Error = fmt.Sprintf("parse model metadata: %v", err)
 			checks = append(checks, check)
 			continue
 		}
 		if metadata.ID != "" && metadata.ID != model.ID {
-			check.Status = "invalid"
+			check.Status = invalid1
 			check.Error = fmt.Sprintf("metadata id %q does not match %q", metadata.ID, model.ID)
 			checks = append(checks, check)
 			continue
 		}
-		check.Status = "available"
+		check.Status = available1
 		check.RemoteLicense = metadata.license()
 		check.LicenseMatch = normalizeWritingLicense(check.RegistryLicense) != "" && normalizeWritingLicense(check.RegistryLicense) == normalizeWritingLicense(check.RemoteLicense)
 		check.PipelineTag = metadata.PipelineTag

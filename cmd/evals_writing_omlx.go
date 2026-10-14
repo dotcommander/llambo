@@ -14,7 +14,7 @@ func verifyWritingOMLXModels(ctx context.Context, manifest evals.WritingRunManif
 	models := append([]evals.WritingModelSpec(nil), manifest.Identity.Models...)
 	models = append(models, manifest.Identity.Judge)
 	for _, model := range models {
-		if model.Provider != "omlx" {
+		if model.Provider != omlx1 {
 			continue
 		}
 		cfg, ok := configs[model.ID()]

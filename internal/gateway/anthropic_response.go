@@ -9,6 +9,13 @@ import (
 	"github.com/dotcommander/llambo/providers"
 )
 
+// Repeated string literals consolidated by goconst.
+const (
+	length1 = "length"
+)
+
+const stop1 = "stop"
+
 func buildAnthropicResponse(result providers.ChatResult, stopSequences []string) AnthropicMessagesResponse {
 	content := result.Content
 	matched, matchIdx := matchStopSequence(content, stopSequences)
@@ -19,21 +26,21 @@ func buildAnthropicResponse(result providers.ChatResult, stopSequences []string)
 
 	blocks := make([]AnthropicContentBlock, 0, 1+len(result.ToolCalls))
 	if content != "" {
-		blocks = append(blocks, AnthropicContentBlock{Type: "text", Text: content})
+		blocks = append(blocks, AnthropicContentBlock{Type: text1, Text: content})
 	}
 	for i, tc := range result.ToolCalls {
 		if i >= maxAnthropicToolUseBlocks {
 			break
 		}
 		blocks = append(blocks, AnthropicContentBlock{
-			Type:  "tool_use",
+			Type:  toolUse,
 			ID:    tc.ID,
 			Name:  tc.Name,
 			Input: toolInputRaw(tc.Arguments),
 		})
 	}
 	if len(blocks) == 0 {
-		blocks = append(blocks, AnthropicContentBlock{Type: "text", Text: ""})
+		blocks = append(blocks, AnthropicContentBlock{Type: text1, Text: ""})
 	}
 
 	usage := AnthropicUsage{}
@@ -44,8 +51,8 @@ func buildAnthropicResponse(result providers.ChatResult, stopSequences []string)
 
 	return AnthropicMessagesResponse{
 		ID:           anthropicID("msg"),
-		Type:         "message",
-		Role:         "assistant",
+		Type:         message1,
+		Role:         assistant1,
 		Content:      blocks,
 		Model:        result.Model,
 		StopReason:   mapOpenAIFinishReasonToAnthropic(result.FinishReason, matched),
@@ -56,26 +63,26 @@ func buildAnthropicResponse(result providers.ChatResult, stopSequences []string)
 
 func normalizeOpenAIFinishReason(reason string) string {
 	switch strings.TrimSpace(strings.ToLower(reason)) {
-	case "stop", "length", "content_filter", "tool_calls":
+	case stop1, length1, "content_filter", "tool_calls":
 		return strings.TrimSpace(strings.ToLower(reason))
 	case "max_tokens":
-		return "length"
+		return length1
 	default:
-		return "stop"
+		return stop1
 	}
 }
 
 func mapOpenAIFinishReasonToAnthropic(reason string, matchedStop *string) string {
 	if matchedStop != nil {
-		return "stop_sequence"
+		return stopSequence
 	}
 
 	switch reason {
-	case "length":
+	case length1:
 		return "max_tokens"
 	case "tool_calls", "function_call":
-		return "tool_use"
-	case "stop", "content_filter", "":
+		return toolUse
+	case stop1, "content_filter", "":
 		return "end_turn"
 	default:
 		return "end_turn"

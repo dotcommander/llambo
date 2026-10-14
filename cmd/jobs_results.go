@@ -3,12 +3,16 @@ package cmd
 import (
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/dotcommander/llambo/internal/gateway"
 	"github.com/dotcommander/llambo/internal/styles"
+)
+
+// Repeated string literals consolidated by goconst.
+const (
+	failed1 = "failed"
 )
 
 func calculateStats(resp *gateway.JobResponse, originalRequests []gateway.JobRequest, verify bool) *JobStats {
@@ -64,94 +68,82 @@ func calculateStats(resp *gateway.JobResponse, originalRequests []gateway.JobReq
 	return stats
 }
 
-func (cliOpts *invocationOptions) printJobResults(resp *gateway.JobResponse, stats *JobStats) {
-	cliOpts.printJobResultsTo(os.Stdout, resp, stats)
-}
-
 func (cliOpts *invocationOptions) printJobResultsTo(out io.Writer, resp *gateway.JobResponse, stats *JobStats) {
-	fmt := commandPrinter{out}
-	fmt.Println() // Clear progress line
-	fmt.Println()
+	printer := commandPrinter{out}
+	printer.Println() // Clear progress line
+	printer.Println()
 
 	// Header
-	fmt.Println(strings.Repeat("─", 70))
-	fmt.Printf("%s\n", styles.Header.Render("JOB RESULTS"))
-	fmt.Println(strings.Repeat("─", 70))
+	printer.Println(strings.Repeat("─", 70))
+	printer.Printf("%s\n", styles.Header.Render("JOB RESULTS"))
+	printer.Println(strings.Repeat("─", 70))
 
 	// Status
 	statusStyle := styles.Success
-	if resp.Status == "failed" {
+	switch resp.Status {
+	case failed1:
 		statusStyle = styles.Error
-	} else if resp.Status == "cancelled" {
+	case "cancelled":
 		statusStyle = styles.Warning
 	}
-	fmt.Printf("Job ID:   %s\n", resp.JobID)
-	fmt.Printf("Status:   %s\n", statusStyle.Render(resp.Status))
-	fmt.Println()
+	printer.Printf("Job ID:   %s\n", resp.JobID)
+	printer.Printf("Status:   %s\n", statusStyle.Render(resp.Status))
+	printer.Println()
 
 	// Summary stats
-	fmt.Println(styles.Header.Render("Summary"))
-	fmt.Printf("  Total requests:    %d\n", stats.TotalRequests)
-	fmt.Printf("  Completed:         %s\n", styles.Success.Render(fmt.Sprintf("%d", stats.Completed)))
+	printer.Println(styles.Header.Render("Summary"))
+	printer.Printf("  Total requests:    %d\n", stats.TotalRequests)
+	printer.Printf("  Completed:         %s\n", styles.Success.Render(printer.Sprintf("%d", stats.Completed)))
 	if stats.Failed > 0 {
-		fmt.Printf("  Failed:            %s\n", styles.Error.Render(fmt.Sprintf("%d", stats.Failed)))
+		printer.Printf("  Failed:            %s\n", styles.Error.Render(printer.Sprintf("%d", stats.Failed)))
 	} else {
-		fmt.Printf("  Failed:            %d\n", stats.Failed)
+		printer.Printf("  Failed:            %d\n", stats.Failed)
 	}
-	fmt.Printf("  Total duration:    %s\n", stats.TotalDuration.Round(time.Millisecond))
+	printer.Printf("  Total duration:    %s\n", stats.TotalDuration.Round(time.Millisecond))
 
 	// Throughput
 	if stats.TotalDuration > 0 {
 		rps := float64(stats.TotalRequests) / stats.TotalDuration.Seconds()
-		fmt.Printf("  Requests/second:   %.2f\n", rps)
+		printer.Printf("  Requests/second:   %.2f\n", rps)
 	}
 
 	// Success rate
 	if stats.TotalRequests > 0 {
 		successRate := float64(stats.Completed) / float64(stats.TotalRequests) * 100
-		fmt.Printf("  Success rate:      %.1f%%\n", successRate)
+		printer.Printf("  Success rate:      %.1f%%\n", successRate)
 	}
-	fmt.Println()
+	printer.Println()
 
-	printRequestLatencyStats(fmt, "Latency", stats.Latencies)
-	printRequestBackendDistribution(fmt, stats.BackendCounts, stats.TotalRequests)
+	printRequestLatencyStats(printer, "Latency", stats.Latencies)
+	printRequestBackendDistribution(printer, stats.BackendCounts, stats.TotalRequests)
 
 	// Integrity verification
 	if cliOpts.runVerify {
-		fmt.Println(styles.Header.Render("Integrity Verification"))
+		printer.Println(styles.Header.Render("Integrity Verification"))
 		if len(stats.IntegrityIssues) == 0 {
-			fmt.Printf("  %s All request IDs accounted for\n", styles.Success.Render("PASS"))
-			fmt.Printf("  %s No duplicate IDs\n", styles.Success.Render("PASS"))
-			fmt.Printf("  %s Result count matches request count\n", styles.Success.Render("PASS"))
+			printer.Printf("  %s All request IDs accounted for\n", styles.Success.Render("PASS"))
+			printer.Printf("  %s No duplicate IDs\n", styles.Success.Render("PASS"))
+			printer.Printf("  %s Result count matches request count\n", styles.Success.Render("PASS"))
 		} else {
 			for _, issue := range stats.IntegrityIssues {
-				fmt.Printf("  %s %s\n", styles.Error.Render("FAIL"), issue)
+				printer.Printf("  %s %s\n", styles.Error.Render("FAIL"), issue)
 			}
 		}
-		fmt.Println()
+		printer.Println()
 	}
 
 	// Show failed requests if any
 	if stats.Failed > 0 {
-		fmt.Println(styles.Header.Render("Failed Requests"))
+		printer.Println(styles.Header.Render("Failed Requests"))
 		for _, result := range resp.Results {
-			if result.Status == "failed" {
-				fmt.Printf("  %s: %s\n",
+			if result.Status == failed1 {
+				printer.Printf("  %s: %s\n",
 					styles.Dim.Render(result.ID),
 					styles.Error.Render(result.Error))
 			}
 		}
-		fmt.Println()
+		printer.Println()
 	}
 }
 
 // stressJobResult holds the result of a single stress test job
-
-// Scalar helpers retain their signatures with independent default options.
-func printJobResultsTo(out io.Writer, resp *gateway.JobResponse, stats *JobStats) {
-	defaultInvocationOptions().printJobResultsTo(out, resp, stats)
-}
-
-func printJobResults(resp *gateway.JobResponse, stats *JobStats) {
-	defaultInvocationOptions().printJobResults(resp, stats)
-}

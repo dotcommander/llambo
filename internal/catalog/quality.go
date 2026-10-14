@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -19,7 +20,7 @@ type QualityImportRecord struct {
 
 func RecordQualityEvidence(cat *Catalog, record QualityImportRecord, now time.Time) error {
 	if cat == nil {
-		return fmt.Errorf("catalog is nil")
+		return errors.New("catalog is nil")
 	}
 	if now.IsZero() {
 		now = time.Now().UTC()
@@ -28,13 +29,13 @@ func RecordQualityEvidence(cat *Catalog, record QualityImportRecord, now time.Ti
 	model := strings.TrimSpace(record.Model)
 	task := normalizeTag(record.Task)
 	if provider == "" {
-		return fmt.Errorf("quality record missing provider")
+		return errors.New("quality record missing provider")
 	}
 	if model == "" {
-		return fmt.Errorf("quality record missing model")
+		return errors.New("quality record missing model")
 	}
 	if task == "" {
-		return fmt.Errorf("quality record missing task")
+		return errors.New("quality record missing task")
 	}
 	if math.IsNaN(record.Score) || record.Score < 0 || record.Score > 1 {
 		return fmt.Errorf("quality score for %s/%s %s must be in [0,1]", provider, model, task)

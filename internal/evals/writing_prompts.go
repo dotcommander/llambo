@@ -3,10 +3,16 @@ package evals
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
 	"strings"
+)
+
+// Repeated string literals consolidated by goconst.
+const (
+	ifeval1 = "ifeval"
 )
 
 // WritingPromptRecord is a normalized, runnable view of a public benchmark
@@ -22,7 +28,7 @@ type WritingPromptRecord struct {
 
 func writingPromptSourceSupported(benchmarkID string) bool {
 	switch benchmarkID {
-	case "writingbench", "eqbench-creative-v3", "ifeval":
+	case writingbench1, eqbenchCreativeV3, ifeval1:
 		return true
 	default:
 		return false
@@ -31,9 +37,9 @@ func writingPromptSourceSupported(benchmarkID string) bool {
 
 func extractWritingPromptRecords(benchmarkID, sourceURL string, body []byte) ([]WritingPromptRecord, error) {
 	switch benchmarkID {
-	case "writingbench", "ifeval":
+	case writingbench1, ifeval1:
 		return extractWritingJSONLPrompts(benchmarkID, sourceURL, body)
-	case "eqbench-creative-v3":
+	case eqbenchCreativeV3:
 		return extractEQCreativePrompts(benchmarkID, sourceURL, body)
 	default:
 		return nil, nil
@@ -75,7 +81,7 @@ func extractWritingJSONLPrompts(benchmarkID, sourceURL string, body []byte) ([]W
 		return records, fmt.Errorf("read JSONL: %w", err)
 	}
 	if len(records) == 0 {
-		return nil, fmt.Errorf("JSONL contained no prompt records")
+		return nil, errors.New("JSONL contained no prompt records")
 	}
 	return records, nil
 }
@@ -86,7 +92,7 @@ func extractEQCreativePrompts(benchmarkID, sourceURL string, body []byte) ([]Wri
 		return nil, fmt.Errorf("parse prompt JSON: %w", err)
 	}
 	if len(prompts) == 0 {
-		return nil, fmt.Errorf("prompt JSON contained no records")
+		return nil, errors.New("prompt JSON contained no records")
 	}
 	keys := make([]string, 0, len(prompts))
 	for key := range prompts {

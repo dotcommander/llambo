@@ -71,7 +71,7 @@ func doGet(ctx context.Context, url string, headers map[string]string) ([]byte, 
 	if err != nil {
 		return nil, fmt.Errorf("http get: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, fetchBodyLimit))
 	if err != nil {

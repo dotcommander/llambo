@@ -56,7 +56,7 @@ func WithLock(ctx context.Context, path string, apply func(string) error) error 
 	if err != nil {
 		return err
 	}
-	defer lock.Close()
+	defer func() { _ = lock.Close() }()
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -76,7 +76,7 @@ func WithLock(ctx context.Context, path string, apply func(string) error) error 
 		case <-timer.C:
 		}
 	}
-	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+	defer func() { _ = syscall.Flock(int(lock.Fd()), syscall.LOCK_UN) }()
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -95,8 +95,8 @@ func WriteAtomic(path string, data []byte, mode os.FileMode) error {
 	if err != nil {
 		return err
 	}
-	defer os.Remove(tmp.Name())
-	defer tmp.Close()
+	defer func() { _ = os.Remove(tmp.Name()) }()
+	defer func() { _ = tmp.Close() }()
 	if err := tmp.Chmod(mode); err != nil {
 		return err
 	}
@@ -116,7 +116,7 @@ func WriteAtomic(path string, data []byte, mode os.FileMode) error {
 	if err != nil {
 		return fmt.Errorf("file published but open directory: %w", err)
 	}
-	defer d.Close()
+	defer func() { _ = d.Close() }()
 	if err := d.Sync(); err != nil {
 		return fmt.Errorf("file published but sync directory: %w", err)
 	}

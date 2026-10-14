@@ -6,6 +6,13 @@ import (
 	"strings"
 )
 
+// Repeated string literals consolidated by goconst.
+const (
+	artificialAnalysis = "artificial-analysis"
+	eqbenchCreativeV3  = "eqbench-creative-v3"
+	llmStats           = "llm-stats"
+)
+
 type normalizedDataset struct {
 	Sources            []NormalizedSourceRecord
 	Models             []NormalizedModelRecord
@@ -182,11 +189,11 @@ func normalizedEffectiveSourceClass(sourceID, resultClass string) string {
 		return strings.TrimSpace(resultClass)
 	}
 	switch sourceID {
-	case "writingbench", "eqbench-creative-v3":
+	case writingbench1, eqbenchCreativeV3:
 		return string(SourceOwnerResult)
-	case "artificial-analysis":
+	case artificialAnalysisName:
 		return string(SourceAggregatorResult)
-	case "llm-stats":
+	case llmStats:
 		return string(SourceAggregatorResult)
 	default:
 		return string(SourceFirstPartyResult)
@@ -198,12 +205,12 @@ func normalizedEffectiveEvidenceGrade(sourceID, grade string) string {
 		return strings.TrimSpace(grade)
 	}
 	switch sourceID {
-	case "writingbench", "eqbench-creative-v3":
-		return "owner"
-	case "llm-stats":
-		return "aggregator_self_reported"
+	case writingbench1, eqbenchCreativeV3:
+		return owner1
+	case llmStats:
+		return aggregatorSelfReported
 	default:
-		return "first_party"
+		return firstParty
 	}
 }
 
@@ -230,6 +237,8 @@ func normalizedIdentityRank(identity IdentityMatch) int {
 		return 2
 	case IdentityMatchAmbiguous:
 		return 3
+	case IdentityMatchUnmatched:
+		return 4
 	default:
 		return 4
 	}
@@ -472,23 +481,23 @@ func normalizedOperationalRecords(rows []ReportModel) []NormalizedOperationalMet
 			continue
 		}
 		if metrics := row.LLMStats; metrics != nil {
-			add("llm-stats", row.Key, "input_price", metrics.InputPrice, "USD/1M tokens")
-			add("llm-stats", row.Key, "output_price", metrics.OutputPrice, "USD/1M tokens")
-			add("llm-stats", row.Key, "throughput", metrics.Throughput, "tokens/second")
-			add("llm-stats", row.Key, "latency", metrics.Latency, "milliseconds")
+			add(llmStats, row.Key, "input_price", metrics.InputPrice, "USD/1M tokens")
+			add(llmStats, row.Key, "output_price", metrics.OutputPrice, "USD/1M tokens")
+			add(llmStats, row.Key, "throughput", metrics.Throughput, "tokens/second")
+			add(llmStats, row.Key, "latency", metrics.Latency, "milliseconds")
 			for name, index := range metrics.Indexes {
-				add("llm-stats", row.Key, "index:"+name+":conservative", &index.Conservative, "index")
+				add(llmStats, row.Key, "index:"+name+":conservative", &index.Conservative, "index")
 			}
 		}
 		if metrics := row.AA; metrics != nil {
-			add("artificial-analysis", row.Key, "intelligence", metrics.Intelligence, "index")
-			add("artificial-analysis", row.Key, "coding", metrics.Coding, "index")
-			add("artificial-analysis", row.Key, "agentic", metrics.Agentic, "index")
-			add("artificial-analysis", row.Key, "input_price", metrics.InputPrice, "USD/1M tokens")
-			add("artificial-analysis", row.Key, "output_price", metrics.OutputPrice, "USD/1M tokens")
-			add("artificial-analysis", row.Key, "output_tokens_per_second", metrics.OutputTokensPS, "tokens/second")
-			add("artificial-analysis", row.Key, "time_to_first_token_seconds", metrics.TTFTSeconds, "seconds")
-			add("artificial-analysis", row.Key, "end_to_end_seconds", metrics.E2ESeconds, "seconds")
+			add(artificialAnalysis, row.Key, "intelligence", metrics.Intelligence, "index")
+			add(artificialAnalysis, row.Key, coding1, metrics.Coding, "index")
+			add(artificialAnalysis, row.Key, "agentic", metrics.Agentic, "index")
+			add(artificialAnalysis, row.Key, "input_price", metrics.InputPrice, "USD/1M tokens")
+			add(artificialAnalysis, row.Key, "output_price", metrics.OutputPrice, "USD/1M tokens")
+			add(artificialAnalysis, row.Key, "output_tokens_per_second", metrics.OutputTokensPS, "tokens/second")
+			add(artificialAnalysis, row.Key, "time_to_first_token_seconds", metrics.TTFTSeconds, "seconds")
+			add(artificialAnalysis, row.Key, "end_to_end_seconds", metrics.E2ESeconds, "seconds")
 		}
 	}
 	sort.Slice(records, func(i, j int) bool {
@@ -579,16 +588,16 @@ func normalizedDriftRecords(report Report) []NormalizedDriftDiagnosticRecord {
 
 func normalizedDriftSourceID(source string) string {
 	switch source {
-	case "artificial_analysis":
-		return "artificial-analysis"
-	case "eqbench_creative_v3":
-		return "eqbench-creative-v3"
-	case "ifeval_official":
-		return "ifeval-official"
-	case "llm_stats":
-		return "llm-stats"
-	case "writingbench":
-		return "writingbench"
+	case artificialAnalysisName:
+		return artificialAnalysis
+	case eqbenchCreativeV3Key:
+		return eqbenchCreativeV3
+	case ifevalOfficialKey:
+		return ifevalOfficial
+	case llmStats:
+		return llmStats
+	case writingbench1:
+		return writingbench1
 	default:
 		return source
 	}
@@ -662,26 +671,26 @@ func normalizedSourceRecords(result Result, dataset normalizedDataset) []Normali
 func normalizedStableSourceID(name string) string {
 	switch name {
 	case "LLM Stats":
-		return "llm-stats"
+		return llmStats
 	case "LLM Stats frozen cohorts":
 		return "llm-stats-frozen-cohorts"
-	case "Artificial Analysis":
-		return "artificial-analysis"
-	case "WritingBench":
-		return "writingbench"
-	case "EQ-Bench Creative v3":
-		return "eqbench-creative-v3"
+	case artificialAnalysisName:
+		return artificialAnalysis
+	case writingBench1:
+		return writingbench1
+	case eQBenchCreativeV3:
+		return eqbenchCreativeV3
 	case "Official IFEval":
-		return "ifeval-official"
-	case "LiquidAI LFM2.5-2.6B card":
+		return ifevalOfficial
+	case liquidAILFM2X5X2X6BCard:
 		return "liquidai-lfm25-2.6b-card"
-	case "Qwen3.8-27B card":
+	case qwen3X8X27BCard:
 		return "qwen3.8-27b-card"
-	case "OpenAI gpt-oss model card":
+	case openAIGptOssModelCard:
 		return "openai-gpt-oss-model-card"
-	case "LiquidAI LFM2.5-VL-3B card":
+	case liquidAILFM2X5VLX3BCard:
 		return "liquidai-lfm25-vl-3b-card"
-	case "Google Gemma 4 model card":
+	case googleGemmaX4ModelCard:
 		return "google-gemma4-model-card"
 	default:
 		return strings.ToLower(strings.Join(strings.Fields(name), "-"))
@@ -689,8 +698,8 @@ func normalizedStableSourceID(name string) string {
 }
 
 func normalizedStableContributionSource(sourceID string) string {
-	if sourceID == "llm-stats-benchmark-results" || sourceID == llmStatsStatsV1SourceID {
-		return "llm-stats"
+	if sourceID == llmStatsBenchmarkResults || sourceID == llmStatsStatsV1SourceID {
+		return llmStats
 	}
 	return sourceID
 }

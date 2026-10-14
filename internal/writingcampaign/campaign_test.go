@@ -39,7 +39,7 @@ func TestRunRetriesOnlyLengthAndWritesReceipt(t *testing.T) {
 			content = "finished"
 		}
 		var body bytes.Buffer
-		json.NewEncoder(&body).Encode(map[string]any{
+		_ = json.NewEncoder(&body).Encode(map[string]any{
 			"model": "acme/writer", "provider": "Acme",
 			"choices": []any{map[string]any{"message": map[string]any{"content": content}, "finish_reason": finish}},
 			"usage":   map[string]any{"prompt_tokens": 100, "completion_tokens": 20, "total_tokens": 120, "cost": 0.001},

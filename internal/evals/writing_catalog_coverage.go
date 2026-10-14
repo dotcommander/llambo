@@ -41,11 +41,11 @@ func buildWritingModelCoverage(models []WritingOpenModel, rows []WritingLeaderbo
 			item.Rank = row.Rank
 			item.ComparisonScore = &score
 			item.WinChancePercent = &winChance
-			if model.LeaderboardMatchType != "variant" && normalizeWritingModelLabel(row.Model) == normalizeWritingModelLabel(matchedAlias) {
+			if model.LeaderboardMatchType != variant1 && normalizeWritingModelLabel(row.Model) == normalizeWritingModelLabel(matchedAlias) {
 				item.MatchType = "exact"
 				item.Notes = "Matched by an exact normalized leaderboard label; score remains source-native."
 			} else {
-				item.MatchType = "variant"
+				item.MatchType = variant1
 				item.Notes = "Matched by an explicit variant alias. Treat the score as indicative, not an exact serving-mode measurement."
 			}
 			break

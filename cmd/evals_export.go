@@ -6,24 +6,43 @@ import (
 	"github.com/dotcommander/llambo/internal/evals"
 )
 
+// Repeated string literals consolidated by goconst.
+const (
+	discoverLimit1            = "discover-limit"
+	discoverOpenModels        = "discover-open-models"
+	exportPrompts1            = "export-prompts"
+	format1                   = "format"
+	liveOMLX                  = "live-omlx"
+	maxOutputPrice            = "max-output-price"
+	minScore                  = "min-score"
+	omlxURL1                  = "omlx-url"
+	output1                   = "output"
+	promptLimit1              = "prompt-limit"
+	promptSource1             = "prompt-source"
+	rankBy                    = "rank-by"
+	refresh1                  = "refresh"
+	refreshOfficialModelCards = "refresh-official-model-cards"
+	validationReceipts        = "validation-receipts"
+)
+
 func (c *evalsExportNormalizedCommand) Run(parent *evalsCommand, io *commandIO) error {
 	for _, name := range []string{
-		"refresh",
-		"refresh-official-model-cards",
-		"live-omlx",
-		"format",
-		"output",
-		"export-prompts",
-		"prompt-source",
-		"prompt-limit",
-		"discover-open-models",
-		"discover-limit",
+		refresh1,
+		refreshOfficialModelCards,
+		liveOMLX,
+		format1,
+		output1,
+		exportPrompts1,
+		promptSource1,
+		promptLimit1,
+		discoverOpenModels,
+		discoverLimit1,
 		"limit",
-		"rank-by",
-		"min-score",
-		"max-output-price",
-		"validation-receipts",
-		"omlx-url",
+		rankBy,
+		minScore,
+		maxOutputPrice,
+		validationReceipts,
+		omlxURL1,
 	} {
 		if io.FlagChanged(name) {
 			return fmt.Errorf("--%s is not supported with evals export normalized", name)

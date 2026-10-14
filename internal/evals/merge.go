@@ -6,9 +6,18 @@ import (
 	"unicode"
 )
 
+// Repeated string literals consolidated by goconst.
+const (
+	alibaba1         = "alibaba"
+	bytedance1       = "bytedance"
+	gemmaX4X26bA4bIt = "gemma-4-26b-a4b-it"
+	mistral1         = "mistral"
+	sarvam1          = "sarvam"
+)
+
 var modelAliases = map[string]string{
 	"qwen3-6-27b":            "qwen3.6-27b",
-	"gemma-4-26b-a4b":        "gemma-4-26b-a4b-it",
+	"gemma-4-26b-a4b":        gemmaX4X26bA4bIt,
 	"gpt-oss-20b":            "gpt-oss-20b",
 	"gemini-2-5-flash":       "gemini-2.5-flash",
 	"gemini-2-5-flash-lite":  "gemini-2.5-flash-lite",
@@ -17,7 +26,7 @@ var modelAliases = map[string]string{
 	"gemini-3-1-flash-lite":  "gemini-3.1-flash-lite",
 	"gemini-3-1-pro-preview": "gemini-3.1-pro-preview",
 	"gemini-3-5-flash":       "gemini-3.5-flash",
-	"gemma-4-26b-a4b-it":     "gemma-4-26b-a4b-it",
+	gemmaX4X26bA4bIt:         gemmaX4X26bA4bIt,
 }
 
 // officialCardKeyAlias resolves only the reviewed external Gemma IDs. Generic
@@ -25,7 +34,7 @@ var modelAliases = map[string]string{
 func officialCardKeyAlias(key string) (string, bool) {
 	switch key {
 	case "google/gemma-4-26B-A4B-it":
-		return "gemma-4-26b-a4b-it", true
+		return gemmaX4X26bA4bIt, true
 	case gemma431BHostedID:
 		return gemma431BModelKey, true
 	default:
@@ -37,16 +46,16 @@ func officialCardKeyAlias(key string) (string, bool) {
 // labels. Values identify one model-producing family; unrelated organizations
 // must never be collapsed merely because a model name happens to match.
 var organizationFamilies = map[string]string{
-	"alibaba":                 "alibaba",
-	"alibaba cloud qwen team": "alibaba",
-	"bytedance":               "bytedance",
-	"bytedance seed":          "bytedance",
+	alibaba1:                  alibaba1,
+	"alibaba cloud qwen team": alibaba1,
+	bytedance1:                bytedance1,
+	"bytedance seed":          bytedance1,
 	"kimi":                    "moonshot",
 	"moonshot ai":             "moonshot",
-	"mistral":                 "mistral",
-	"mistral ai":              "mistral",
-	"sarvam":                  "sarvam",
-	"sarvam ai":               "sarvam",
+	mistral1:                  mistral1,
+	"mistral ai":              mistral1,
+	sarvam1:                   sarvam1,
+	"sarvam ai":               sarvam1,
 	"z ai":                    "zhipu",
 	"zhipu ai":                "zhipu",
 }
@@ -191,7 +200,7 @@ func mergeEQBenchCreativeModels(models, eqBench []Model) []Model {
 			continue
 		}
 		if existing := models[byName[name][0]].Benchmarks; existing != nil {
-			if _, ok := existing["eqbench-creative-v3"]; ok {
+			if _, ok := existing[eqbenchCreativeV3]; ok {
 				continue
 			}
 		}
@@ -251,8 +260,10 @@ func sourceAuthority(class string) int {
 		return 4
 	case SourceFirstPartyResult, SourceOfficialJudgment:
 		return 3
-	case SourceAggregatorResult:
+	case SourceAggregatorResult, SourceAggregatorLead:
 		return 2
+	case SourceDefinitionOnly:
+		return 1
 	default:
 		return 1
 	}

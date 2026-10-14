@@ -39,14 +39,14 @@ type SourceRegistration struct {
 }
 
 var sourceRegistryV3 = []SourceRegistration{
-	{"writingbench", SourceOwnerResult, true, true},
-	{"eqbench-creative-v3", SourceOwnerResult, true, true},
+	{writingbench1, SourceOwnerResult, true, true},
+	{eqbenchCreativeV3, SourceOwnerResult, true, true},
 	{ifevalOfficialSourceID, SourceFirstPartyResult, true, true},
 	{"llm-stats-models", SourceAggregatorLead, true, false},
 	{"llm-stats-full-results", SourceAggregatorLead, true, false},
 	{"llm-stats-indexes", SourceAggregatorLead, true, false},
 	{"llm-stats-benchmark-catalog", SourceDefinitionOnly, true, false},
-	{"llm-stats-benchmark-results", SourceAggregatorResult, true, true},
+	{llmStatsBenchmarkResults, SourceAggregatorResult, true, true},
 	{"llm-stats-stats-v1-scores", SourceAggregatorResult, true, true},
 	{"hugging-face-leaderboards", SourceFirstPartyResult, true, true},
 	{"hugging-face-model-cards", SourceFirstPartyResult, true, true},
@@ -55,7 +55,7 @@ var sourceRegistryV3 = []SourceRegistration{
 	{"bfcl", SourceOwnerResult, true, true},
 	{"gaia", SourceOwnerResult, true, true},
 	{"tau-bench", SourceOwnerResult, true, true},
-	{"ruler", SourceOwnerResult, true, true},
+	{ruler1, SourceOwnerResult, true, true},
 	{"liquidai-lfm25-2.6b-card", SourceFirstPartyResult, true, true},
 	{"qwen3.8-27b-card", SourceFirstPartyResult, true, true},
 	{"openai-gpt-oss-model-card", SourceFirstPartyResult, true, true},
@@ -143,7 +143,7 @@ type Observation struct {
 }
 
 func (o Observation) Validate() error {
-	for name, value := range map[string]string{"source_id": o.SourceID, "source_revision": o.SourceRevision, "source_sha256": o.SourceSHA256, "benchmark": o.Benchmark, "benchmark_version": o.BenchmarkVersion, "cohort": o.Cohort, "model_id": o.ModelID, "unit": o.Unit, "direction": o.Direction, "methodology": o.Methodology, "evidence_grade": o.EvidenceGrade, "provenance_locator": o.Locator} {
+	for name, value := range map[string]string{"source_id": o.SourceID, "source_revision": o.SourceRevision, "source_sha256": o.SourceSHA256, benchmark1: o.Benchmark, "benchmark_version": o.BenchmarkVersion, "cohort": o.Cohort, "model_id": o.ModelID, "unit": o.Unit, "direction": o.Direction, "methodology": o.Methodology, "evidence_grade": o.EvidenceGrade, "provenance_locator": o.Locator} {
 		if strings.TrimSpace(value) == "" {
 			return fmt.Errorf("missing %s", name)
 		}
@@ -154,7 +154,7 @@ func (o Observation) Validate() error {
 	if math.IsNaN(o.RawScore) || math.IsInf(o.RawScore, 0) {
 		return errors.New("raw_score is not finite")
 	}
-	if o.Direction != "higher" && o.Direction != "lower" {
+	if o.Direction != higher1 && o.Direction != lower1 {
 		return fmt.Errorf("unknown direction %q", o.Direction)
 	}
 	if o.FetchedAt.IsZero() {

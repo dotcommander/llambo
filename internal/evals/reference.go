@@ -5,12 +5,28 @@ import (
 	_ "embed"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"sort"
 	"strings"
 	"time"
 )
+
+// Repeated string literals consolidated by goconst.
+const (
+	artificialAnalysisKey = "artificial_analysis"
+	eqbenchCreativeV3Key  = "eqbench_creative_v3"
+	higher1               = "higher"
+	ifevalOfficial        = "ifeval-official"
+	ifevalOfficialKey     = "ifeval_official"
+	llmStatsKey           = "llm_stats"
+	writingbench1         = "writingbench"
+)
+
+const writingbenchOverall = "writingbench_overall"
+
+const publicLeaderboard = "public-leaderboard"
 
 // les-v1-reference.json is the checked-in frozen input distribution. Its
 // filename is retained for cache compatibility; the embedded version is
@@ -46,19 +62,19 @@ const llmStatsStatsV1FrozenCohortsArtifactDigest = "540bdcdff3b2eae7c816d9939507
 const llmStatsStatsV1FrozenCohortsDigest = "5fe1b346fcd324bc2401c756a5df1b7b398b4ce326709353e8b889fa09e7331a"
 
 var frozenReferenceMetrics = []string{
-	"aa_agentic_coding", "aa_agentic_general", "aa_agentic_index", "aa_agentic_reasoning",
-	"aa_coding_agents", "aa_coding_general", "aa_coding_index", "aa_coding_reasoning",
+	"aa_agentic_coding", "aa_agentic_general", aaAgenticIndex, "aa_agentic_reasoning",
+	"aa_coding_agents", "aa_coding_general", aaCodingIndex, "aa_coding_reasoning",
 	"aa_end_to_end_time", "aa_input_price", "aa_intelligence_agents", "aa_intelligence_coding",
 	"aa_intelligence_general", "aa_intelligence_reasoning", "aa_output_price", "aa_output_speed",
-	"aa_time_to_first_token", "eqbench_creative_v3", "ifeval_official", "llm_agents_index",
+	"aa_time_to_first_token", eqbenchCreativeV3Key, ifevalOfficialKey, "llm_agents_index",
 	"llm_code_index", "llm_communication_index", "llm_creativity_writing", "llm_factuality_general",
-	"llm_factuality_long", "llm_general_index", "llm_general_reasoning", "llm_gpqa", "llm_grounding_long",
-	"llm_input_price", "llm_instruction_general", "llm_instruction_long", "llm_instruction_reasoning",
-	"llm_instruction_writing", "llm_language_writing", "llm_long_context_index", "llm_mcp_atlas",
+	"llm_factuality_long", "llm_general_index", "llm_general_reasoning", llmGpqa, "llm_grounding_long",
+	"llm_input_price", llmInstructionGeneral, "llm_instruction_long", "llm_instruction_reasoning",
+	"llm_instruction_writing", "llm_language_writing", llmLongContextIndex, llmMcpAtlas,
 	"llm_output_price", "llm_output_speed", "llm_reasoning_agents", "llm_reasoning_general",
-	"llm_reasoning_index", "llm_scicode", "llm_structured_agents", "llm_structured_reasoning",
-	"llm_swe_bench_pro", "llm_swe_bench_verified", "llm_tool_calling_index", "llm_writing_index",
-	"writingbench_domain", "writingbench_format", "writingbench_length", "writingbench_overall", "writingbench_requirements",
+	"llm_reasoning_index", llmScicode, "llm_structured_agents", "llm_structured_reasoning",
+	llmSweBenchPro, llmSweBenchVerified, "llm_tool_calling_index", "llm_writing_index",
+	writingbenchDomain, writingbenchFormat, writingbenchLength, writingbenchOverall, writingbenchRequirements,
 }
 
 type FormulaReference struct {
@@ -115,12 +131,12 @@ func loadScoringContext() (scoringContext, error) {
 }
 
 var frozenLLMStatsCohortPopulations = map[string]int{
-	"longbench-v2": 17,
-	"math":         71,
-	"humaneval":    66,
-	"ifeval":       67,
-	"arena-hard":   26,
-	"osworld":      20,
+	longbenchV2:  17,
+	"math":       71,
+	"humaneval":  66,
+	ifeval1:      67,
+	"arena-hard": 26,
+	"osworld":    20,
 }
 
 // frozenBenchmarkReference maps reviewed benchmark/revision pairs to the
@@ -128,13 +144,13 @@ var frozenLLMStatsCohortPopulations = map[string]int{
 // not derived from a caller's cache rows: new cache evidence may add a model
 // contribution, but cannot move any already-published percentile.
 var frozenBenchmarkReference = map[string]map[string]string{
-	"gpqa":                {"public-leaderboard": "llm_gpqa"},
-	"swe-bench-verified":  {"public-leaderboard": "llm_swe_bench_verified"},
-	"swe-bench-pro":       {"public-leaderboard": "llm_swe_bench_pro"},
-	"scicode":             {"public-leaderboard": "llm_scicode"},
-	"ifeval-official":     {"b9aebfcbe28b6cb374042f495d733037550ab146": "ifeval_official"},
-	"writingbench":        {"d9338ce9b09792ea7167279fee7ccc1910e28c5d": "writingbench_overall"},
-	"eqbench-creative-v3": {"bf21868fd5dc4c48480e01ae354079eb1cec13fb": "eqbench_creative_v3"},
+	gpqa1:             {publicLeaderboard: llmGpqa},
+	sweBenchVerified:  {publicLeaderboard: llmSweBenchVerified},
+	sweBenchPro:       {publicLeaderboard: llmSweBenchPro},
+	scicode1:          {publicLeaderboard: llmScicode},
+	ifevalOfficial:    {"b9aebfcbe28b6cb374042f495d733037550ab146": ifevalOfficialKey},
+	writingbench1:     {"d9338ce9b09792ea7167279fee7ccc1910e28c5d": writingbenchOverall},
+	eqbenchCreativeV3: {"bf21868fd5dc4c48480e01ae354079eb1cec13fb": eqbenchCreativeV3Key},
 }
 
 // officialCardFrozenCohorts are the immutable, source-native comparison
@@ -144,60 +160,60 @@ var frozenBenchmarkReference = map[string]map[string]string{
 // gpt-oss population is six explicitly named model+reasoning-effort arms,
 // not six distinct base models.
 var officialCardFrozenCohorts = map[string]map[string][]float64{
-	"aime": {
+	aime1: {
 		lfm25Revision:    {26.33, 34.27, 49.33, 51.87, 56.07},
 		gptOSSRevision:   {50.4, 80.0, 92.5, 37.1, 72.1, 91.7},
 		gemma4Revision:   {89.2, 88.3, 77.5, 42.5, 37.5, 20.8},
 		lfm25A1BRevision: {42.53, 4.93, 54.28, 71.67, 26, 34.33},
 	},
-	"livecodebench-v6": {
+	livecodebenchV6: {
 		lfm25Revision:  {54.92, 59.41, 60.85, 63.77, 69.86},
 		gemma4Revision: {80.0, 77.1, 72.0, 52.0, 44.0, 29.1},
 	},
-	"ifbench": {
+	ifbench1: {
 		lfm25Revision:    {34.08, 39.24, 48.40, 56.47, 59.17},
 		qwen38Revision:   {62.5, 69.1, 77.0, 79.1, 79.5},
 		lfm25A1BRevision: {56.47, 21.28, 50.38, 51.11, 33.53, 39.48, 47.25, 58.65},
 	},
-	"multi-if": {
+	multiIf: {
 		lfm25Revision:    {55.67, 62.55, 69.44, 77.35, 80.07},
 		lfm25A1BRevision: {79.93, 59.00, 67.43, 79.04, 69.70, 77.58, 82.06, 76.64},
 	},
-	"ifeval-official": {
+	ifevalOfficial: {
 		lfm25A1BRevision: {91.84, 82.23, 87.80, 90.82, 82.93, 87.74, 91.40, 86.73},
 	},
-	"ifstruct": {
+	ifstruct1: {
 		lfm25Revision: {36.25, 64.85, 76.65, 78.50, 85.49},
 	},
-	"bfcl-v4": {
+	bfclV4: {
 		lfm25Revision:   {36.98, 46.39, 50.56, 56.88, 60.13},
 		lfm25VLRevision: {32.5, 20.5, 33.2, 40.0, 33.9, 53.6},
 	},
-	"toolsandbox": {
+	toolsandbox1: {
 		lfm25Revision:   {52.40, 65.00, 75.55, 76.44, 77.83},
 		lfm25VLRevision: {59.5, 26.4, 56.5, 61.6, 47.7, 65.0},
 	},
-	"swe-bench-pro": {
+	sweBenchPro: {
 		qwen38Revision: {51.2, 53.4, 53.5, 57.6, 61.7},
 	},
-	"gpqa": {
+	gpqa1: {
 		qwen38Revision: {83.5, 87.8, 89.2, 90.3, 91.3},
 		gptOSSRevision: {56.8, 66.0, 67.1, 73.1, 80.1, 71.5},
 		gemma4Revision: {84.3, 82.3, 78.8, 58.6, 43.4, 42.4},
 	},
-	"swe-bench-verified": {
+	sweBenchVerified: {
 		gptOSSRevision: {47.9, 52.6, 62.4, 37.4, 53.2, 60.7},
 	},
-	"tau-bench-retail": {
+	tauBenchRetail: {
 		gptOSSRevision: {49.4, 62.0, 67.8, 35.0, 47.3, 54.8},
 	},
-	"aider": {
+	aider1: {
 		gptOSSRevision: {24.0, 34.2, 44.4, 16.6, 26.6, 34.2},
 	},
-	"mmlu-pro": {
+	mmluPro: {
 		gemma4Revision: {85.2, 82.6, 77.2, 69.4, 60.0, 67.6},
 	},
-	"tau2-bench": {
+	tau2Bench: {
 		gemma4Revision: {76.9, 68.2, 69.0, 42.2, 24.5, 16.2},
 	},
 }
@@ -209,9 +225,9 @@ var officialCardFrozenCohorts = map[string]map[string][]float64{
 func normalizedFrozenRevision(benchmark string, result BenchmarkResult) string {
 	version := strings.TrimSpace(result.Version)
 	switch benchmark {
-	case "writingbench":
+	case writingbench1:
 		return version
-	case "ifeval-official", "eqbench-creative-v3":
+	case ifevalOfficial, eqbenchCreativeV3:
 		return strings.TrimSpace(result.CommitSHA)
 	}
 	return version
@@ -316,11 +332,11 @@ func loadFrozenLLMStatsStatsV1Cohorts() (frozenLLMStatsCohorts, error) {
 
 func validateFrozenLLMStatsStatsV1Cohorts(cohorts frozenLLMStatsCohorts) error {
 	if cohorts.SchemaVersion != "llm-stats-stats-v1-frozen-cohorts-v1" || cohorts.SealedArtifactSHA256 != llmStatsStatsV1FrozenCohortsArtifactDigest || len(cohorts.Benchmarks) == 0 {
-		return fmt.Errorf("frozen Stats v1 cohorts do not match the sealed artifact")
+		return errors.New("frozen Stats v1 cohorts do not match the sealed artifact")
 	}
 	reviewed := reviewedBenchmarkSet()
 	for benchmark, cohort := range cohorts.Benchmarks {
-		if _, ok := reviewed[benchmark]; !ok || cohort.SourceID != llmStatsStatsV1SourceID || cohort.SourceClass != string(SourceAggregatorResult) || cohort.BenchmarkVersion != llmStatsStatsV1BenchmarkVersion || cohort.Cohort != llmStatsStatsV1Cohort || cohort.Methodology != llmStatsStatsV1Methodology || cohort.Direction != "higher" || cohort.MinPopulation != 5 || cohort.RowCount < 5 || cohort.RowCount != len(cohort.Scores) || len(cohort.Digests) == 0 {
+		if _, ok := reviewed[benchmark]; !ok || cohort.SourceID != llmStatsStatsV1SourceID || cohort.SourceClass != string(SourceAggregatorResult) || cohort.BenchmarkVersion != llmStatsStatsV1BenchmarkVersion || cohort.Cohort != llmStatsStatsV1Cohort || cohort.Methodology != llmStatsStatsV1Methodology || cohort.Direction != higher1 || cohort.MinPopulation != 5 || cohort.RowCount < 5 || cohort.RowCount != len(cohort.Scores) || len(cohort.Digests) == 0 {
 			return fmt.Errorf("frozen Stats v1 cohort %s has an invalid contract", benchmark)
 		}
 		for index, digest := range cohort.Digests {
@@ -339,14 +355,14 @@ func validateFrozenLLMStatsStatsV1Cohorts(cohorts frozenLLMStatsCohorts) error {
 
 func validateFrozenLLMStatsCohorts(cohorts frozenLLMStatsCohorts) error {
 	if cohorts.SchemaVersion != "llm-stats-frozen-cohorts-v1" || cohorts.SealedArtifactSHA256 != llmStatsFrozenCohortsArtifactDigest {
-		return fmt.Errorf("frozen LLM Stats cohorts do not match the sealed artifact")
+		return errors.New("frozen LLM Stats cohorts do not match the sealed artifact")
 	}
 	if len(cohorts.Benchmarks) != len(frozenLLMStatsCohortPopulations) {
 		return fmt.Errorf("frozen LLM Stats cohorts have %d benchmarks, want %d", len(cohorts.Benchmarks), len(frozenLLMStatsCohortPopulations))
 	}
 	for benchmark, population := range frozenLLMStatsCohortPopulations {
 		cohort, ok := cohorts.Benchmarks[benchmark]
-		if !ok || cohort.SourceID != "llm-stats-benchmark-results" || cohort.SourceClass != string(SourceAggregatorResult) || cohort.BenchmarkVersion != "public-leaderboard" || cohort.Cohort != "public" || cohort.Methodology != "LLM Stats public leaderboard aggregation; verification status supplied per row" || cohort.Direction != "higher" || cohort.MinPopulation != 5 || cohort.RowCount != population || len(cohort.Scores) != population || len(cohort.Digests) == 0 {
+		if !ok || cohort.SourceID != llmStatsBenchmarkResults || cohort.SourceClass != string(SourceAggregatorResult) || cohort.BenchmarkVersion != publicLeaderboard || cohort.Cohort != "public" || cohort.Methodology != "LLM Stats public leaderboard aggregation; verification status supplied per row" || cohort.Direction != higher1 || cohort.MinPopulation != 5 || cohort.RowCount != population || len(cohort.Scores) != population || len(cohort.Digests) == 0 {
 			return fmt.Errorf("frozen LLM Stats cohort %s has an invalid contract", benchmark)
 		}
 		for index, digest := range cohort.Digests {
@@ -428,14 +444,6 @@ func frozenLLMStatsCohortAdmissionReasonFromCohorts(benchmark string, result Ben
 	return "frozen LLM Stats cohort source revision is outside the pinned digest set"
 }
 
-func frozenLLMStatsStatsV1CohortAdmissionReason(benchmark string, result BenchmarkResult) string {
-	cohorts, err := loadFrozenLLMStatsStatsV1Cohorts()
-	if err != nil {
-		return "frozen Stats v1 cohort is unavailable"
-	}
-	return frozenLLMStatsStatsV1CohortAdmissionReasonFromCohorts(benchmark, result, cohorts)
-}
-
 func frozenLLMStatsStatsV1CohortAdmissionReasonFromCohorts(benchmark string, result BenchmarkResult, cohorts frozenLLMStatsCohorts) string {
 	if result.SourceID != llmStatsStatsV1SourceID {
 		return ""
@@ -504,7 +512,7 @@ func loadFormulaReference() (FormulaReference, error) {
 		return FormulaReference{}, fmt.Errorf("decode formula reference: %w", err)
 	}
 	if reference.FormulaVersion != "LLAMBO-2" || len(reference.Metrics) == 0 {
-		return FormulaReference{}, fmt.Errorf("formula reference is missing or does not match LLAMBO-2 rollback diagnostics")
+		return FormulaReference{}, errors.New("formula reference is missing or does not match LLAMBO-2 rollback diagnostics")
 	}
 	if err := validateFormulaReference(reference); err != nil {
 		return FormulaReference{}, err
@@ -625,30 +633,23 @@ func referenceSpecs() []referenceSpec {
 	return result
 }
 
-// formulaReferenceSpecs is the checked-in snapshot inventory used by tests and
-// reference generation. Primary sources absent from this versioned snapshot
-// deliberately yield nil category scores rather than synthetic percentiles.
-func formulaReferenceSpecs() []referenceSpec {
-	return referenceSpecs()
-}
-
 func sourceModelCounts(models []Model) map[string]int {
-	counts := map[string]int{"llm_stats": 0, "artificial_analysis": 0, "writingbench": 0, "eqbench_creative_v3": 0, "ifeval_official": 0}
+	counts := map[string]int{llmStatsKey: 0, artificialAnalysisKey: 0, writingbench1: 0, eqbenchCreativeV3Key: 0, ifevalOfficialKey: 0}
 	for _, model := range models {
 		if model.LLMStats != nil {
-			counts["llm_stats"]++
+			counts[llmStatsKey]++
 		}
 		if model.AA != nil {
-			counts["artificial_analysis"]++
+			counts[artificialAnalysisKey]++
 		}
-		if _, ok := model.Benchmarks["writingbench"]; ok {
-			counts["writingbench"]++
+		if _, ok := model.Benchmarks[writingbench1]; ok {
+			counts[writingbench1]++
 		}
-		if _, ok := model.Benchmarks["eqbench-creative-v3"]; ok {
-			counts["eqbench_creative_v3"]++
+		if _, ok := model.Benchmarks[eqbenchCreativeV3]; ok {
+			counts[eqbenchCreativeV3Key]++
 		}
-		if _, ok := model.Benchmarks["ifeval-official"]; ok {
-			counts["ifeval_official"]++
+		if _, ok := model.Benchmarks[ifevalOfficial]; ok {
+			counts[ifevalOfficialKey]++
 		}
 	}
 	return counts
@@ -684,8 +685,8 @@ func sourceFingerprints(models []Model) map[string]string {
 	}
 	sort.Slice(llmRows, func(i, j int) bool { return llmRows[i].Key < llmRows[j].Key })
 	sort.Slice(aaRows, func(i, j int) bool { return aaRows[i].Key < aaRows[j].Key })
-	fingerprints := map[string]string{"llm_stats": hashJSON(llmRows), "artificial_analysis": hashJSON(aaRows)}
-	for _, source := range []struct{ key, benchmark string }{{"writingbench", "writingbench"}, {"eqbench_creative_v3", "eqbench-creative-v3"}, {"ifeval_official", "ifeval-official"}} {
+	fingerprints := map[string]string{llmStatsKey: hashJSON(llmRows), artificialAnalysisKey: hashJSON(aaRows)}
+	for _, source := range []struct{ key, benchmark string }{{writingbench1, writingbench1}, {eqbenchCreativeV3Key, eqbenchCreativeV3}, {ifevalOfficialKey, ifevalOfficial}} {
 		for _, model := range models {
 			if result, ok := model.Benchmarks[source.benchmark]; ok && result.ContentSHA != "" {
 				fingerprints[source.key] = result.ContentSHA
@@ -732,11 +733,11 @@ func evaluateReferenceDrift(models []Model, aaVersion float64, reference Formula
 	for _, spec := range operationalMetrics {
 		metricSources[spec.name] = spec.source
 	}
-	for _, name := range []string{"writingbench_overall", "writingbench_format", "writingbench_length", "writingbench_domain", "writingbench_requirements"} {
-		metricSources[name] = "writingbench"
+	for _, name := range []string{writingbenchOverall, writingbenchFormat, writingbenchLength, writingbenchDomain, writingbenchRequirements} {
+		metricSources[name] = writingbench1
 	}
-	metricSources["eqbench_creative_v3"] = "eqbench_creative_v3"
-	metricSources["ifeval_official"] = "ifeval_official"
+	metricSources[eqbenchCreativeV3Key] = eqbenchCreativeV3Key
+	metricSources[ifevalOfficialKey] = ifevalOfficialKey
 	for _, name := range sortedMetricMapKeys(reference.Metrics) {
 		referenceValues := reference.Metrics[name]
 		current := currentValues[name]

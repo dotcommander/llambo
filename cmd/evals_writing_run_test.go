@@ -14,18 +14,19 @@ import (
 )
 
 func TestWritingJudgeTokenCap(t *testing.T) {
+	t.Parallel()
 	prose := evals.ProseScreenAdapter{}
-	if got, err := writingJudgeTokenCap(prose, 8192, false); err != nil || got != evals.DefaultProseEvaluationMaxTokens {
-		t.Fatalf("default cap = %d, %v", got, err)
+	if got := writingJudgeTokenCap(prose, 8192, false); got != evals.DefaultProseEvaluationMaxTokens {
+		t.Fatalf("default cap = %d", got)
 	}
-	if got, err := writingJudgeTokenCap(prose, 8192, true); err != nil || got != 8192 {
-		t.Fatalf("explicit override = %d, %v", got, err)
+	if got := writingJudgeTokenCap(prose, 8192, true); got != 8192 {
+		t.Fatalf("explicit override = %d", got)
 	}
-	if got, err := writingJudgeTokenCap(prose, evals.DefaultProseEvaluationMaxTokens, true); err != nil || got != evals.DefaultProseEvaluationMaxTokens {
-		t.Fatalf("explicit cap = %d, %v", got, err)
+	if got := writingJudgeTokenCap(prose, evals.DefaultProseEvaluationMaxTokens, true); got != evals.DefaultProseEvaluationMaxTokens {
+		t.Fatalf("explicit cap = %d", got)
 	}
-	if got, err := writingJudgeTokenCap(evals.WritingBenchAdapter{}, 8192, true); err != nil || got != 8192 {
-		t.Fatalf("legacy cap = %d, %v", got, err)
+	if got := writingJudgeTokenCap(evals.WritingBenchAdapter{}, 8192, true); got != 8192 {
+		t.Fatalf("legacy cap = %d", got)
 	}
 }
 

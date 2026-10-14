@@ -39,8 +39,3 @@ func (cliOpts *invocationOptions) runModelsSyncPricing(cmd *commandIO, _ []strin
 	}
 	return nil
 }
-
-// Scalar helpers retain their signatures with independent default options.
-func runModelsSyncPricing(cmd *commandIO, ignored1 []string) error {
-	return defaultInvocationOptions().runModelsSyncPricing(cmd, ignored1)
-}

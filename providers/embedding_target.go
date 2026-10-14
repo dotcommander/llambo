@@ -2,10 +2,12 @@ package providers
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"sort"
+
 	whopenai "github.com/garyblankenship/wormhole/v3/providers/openai"
 	"github.com/garyblankenship/wormhole/v3/types"
-	"sort"
 )
 
 type EmbeddingResult struct {
@@ -42,12 +44,12 @@ func (e *OpenAIEmbedding) EmbedResolved(ctx context.Context, texts []string, tar
 		}
 	}
 	if len(names) == 0 {
-		return EmbeddingResult{}, fmt.Errorf("no eligible embedding provider")
+		return EmbeddingResult{}, errors.New("no eligible embedding provider")
 	}
 	name := names[0]
 	cfg := e.configs[name]
 	switch cfg.GetProviderType() {
-	case "anthropic", "gemini":
+	case anthropic1, gemini1:
 		return EmbeddingResult{}, fmt.Errorf("provider %s protocol does not support embeddings", name)
 	}
 	key := GetAPIKey(name, cfg)
@@ -76,7 +78,7 @@ func embeddingPriority(cfg Config) int {
 func (e *OpenAIEmbedding) ValidateEmbeddingTarget(target ResolvedTarget) error {
 	if target.Model() == "" {
 		switch e.configs[e.providerName].GetProviderType() {
-		case "anthropic", "gemini":
+		case anthropic1, gemini1:
 			return fmt.Errorf("provider %s protocol does not support embeddings", e.providerName)
 		}
 		return nil
@@ -101,10 +103,10 @@ func (e *OpenAIEmbedding) ValidateEmbeddingTarget(target ResolvedTarget) error {
 		}
 	}
 	if len(names) == 0 {
-		return fmt.Errorf("no eligible embedding provider")
+		return errors.New("no eligible embedding provider")
 	}
 	switch e.configs[names[0]].GetProviderType() {
-	case "anthropic", "gemini":
+	case anthropic1, gemini1:
 		return fmt.Errorf("provider %s protocol does not support embeddings", names[0])
 	}
 	return nil

@@ -3,6 +3,7 @@ package evals
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -41,9 +42,9 @@ type writingJudgmentSettingsAdapter interface {
 
 func WritingAdapter(id string) (WritingBenchmarkAdapter, error) {
 	switch strings.ToLower(strings.TrimSpace(id)) {
-	case "writingbench":
+	case writingbench1:
 		return WritingBenchAdapter{}, nil
-	case "eqbench-creative-v3":
+	case eqbenchCreativeV3:
 		return EQCreativeLocalRubricAdapter{}, nil
 	case "prose-screen":
 		return ProseScreenAdapter{}, nil
@@ -79,7 +80,7 @@ func writingAdapterJudgmentSettings(adapter WritingBenchmarkAdapter, manifest Wr
 
 func ValidateWritingPromptRecords(records []WritingPromptRecord, adapter WritingBenchmarkAdapter) error {
 	if len(records) == 0 {
-		return fmt.Errorf("writing prompt input is empty")
+		return errors.New("writing prompt input is empty")
 	}
 	seen := make(map[string]struct{}, len(records))
 	for i, record := range records {
@@ -176,7 +177,7 @@ func CombinedWritingJudgeSettings(thinkingLevel string) (WritingGenerationSettin
 	}
 	return WritingGenerationSettings{ExtraBody: map[string]any{
 		"generationConfig": map[string]any{
-			"responseMimeType": "application/json",
+			"responseMimeType": applicationJSON,
 			"responseSchema":   schema,
 			"thinkingConfig":   map[string]any{"thinkingLevel": thinkingLevel},
 		},
@@ -190,9 +191,9 @@ func CombinedWritingJudgeSettings(thinkingLevel string) (WritingGenerationSettin
 func writingJudgeThinkingLevel(model string) string {
 	base := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(model)), "models/")
 	if strings.HasPrefix(base, "gemini-3-pro-preview") {
-		return "high"
+		return high1
 	}
-	return "medium"
+	return medium1
 }
 
 func ParseWritingJudgment(raw string) (int, string, error) {
@@ -213,7 +214,7 @@ func ParseWritingJudgment(raw string) (int, string, error) {
 	}
 	value.Reason = strings.TrimSpace(value.Reason)
 	if value.Reason == "" {
-		return 0, "", fmt.Errorf("judge reason is empty")
+		return 0, "", errors.New("judge reason is empty")
 	}
 	return value.Score, value.Reason, nil
 }
@@ -222,7 +223,7 @@ func ensureJSONEOF(decoder *json.Decoder) error {
 	var extra any
 	if err := decoder.Decode(&extra); err != io.EOF {
 		if err == nil {
-			return fmt.Errorf("judge response contains trailing JSON")
+			return errors.New("judge response contains trailing JSON")
 		}
 		return fmt.Errorf("parse judge response tail: %w", err)
 	}
@@ -231,7 +232,7 @@ func ensureJSONEOF(decoder *json.Decoder) error {
 
 func sourceObject(raw json.RawMessage) (map[string]json.RawMessage, error) {
 	if len(bytes.TrimSpace(raw)) == 0 {
-		return nil, fmt.Errorf("source_record is required")
+		return nil, errors.New("source_record is required")
 	}
 	var object map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &object); err != nil {

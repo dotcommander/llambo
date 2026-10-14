@@ -138,10 +138,10 @@ func TestPingFallbackLatencyIncludesStreamAttempt(t *testing.T) {
 		if body.Stream {
 			time.Sleep(40 * time.Millisecond)
 			w.Header().Set("Content-Type", "text/event-stream")
-			io.WriteString(w, "data: [DONE]\n\n")
+			_, _ = io.WriteString(w, "data: [DONE]\n\n")
 			return
 		}
-		io.WriteString(w, `{"id":"fixture","model":"chat","choices":[{"message":{"role":"assistant","content":"answer"},"finish_reason":"stop"}]}`)
+		_, _ = io.WriteString(w, `{"id":"fixture","model":"chat","choices":[{"message":{"role":"assistant","content":"answer"},"finish_reason":"stop"}]}`)
 	}))
 	defer srv.Close()
 	result := pingProviderContext(context.Background(), "fixture", providers.Config{Model: "chat", BaseURL: srv.URL, APIKey: "fixture-key", RequiresKey: false}, "prompt", time.Second)
@@ -178,7 +178,7 @@ func TestDiscoverFreeUsesItsOwnPromptAndContext(t *testing.T) {
 	entered := make(chan string, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/models") {
-			io.WriteString(w, `{"data":[{"id":"chat"}]}`)
+			_, _ = io.WriteString(w, `{"data":[{"id":"chat"}]}`)
 			return
 		}
 		var request struct {

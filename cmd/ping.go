@@ -1,10 +1,9 @@
 package cmd
 
 import (
-	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
 	"sort"
 	"time"
 
@@ -87,7 +86,7 @@ type pingRunContext struct {
 	RecordRouteMetrics bool
 }
 
-func (cliOpts *invocationOptions) runPing(cmd *commandIO, args []string) error {
+func (cliOpts *invocationOptions) runPing(cmd *commandIO) error {
 	out := cmd.OutOrStdout()
 	runCtx, err := cliOpts.preparePingRunWithIO(cmd)
 	if err != nil {
@@ -131,10 +130,6 @@ func (cliOpts *invocationOptions) runPing(cmd *commandIO, args []string) error {
 	return nil
 }
 
-func (cliOpts *invocationOptions) preparePingRun() (pingRunContext, error) {
-	return cliOpts.preparePingRunWithIO(&commandIO{ctx: context.Background(), stdout: io.Discard, stderr: io.Discard})
-}
-
 func (cliOpts *invocationOptions) preparePingRunWithIO(cmd *commandIO) (pingRunContext, error) {
 	if err := cliOpts.validatePingFlags(); err != nil {
 		return pingRunContext{}, err
@@ -159,10 +154,6 @@ func (cliOpts *invocationOptions) validatePingFlags() error {
 	}
 
 	return nil
-}
-
-func (cliOpts *invocationOptions) loadPingTargets() ([]pingTarget, providers.RoutingConfig, error) {
-	return cliOpts.loadPingTargetsWithIO(&commandIO{ctx: context.Background(), stdout: io.Discard, stderr: io.Discard})
 }
 
 func (cliOpts *invocationOptions) loadPingTargetsWithIO(cmd *commandIO) ([]pingTarget, providers.RoutingConfig, error) {
@@ -190,7 +181,7 @@ func (cliOpts *invocationOptions) loadPingTargetsWithIO(cmd *commandIO) ([]pingT
 	if cliOpts.pingModels != "" || cliOpts.pingFreeOnly || cliOpts.pingMaxOutputCost > 0 {
 		selector := cliOpts.pingModels
 		if selector == "" && cliOpts.pingFreeOnly {
-			selector = "free"
+			selector = free1
 		}
 		catPath, err := catalog.CatalogPath()
 		if err != nil {
@@ -227,7 +218,7 @@ func (cliOpts *invocationOptions) loadPingTargetsWithIO(cmd *commandIO) ([]pingT
 	}
 	targets := buildPingTargetsWithWriter(cmd.ErrOrStderr(), cfg.Providers, costMap, providers.NewBlocklist(cfg.Blocklist), effectiveMaxOutputCost, effectiveIncludeUnknownCost, cat)
 	if len(targets) == 0 {
-		return nil, providers.RoutingConfig{}, fmt.Errorf("no enabled providers found")
+		return nil, providers.RoutingConfig{}, errors.New("no enabled providers found")
 	}
 
 	targets = filterByProvider(targets, cliOpts.pingProviders)
@@ -236,29 +227,4 @@ func (cliOpts *invocationOptions) loadPingTargetsWithIO(cmd *commandIO) ([]pingT
 	}
 
 	return targets, cfg.Routing, nil
-}
-
-// Scalar helpers retain their signatures with independent default options.
-func loadPingTargetsWithIO(cmd *commandIO) ([]pingTarget, providers.RoutingConfig, error) {
-	return defaultInvocationOptions().loadPingTargetsWithIO(cmd)
-}
-
-func loadPingTargets() ([]pingTarget, providers.RoutingConfig, error) {
-	return defaultInvocationOptions().loadPingTargets()
-}
-
-func validatePingFlags() error {
-	return defaultInvocationOptions().validatePingFlags()
-}
-
-func preparePingRunWithIO(cmd *commandIO) (pingRunContext, error) {
-	return defaultInvocationOptions().preparePingRunWithIO(cmd)
-}
-
-func preparePingRun() (pingRunContext, error) {
-	return defaultInvocationOptions().preparePingRun()
-}
-
-func runPing(cmd *commandIO, args []string) error {
-	return defaultInvocationOptions().runPing(cmd, args)
 }

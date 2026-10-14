@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"fmt"
+	"errors"
 	"sort"
 	"strings"
 
@@ -38,7 +38,7 @@ func enabledProviderConfigs(configs map[string]providers.Config) map[string]prov
 
 func routingProviderConfigs(configs map[string]providers.Config, routing providers.RoutingConfig) (map[string]providers.Config, error) {
 	enabled := enabledProviderConfigs(configs)
-	if strings.TrimSpace(strings.ToLower(routing.CatalogModels)) != "pinned" {
+	if strings.TrimSpace(strings.ToLower(routing.CatalogModels)) != pinned1 {
 		return enabled, nil
 	}
 
@@ -52,7 +52,7 @@ func routingProviderConfigs(configs map[string]providers.Config, routing provide
 	}
 	pinned := catalog.PinnedModels(cat, configs)
 	if len(pinned) == 0 {
-		return nil, fmt.Errorf("routing.catalog_models is pinned but no pinned catalog models are available (run: llambo providers refresh; then: llambo models catalog pin <provider> <model>)")
+		return nil, errors.New("routing.catalog_models is pinned but no pinned catalog models are available (run: llambo providers refresh; then: llambo models catalog pin <provider> <model>)")
 	}
 
 	expanded := make(map[string]providers.Config)
@@ -69,7 +69,7 @@ func routingProviderConfigs(configs map[string]providers.Config, routing provide
 		}
 	}
 	if len(expanded) == 0 {
-		return nil, fmt.Errorf("routing.catalog_models is pinned but no pinned catalog models match enabled providers")
+		return nil, errors.New("routing.catalog_models is pinned but no pinned catalog models match enabled providers")
 	}
 	return expanded, nil
 }

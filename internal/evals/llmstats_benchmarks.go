@@ -16,6 +16,11 @@ import (
 	"sync"
 )
 
+// Repeated string literals consolidated by goconst.
+const (
+	llmStatsBenchmarkResults = "llm-stats-benchmark-results"
+)
+
 type llmStatsBenchmark struct {
 	ID         string
 	Name       string
@@ -45,7 +50,7 @@ func fetchLLMStatsBenchmarkLeads(ctx context.Context, opts Options) ([]Observati
 	if err != nil {
 		return nil, err
 	}
-	root := filepath.Join(opts.CacheDir, "sealed", "llm-stats")
+	root := filepath.Join(opts.CacheDir, "sealed", llmStats)
 	if err := writeSealed(sealedRevisionPath(root, "catalog", catalogBytes, ".json"), catalogBytes); err != nil {
 		return nil, err
 	}
@@ -89,7 +94,7 @@ func fetchLLMStatsBenchmarkLeads(ctx context.Context, opts Options) ([]Observati
 	for result := range results {
 		if result.err != nil {
 			if strings.Contains(result.err.Error(), "HTTP 404") {
-				blocked = append(blocked, map[string]string{"benchmark": result.benchmark, "status": "blocked", "reason": "public result endpoint returned HTTP 404"})
+				blocked = append(blocked, map[string]string{benchmark1: result.benchmark, status1: blocked1, reason1: "public result endpoint returned HTTP 404"})
 				continue
 			}
 			if firstErr == nil {
@@ -102,13 +107,13 @@ func fetchLLMStatsBenchmarkLeads(ctx context.Context, opts Options) ([]Observati
 	if firstErr != nil {
 		return nil, firstErr
 	}
-	sort.Slice(blocked, func(i, j int) bool { return blocked[i]["benchmark"] < blocked[j]["benchmark"] })
+	sort.Slice(blocked, func(i, j int) bool { return blocked[i][benchmark1] < blocked[j][benchmark1] })
 	if len(blocked) > 0 {
 		receipts, err := encodeJSONLMaps(blocked)
 		if err != nil {
 			return nil, err
 		}
-		if err := writeSealed(sealedRevisionPath(root, "blocked", receipts, ".jsonl"), receipts); err != nil {
+		if err := writeSealed(sealedRevisionPath(root, blocked1, receipts, ".jsonl"), receipts); err != nil {
 			return nil, err
 		}
 	}
@@ -221,13 +226,13 @@ func fetchLLMStatsBenchmarkPages(ctx context.Context, opts Options, root string,
 				return nil, fmt.Errorf("benchmark %s has duplicate model %q", benchmark.ID, entry.ModelID)
 			}
 			seen[entry.ModelID] = struct{}{}
-			grade := "aggregator_unspecified"
+			grade := aggregatorUnspecified
 			if entry.Verified {
-				grade = "aggregator_verified"
+				grade = aggregatorVerified
 			} else if entry.SelfReported {
-				grade = "aggregator_self_reported"
+				grade = aggregatorSelfReported
 			}
-			observations = append(observations, Observation{SourceID: "llm-stats-benchmark-results", SourceRevision: digest, SourceSHA256: digest, Benchmark: benchmark.ID, BenchmarkVersion: "public-leaderboard", Cohort: "public", ModelID: entry.ModelID, OrganizationID: entry.OrganizationID, RawScore: *entry.Score, Unit: "source_native", Direction: "higher", Methodology: "LLM Stats public leaderboard aggregation; verification status supplied per row", EvidenceGrade: grade, FetchedAt: opts.Now().UTC(), Locator: fmt.Sprintf("%s#entries[%d]", endpoint, index), SourceClass: SourceAggregatorResult})
+			observations = append(observations, Observation{SourceID: llmStatsBenchmarkResults, SourceRevision: digest, SourceSHA256: digest, Benchmark: benchmark.ID, BenchmarkVersion: publicLeaderboard, Cohort: "public", ModelID: entry.ModelID, OrganizationID: entry.OrganizationID, RawScore: *entry.Score, Unit: "source_native", Direction: higher1, Methodology: "LLM Stats public leaderboard aggregation; verification status supplied per row", EvidenceGrade: grade, FetchedAt: opts.Now().UTC(), Locator: fmt.Sprintf("%s#entries[%d]", endpoint, index), SourceClass: SourceAggregatorResult})
 		}
 		if len(observations) >= page.TotalModels {
 			if len(observations) != page.TotalModels {
@@ -274,7 +279,7 @@ func getBytesWithBearer(ctx context.Context, client *http.Client, endpoint, bear
 	if err != nil {
 		return nil, err
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return nil, fmt.Errorf("GET %s: HTTP %d", endpoint, response.StatusCode)
 	}

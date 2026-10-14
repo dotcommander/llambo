@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -56,7 +57,7 @@ func LoadLocalInputManifest(path string, suite LocalSuite) (LocalInputManifest, 
 		return LocalInputManifest{}, "", fmt.Errorf("parse local evaluation input: %w", err)
 	}
 	if !suite.Valid() || in.Suite != suite || strings.TrimSpace(in.Version) == "" || len(in.Cases) == 0 {
-		return LocalInputManifest{}, "", fmt.Errorf("sealed input must contain matching suite, version, and cases")
+		return LocalInputManifest{}, "", errors.New("sealed input must contain matching suite, version, and cases")
 	}
 	for i, c := range in.Cases {
 		if !json.Valid(c) {
@@ -197,6 +198,8 @@ func validateLocalFixtureCardinality(in LocalInputManifest, decoded []any) error
 		return fmt.Errorf("%s manifest requires exactly %d cases, got %d", in.Suite, want, len(decoded))
 	}
 	switch in.Suite {
+	case LocalSuiteASR, LocalSuiteTTS, LocalSuiteAcceleration:
+		// Fixed-case suites; cardinality is enforced by requiredLocalCaseCount.
 	case LocalSuiteTools:
 		required := 0
 		for _, value := range decoded {
@@ -224,7 +227,7 @@ type LocalPricing struct {
 
 func (p LocalPricing) Validate() error {
 	if !p.Known || math.IsNaN(p.InputPer1M) || math.IsNaN(p.OutputPer1M) || math.IsInf(p.InputPer1M, 0) || math.IsInf(p.OutputPer1M, 0) || p.InputPer1M < 0 || p.OutputPer1M < 0 {
-		return fmt.Errorf("known non-negative pricing is required")
+		return errors.New("known non-negative pricing is required")
 	}
 	return nil
 }
@@ -252,7 +255,7 @@ type LocalRunManifest struct {
 
 func NewLocalRunManifest(inputPath, inputHash string, in LocalInputManifest, model, reference, feature string, limit int, timeout time.Duration, pricing LocalPricing, now time.Time) (LocalRunManifest, error) {
 	if !in.Suite.Valid() || strings.TrimSpace(model) == "" || limit < 1 || timeout <= 0 {
-		return LocalRunManifest{}, fmt.Errorf("suite, exact model, positive limit, and timeout are required")
+		return LocalRunManifest{}, errors.New("suite, exact model, positive limit, and timeout are required")
 	}
 	if err := pricing.Validate(); err != nil {
 		return LocalRunManifest{}, err
@@ -301,7 +304,7 @@ type LocalCall struct {
 // remains unknown: callers must retain their worst-case campaign reservation.
 func ApplyLocalCallPricing(pricing LocalPricing, call *LocalCall) error {
 	if call == nil {
-		return fmt.Errorf("local call is required")
+		return errors.New("local call is required")
 	}
 	if err := pricing.Validate(); err != nil {
 		return err
@@ -378,12 +381,12 @@ func canonicalJSON(raw json.RawMessage) ([]byte, error) {
 func localSHA(data []byte) string { h := sha256.Sum256(data); return hex.EncodeToString(h[:]) }
 func ensureNewLocalOutput(path string, manifest LocalRunManifest) error {
 	if path == "" || filepath.Clean(path) == "." {
-		return fmt.Errorf("--output-dir must be explicit")
+		return errors.New("--output-dir must be explicit")
 	}
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		return err
 	}
-	existing, err := os.ReadFile(filepath.Join(path, "manifest.json"))
+	existing, err := os.ReadFile(filepath.Join(path, manifestJSON))
 	if os.IsNotExist(err) {
 		return nil
 	}
@@ -392,9 +395,9 @@ func ensureNewLocalOutput(path string, manifest LocalRunManifest) error {
 	}
 	var old LocalRunManifest
 	if json.Unmarshal(existing, &old) != nil || LocalRunIdentityHash(old) != LocalRunIdentityHash(manifest) {
-		return fmt.Errorf("output directory belongs to a different run identity")
+		return errors.New("output directory belongs to a different run identity")
 	}
-	for _, name := range []string{"calls.jsonl", "report.json", "report.md", "receipt.json"} {
+	for _, name := range []string{callsJsonl, reportJSON1, reportMd, "receipt.json"} {
 		if _, err := os.Stat(filepath.Join(path, name)); err == nil {
 			return fmt.Errorf("output directory already contains %s; preserve it and use a new --output-dir", name)
 		} else if !os.IsNotExist(err) {

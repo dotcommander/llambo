@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"io"
-	"os"
 	"strings"
 	"time"
 
@@ -17,31 +16,27 @@ type stressJobResult struct {
 	duration time.Duration
 }
 
-func printStressResults(results []stressJobResult, totalDuration time.Duration, totalRequests int) {
-	printStressResultsTo(os.Stdout, results, totalDuration, totalRequests)
-}
-
 func printStressResultsTo(out io.Writer, results []stressJobResult, totalDuration time.Duration, totalRequests int) {
-	fmt := commandPrinter{out}
-	fmt.Println()
-	fmt.Println(strings.Repeat("─", 70))
-	fmt.Printf("%s\n", styles.Header.Render("STRESS TEST RESULTS"))
-	fmt.Println(strings.Repeat("─", 70))
+	printer := commandPrinter{out}
+	printer.Println()
+	printer.Println(strings.Repeat("─", 70))
+	printer.Printf("%s\n", styles.Header.Render("STRESS TEST RESULTS"))
+	printer.Println(strings.Repeat("─", 70))
 
 	// Per-job summary
-	fmt.Println(styles.Header.Render("Per-Job Summary"))
-	fmt.Printf("%-12s %-10s %8s %8s %12s\n", "JOB", "STATUS", "DONE", "FAILED", "DURATION")
-	fmt.Println(strings.Repeat("─", 55))
+	printer.Println(styles.Header.Render("Per-Job Summary"))
+	printer.Printf("%-12s %-10s %8s %8s %12s\n", "JOB", "STATUS", "DONE", "FAILED", "DURATION")
+	printer.Println(strings.Repeat("─", 55))
 
 	var totalCompleted, totalFailed int
 	var successfulJobs int
 	metrics := newJobRequestMetrics()
 
 	for i, r := range results {
-		jobName := fmt.Sprintf("job-%d", i+1)
+		jobName := printer.Sprintf("job-%d", i+1)
 
 		if r.err != nil {
-			fmt.Printf("%-12s %s %8s %8s %12s\n",
+			printer.Printf("%-12s %s %8s %8s %12s\n",
 				jobName,
 				styles.Error.Render("ERROR"),
 				"-",
@@ -51,13 +46,13 @@ func printStressResultsTo(out io.Writer, results []stressJobResult, totalDuratio
 		}
 
 		statusStyle := styles.Success
-		if r.response.Status == "failed" {
+		if r.response.Status == failed1 {
 			statusStyle = styles.Error
 		}
 
-		fmt.Printf("%-12s %s %8d %8d %12s\n",
+		printer.Printf("%-12s %s %8d %8d %12s\n",
 			jobName,
-			statusStyle.Render(fmt.Sprintf("%-10s", r.response.Status)),
+			statusStyle.Render(printer.Sprintf("%-10s", r.response.Status)),
 			r.response.Completed,
 			r.response.Failed,
 			r.duration.Round(time.Millisecond))
@@ -69,33 +64,33 @@ func printStressResultsTo(out io.Writer, results []stressJobResult, totalDuratio
 		metrics.addAll(r.response.Results)
 	}
 
-	fmt.Println()
+	printer.Println()
 
 	// Aggregate stats
-	fmt.Println(styles.Header.Render("Aggregate Statistics"))
-	fmt.Printf("  Total jobs:        %d (%d successful)\n", len(results), successfulJobs)
-	fmt.Printf("  Total requests:    %d\n", totalRequests)
-	fmt.Printf("  Completed:         %s\n", styles.Success.Render(fmt.Sprintf("%d", totalCompleted)))
+	printer.Println(styles.Header.Render("Aggregate Statistics"))
+	printer.Printf("  Total jobs:        %d (%d successful)\n", len(results), successfulJobs)
+	printer.Printf("  Total requests:    %d\n", totalRequests)
+	printer.Printf("  Completed:         %s\n", styles.Success.Render(printer.Sprintf("%d", totalCompleted)))
 	if totalFailed > 0 {
-		fmt.Printf("  Failed:            %s\n", styles.Error.Render(fmt.Sprintf("%d", totalFailed)))
+		printer.Printf("  Failed:            %s\n", styles.Error.Render(printer.Sprintf("%d", totalFailed)))
 	} else {
-		fmt.Printf("  Failed:            %d\n", totalFailed)
+		printer.Printf("  Failed:            %d\n", totalFailed)
 	}
-	fmt.Printf("  Total duration:    %s\n", totalDuration.Round(time.Millisecond))
+	printer.Printf("  Total duration:    %s\n", totalDuration.Round(time.Millisecond))
 
 	// Throughput
 	if totalDuration > 0 {
 		rps := float64(totalCompleted) / totalDuration.Seconds()
-		fmt.Printf("  Requests/second:   %.2f\n", rps)
+		printer.Printf("  Requests/second:   %.2f\n", rps)
 	}
 
 	// Success rate
 	if totalRequests > 0 {
 		successRate := float64(totalCompleted) / float64(totalRequests) * 100
-		fmt.Printf("  Success rate:      %.1f%%\n", successRate)
+		printer.Printf("  Success rate:      %.1f%%\n", successRate)
 	}
-	fmt.Println()
+	printer.Println()
 
-	printRequestLatencyStats(fmt, "Latency (across all requests)", metrics.latencies)
-	printRequestBackendDistribution(fmt, metrics.backendCounts, totalCompleted)
+	printRequestLatencyStats(printer, "Latency (across all requests)", metrics.latencies)
+	printRequestBackendDistribution(printer, metrics.backendCounts, totalCompleted)
 }

@@ -14,6 +14,11 @@ import (
 	"strings"
 )
 
+// Repeated string literals consolidated by goconst.
+const (
+	llm1 = "llm"
+)
+
 type llmIdentity struct {
 	ModelID      string   `json:"model_id"`
 	Name         string   `json:"name"`
@@ -87,7 +92,7 @@ func fetchLLMStats(ctx context.Context, opts Options) (sourceSnapshot, error) {
 	if err := json.Unmarshal(raw["indexes"], &indexes); err != nil {
 		return sourceSnapshot{}, fmt.Errorf("decode LLM Stats indexes: %w", err)
 	}
-	sealedRoot := filepath.Join(opts.CacheDir, "sealed", "llm-stats")
+	sealedRoot := filepath.Join(opts.CacheDir, "sealed", llmStats)
 	for _, name := range []string{"models", "full-results", "indexes"} {
 		if err := writeSealed(sealedRevisionPath(sealedRoot, name, raw[name], ".json"), raw[name]); err != nil {
 			return sourceSnapshot{}, err
@@ -109,7 +114,7 @@ func fetchLLMStats(ctx context.Context, opts Options) (sourceSnapshot, error) {
 	}
 	models := make([]Model, 0, len(identities))
 	for _, identity := range identities {
-		if identity.ModelType != "llm" {
+		if identity.ModelType != llm1 {
 			continue
 		}
 		f := fullByID[identity.ModelID]
@@ -151,7 +156,7 @@ func fetchLLMStats(ctx context.Context, opts Options) (sourceSnapshot, error) {
 		fingerprintInput = append(fingerprintInput, normalized...)
 	}
 	sort.Slice(models, func(i, j int) bool { return models[i].Key < models[j].Key })
-	return sourceSnapshot{Models: models, ContentSHA: SealBytes(fingerprintInput), Method: method, Observations: observationCount, RegistryVersion: SourceRegistryVersion, EvidenceGrade: "graded_aggregator"}, nil
+	return sourceSnapshot{Models: models, ContentSHA: SealBytes(fingerprintInput), Method: method, Observations: observationCount, RegistryVersion: SourceRegistryVersion, EvidenceGrade: gradedAggregator}, nil
 }
 
 type aaEnvelope struct {
@@ -229,7 +234,7 @@ func getJSON(ctx context.Context, client *http.Client, url, apiKey string, dst a
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("GET %s: HTTP %d", url, resp.StatusCode)
 	}

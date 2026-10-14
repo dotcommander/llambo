@@ -9,6 +9,13 @@ import (
 	"time"
 )
 
+// Repeated string literals consolidated by goconst.
+const (
+	cached1          = "cached"
+	gradedAggregator = "graded_aggregator"
+	stale1           = "stale"
+)
+
 const maxSourceBody = 32 << 20
 
 type officialCardFetcher func(context.Context, Options) (sourceSnapshot, error)
@@ -30,10 +37,10 @@ type sourceSnapshot struct {
 func Fetch(ctx context.Context, opts Options) (Result, error) {
 	opts.applyDefaults()
 	if opts.Refresh && opts.RefreshOfficialCards {
-		return Result{}, fmt.Errorf("global refresh and official-card refresh cannot be combined")
+		return Result{}, errors.New("global refresh and official-card refresh cannot be combined")
 	}
 	if opts.Offline && opts.RefreshOfficialCards {
-		return Result{}, fmt.Errorf("offline and official-card refresh cannot be combined")
+		return Result{}, errors.New("offline and official-card refresh cannot be combined")
 	}
 	ifeval, err := loadOfficialIFEvalSnapshot()
 	if err != nil {
@@ -70,7 +77,7 @@ func Fetch(ctx context.Context, opts Options) (Result, error) {
 	}
 	lfm, qwen, gptOSS, lfmVL, gemma, lfm8 := cards[officialLFM25Card], cards[officialQwen38Card], cards[officialGPTOSSCard], cards[officialLFMVLCard], cards[officialGemma4Card], cards[officialLFM25A1BCard]
 	lfmStatus, qwenStatus, gptOSSStatus, lfmVLStatus, gemmaStatus, lfm8Status := cardStatuses[officialLFM25Card], cardStatuses[officialQwen38Card], cardStatuses[officialGPTOSSCard], cardStatuses[officialLFMVLCard], cardStatuses[officialGemma4Card], cardStatuses[officialLFM25A1BCard]
-	llm, llmStatus, err := loadSource(ctx, opts, "llm-stats", func(ctx context.Context) (sourceSnapshot, error) {
+	llm, llmStatus, err := loadSource(ctx, opts, llmStats, func(ctx context.Context) (sourceSnapshot, error) {
 		return fetchLLMStats(ctx, opts)
 	})
 	if err != nil {
@@ -82,11 +89,11 @@ func Fetch(ctx context.Context, opts Options) (Result, error) {
 		return Result{}, aaErr
 	}
 
-	writing, writingStatus, writingErr := loadSource(ctx, opts, "writingbench", func(ctx context.Context) (sourceSnapshot, error) { return fetchWritingBench(ctx, opts) })
+	writing, writingStatus, writingErr := loadSource(ctx, opts, writingbench1, func(ctx context.Context) (sourceSnapshot, error) { return fetchWritingBench(ctx, opts) })
 	if writingErr != nil && !opts.AllowPartial {
 		return Result{}, writingErr
 	}
-	eqBench, eqBenchStatus, eqBenchErr := loadSource(ctx, opts, "eqbench-creative-v3", func(ctx context.Context) (sourceSnapshot, error) { return fetchEQBenchCreative(ctx, opts) })
+	eqBench, eqBenchStatus, eqBenchErr := loadSource(ctx, opts, eqbenchCreativeV3, func(ctx context.Context) (sourceSnapshot, error) { return fetchEQBenchCreative(ctx, opts) })
 	if eqBenchErr != nil && !opts.AllowPartial {
 		return Result{}, eqBenchErr
 	}
@@ -98,11 +105,11 @@ func Fetch(ctx context.Context, opts Options) (Result, error) {
 	if arenaErr != nil && !opts.AllowPartial {
 		return Result{}, arenaErr
 	}
-	markSnapshotStale(&llm, llmStatus.Cache == "stale")
-	markSnapshotStale(&writing, writingStatus.Cache == "stale")
-	markSnapshotStale(&eqBench, eqBenchStatus.Cache == "stale")
-	markSnapshotStale(&fiction, fictionStatus.Cache == "stale")
-	markSnapshotStale(&arena, arenaStatus.Cache == "stale")
+	markSnapshotStale(&llm, llmStatus.Cache == stale1)
+	markSnapshotStale(&writing, writingStatus.Cache == stale1)
+	markSnapshotStale(&eqBench, eqBenchStatus.Cache == stale1)
+	markSnapshotStale(&fiction, fictionStatus.Cache == stale1)
+	markSnapshotStale(&arena, arenaStatus.Cache == stale1)
 	sourceModels := evalsSourceModels(evalsSourceSet{
 		llm: llm.Models, aa: aa.Models, writing: writing.Models, eqBench: eqBench.Models,
 		fiction: fiction.Models, arena: arena.Models, ifeval: ifeval.Models,
@@ -205,32 +212,32 @@ func fetchCachedOnly(opts Options, ifeval sourceSnapshot) (Result, error) {
 	})
 	models := mergeWritingEvidenceModels(mergeModels(llm.Models, aa.Models), writing.Models, eqBench.Models, fiction.Models, arena.Models, ifeval.Models)
 	models = mergeOfficialCardModels(models, lfm.Models, qwen.Models, gptOSS.Models, lfmVL.Models, gemma.Models, lfm8.Models)
-	writingCache := "cached"
+	writingCache := cached1
 	if writingErr != nil {
-		writingCache = "unavailable"
+		writingCache = unavailable1
 	}
-	eqBenchCache := "cached"
+	eqBenchCache := cached1
 	if eqBenchErr != nil {
-		eqBenchCache = "unavailable"
+		eqBenchCache = unavailable1
 	}
-	fictionCache := "cached"
+	fictionCache := cached1
 	if fictionErr != nil {
-		fictionCache = "unavailable"
+		fictionCache = unavailable1
 	}
-	arenaCache := "cached"
+	arenaCache := cached1
 	if arenaErr != nil {
-		arenaCache = "unavailable"
+		arenaCache = unavailable1
 	}
 	return Result{
 		GeneratedAt: opts.Now().UTC(), Models: models, SourceModels: sourceModels, ReferenceModels: sourceNativeModels(llm.Models, aa.Models, writing.Models, eqBench.Models, fiction.Models, arena.Models, ifeval.Models, lfm.Models, qwen.Models, gptOSS.Models, lfmVL.Models, gemma.Models, lfm8.Models), AAVersion: aa.AAVersion,
 		Sources: []SourceStatus{
-			statusFor("LLM Stats", LLMStatsLeaderboardURL, llm, "cached", nil),
+			statusFor("LLM Stats", LLMStatsLeaderboardURL, llm, cached1, nil),
 			frozenLLMStatsCohortStatus(frozenErr),
-			statusFor("Artificial Analysis", ArtificialAnalysisURL, aa, "cached", err),
-			statusFor("WritingBench", opts.WritingBenchURL, writing, writingCache, writingErr),
-			statusFor("EQ-Bench Creative v3", opts.EQBenchCreativeURL, eqBench, eqBenchCache, eqBenchErr),
-			statusFor("Lech Mazur Creative Story-Writing", opts.LechMazurWritingURL, fiction, fictionCache, fictionErr),
-			statusFor("Arena Creative Writing", opts.ArenaCreativeURL, arena, arenaCache, arenaErr),
+			statusFor(artificialAnalysisName, ArtificialAnalysisURL, aa, cached1, err),
+			statusFor(writingBench1, opts.WritingBenchURL, writing, writingCache, writingErr),
+			statusFor(eQBenchCreativeV3, opts.EQBenchCreativeURL, eqBench, eqBenchCache, eqBenchErr),
+			statusFor(lechMazurCreativeStoryWriting, opts.LechMazurWritingURL, fiction, fictionCache, fictionErr),
+			statusFor(arenaCreativeWriting, opts.ArenaCreativeURL, arena, arenaCache, arenaErr),
 			statusFor("Official IFEval", ifeval.URL, ifeval, "frozen", nil),
 			lfmStatus,
 			qwenStatus,
@@ -299,10 +306,10 @@ func frozenLLMStatsCohortStatus(frozenErr error) SourceStatus {
 		Methodology:     "exact hash-verified normalized observation artifact",
 		Observations:    llmStatsFrozenCohortObservationRows,
 		RegistryVersion: SourceRegistryVersion,
-		EvidenceGrade:   "graded_aggregator",
+		EvidenceGrade:   gradedAggregator,
 	}
 	if frozenErr != nil {
-		status.Cache = "unavailable"
+		status.Cache = unavailable1
 		status.ContentSHA = ""
 		status.Observations = 0
 		status.Error = fmt.Sprintf("frozen LLM Stats cohorts unavailable: %v", frozenErr)

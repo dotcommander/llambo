@@ -28,7 +28,7 @@ func RenderMarkdown(report Report, limit int) string {
 		fmt.Fprintf(&b, "Eligibility filters: %s; %d of %d models included.\n\n", strings.Join(filters, "; "), report.Eligibility.IncludedModels, report.Eligibility.InputModels)
 	}
 	if report.OMLX != nil {
-		if report.OMLX.Status == "unavailable" {
+		if report.OMLX.Status == unavailable1 {
 			b.WriteString("OMLX live selection: unavailable; projected availability omitted.\n\n")
 		} else {
 			fmt.Fprintf(&b, "OMLX live selection: %s.\n\n", report.OMLX.Status)
@@ -37,13 +37,13 @@ func RenderMarkdown(report Report, limit int) string {
 	b.WriteString("Six independent capability scores use reviewed cached remote benchmarks only. Operational speed and price are displayed separately and never affect capability rankings.\n\n")
 	b.WriteString("| Model | Agents | Coding | Instruction Following | Long Context | Reasoning | Writing | Speed | Price |\n|---|---:|---:|---:|---:|---:|---:|---:|---:|\n")
 	for _, row := range rows {
-		fmt.Fprintf(&b, "| %s | %s | %s | %s | %s | %s | %s | %s | %s |\n", row.Name, formatLlambo(row.LlamboScores["agents"]), formatLlambo(row.LlamboScores["coding"]), formatLlambo(row.LlamboScores["instruction-following"]), formatLlambo(row.LlamboScores["long-context"]), formatLlambo(row.LlamboScores["reasoning"]), formatLlambo(row.LlamboScores["writing"]), formatOperational(row.Scores["speed"]), fmtOutputPrice(row))
+		fmt.Fprintf(&b, "| %s | %s | %s | %s | %s | %s | %s | %s | %s |\n", row.Name, formatLlambo(row.LlamboScores[agents1]), formatLlambo(row.LlamboScores[coding1]), formatLlambo(row.LlamboScores[instructionFollowing]), formatLlambo(row.LlamboScores[longContext]), formatLlambo(row.LlamboScores[reasoning1]), formatLlambo(row.LlamboScores[writing1]), formatOperational(row.Scores[speed1]), fmtOutputPrice(row))
 	}
 	if len(projected) > 0 {
 		b.WriteString("\n## Local projections\n\nProjected artifacts inherit reviewed upstream evidence with identity-confidence calibration, remain outside the canonical matrix, and always have low Llambo confidence.\n\n")
 		b.WriteString("| Model | Agents | Coding | Instruction Following | Long Context | Reasoning | Writing | Speed | Price |\n|---|---:|---:|---:|---:|---:|---:|---:|---:|\n")
 		for _, row := range projected {
-			fmt.Fprintf(&b, "| %s | %s | %s | %s | %s | %s | %s | %s | %s |\n", row.Name, formatLlambo(row.LlamboScores["agents"]), formatLlambo(row.LlamboScores["coding"]), formatLlambo(row.LlamboScores["instruction-following"]), formatLlambo(row.LlamboScores["long-context"]), formatLlambo(row.LlamboScores["reasoning"]), formatLlambo(row.LlamboScores["writing"]), formatOperational(row.Scores["speed"]), fmtOutputPrice(row))
+			fmt.Fprintf(&b, "| %s | %s | %s | %s | %s | %s | %s | %s | %s |\n", row.Name, formatLlambo(row.LlamboScores[agents1]), formatLlambo(row.LlamboScores[coding1]), formatLlambo(row.LlamboScores[instructionFollowing]), formatLlambo(row.LlamboScores[longContext]), formatLlambo(row.LlamboScores[reasoning1]), formatLlambo(row.LlamboScores[writing1]), formatOperational(row.Scores[speed1]), fmtOutputPrice(row))
 		}
 	}
 	writeCoverageCampaignMarkdown(&b, report.CoverageCampaign)
@@ -79,7 +79,7 @@ func RenderMarkdown(report Report, limit int) string {
 
 func writeSourceFreshnessMarkdown(b *strings.Builder, sources []SourceStatus, generatedAt time.Time) {
 	for _, source := range sources {
-		if source.Cache == "stale" || (!source.FetchedAt.IsZero() && generatedAt.Sub(source.FetchedAt) > DefaultTTL) {
+		if source.Cache == stale1 || (!source.FetchedAt.IsZero() && generatedAt.Sub(source.FetchedAt) > DefaultTTL) {
 			fmt.Fprintf(b, "Warning: source `%s` is stale (%s). It remains scoreable but lowers confidence.\n\n", source.Name, source.FetchedAt.UTC().Format(time.RFC3339))
 		}
 	}
@@ -169,15 +169,6 @@ func formatLlambo(score *LlamboScore) string {
 	return fmt.Sprintf("%.1f%s (%s; %.0f%% coverage%s)", score.Score, mark, score.Confidence, 100*score.TrustedCoverage, status)
 }
 
-// formatOverall is retained for decoding and inspecting historical v1
-// snapshots. Active LLAMBO-6 renderers never call it.
-func formatOverall(score *OverallScore) string {
-	if score == nil || score.Score == nil {
-		return "—"
-	}
-	return fmt.Sprintf("%.1f (%s)", *score.Score, score.Confidence)
-}
-
 func scoreContributions(score *LlamboScore) []benchmarkEvidence {
 	if len(score.Contributions) > 0 {
 		return score.Contributions
@@ -198,12 +189,6 @@ func formatRaw(value *float64) string {
 		return "—"
 	}
 	return fmt.Sprintf("%.4g", *value)
-}
-func formatAgreement(value *float64) string {
-	if value == nil {
-		return "—"
-	}
-	return fmt.Sprintf("%.1f", *value)
 }
 func projectionSuffix(row ReportModel) string {
 	if row.Projection == nil {

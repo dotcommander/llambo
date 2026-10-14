@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"fmt"
+	"errors"
 	"strings"
 	"time"
 
@@ -52,7 +52,7 @@ func consumePingStream(stream <-chan whtypes.TextChunk, started time.Time) (ping
 	}
 
 	if firstOutput.IsZero() {
-		return stats, fmt.Errorf("stream ended without generated output")
+		return stats, errors.New("stream ended without generated output")
 	}
 
 	stats.Content = strings.TrimSpace(content.String())

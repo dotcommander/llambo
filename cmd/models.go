@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,6 +16,20 @@ import (
 	"github.com/dotcommander/llambo/internal/evals"
 	"github.com/dotcommander/llambo/providers"
 )
+
+// Repeated string literals consolidated by goconst.
+const (
+	agents1 = "agents"
+	free1   = "free"
+)
+
+const longContext = "long-context"
+const reasoningCategory = "reasoning"
+const writingCategory = "writing"
+
+const instructionFollowing = "instruction-following"
+
+const coding1 = "coding"
 
 type modelRow struct {
 	Provider         string
@@ -102,7 +117,7 @@ func (cliOpts *invocationOptions) runModels(cmd *commandIO, args []string) error
 			return err
 		}
 		for _, grouped := range groupRows(rows) {
-			if err := w.Write([]string{grouped.Provider, fmt.Sprintf("%t", grouped.Enabled), strings.Join(grouped.Models, ", ")}); err != nil {
+			if err := w.Write([]string{grouped.Provider, strconv.FormatBool(grouped.Enabled), strings.Join(grouped.Models, ", ")}); err != nil {
 				return err
 			}
 		}
@@ -126,7 +141,7 @@ func (cliOpts *invocationOptions) runModels(cmd *commandIO, args []string) error
 			return err
 		}
 		for _, row := range rows {
-			values := []string{row.Provider, fmt.Sprintf("%t", row.Enabled), row.Model, fmt.Sprintf("%t", row.Primary)}
+			values := []string{row.Provider, strconv.FormatBool(row.Enabled), row.Model, strconv.FormatBool(row.Primary)}
 			if cliOpts.modelsMetrics {
 				values = append(values, row.LlamboScore, row.LlamboProvenance, row.TaskScore, row.Speed, row.Latency, row.OutputCost)
 			}
@@ -186,9 +201,11 @@ func modelOutputCostLabel(costMap map[string]costs.ModelCost, cat *catalog.Catal
 	status, _, output := catalog.CostForEntry(costMap, provider, model, entry)
 	switch status {
 	case catalog.CostFree:
-		return "free"
+		return free1
 	case catalog.CostPaid:
 		return fmt.Sprintf("$%.4g", output)
+	case catalog.CostUnknown:
+		return "—"
 	default:
 		return "—"
 	}
@@ -209,7 +226,7 @@ func (cliOpts *invocationOptions) modelProviderAllowed(name string) bool {
 
 func modelMetricLabels(cat *catalog.Catalog, snapshot *evals.OMLXScoreSnapshot, provider, model string) (llamboScore, llamboProvenance, taskScore, speed, latency string) {
 	llamboScore, llamboProvenance, taskScore, speed, latency = "—", "—", "—", "—", "—"
-	if provider == "omlx" && snapshot != nil && snapshot.Contains(model) {
+	if provider == omlx1 && snapshot != nil && snapshot.Contains(model) {
 		scores := snapshot.CategoryScores[model]
 		llamboProvenance = formatLlamboProvenance(scores, snapshot)
 		llamboScore = formatLlamboCategories(scores)
@@ -257,7 +274,7 @@ func modelMetricLabels(cat *catalog.Catalog, snapshot *evals.OMLXScoreSnapshot, 
 			speed = fmt.Sprintf("%.1f tok/s", entry.LastPing.SpeedTokensPerSecond)
 		}
 	}
-	if provider == "omlx" {
+	if provider == omlx1 {
 		if estimate, ok := catalog.EstimateOMLXSpeedTokensPerSecond(model); ok {
 			speed = fmt.Sprintf("~%.1f tok/s", estimate)
 		}
@@ -270,7 +287,7 @@ func formatLlamboCategories(scores map[string]*evals.LlamboScore) string {
 		return "unresolved"
 	}
 	parts := make([]string, 0, len(scores))
-	for _, category := range []string{"agents", "coding", "instruction-following", "long-context", "reasoning", "writing"} {
+	for _, category := range []string{agents1, coding1, instructionFollowing, longContext, reasoningCategory, writingCategory} {
 		score := scores[category]
 		if score == nil {
 			continue
@@ -292,7 +309,7 @@ func formatLlamboProvenance(scores map[string]*evals.LlamboScore, snapshot *eval
 		return "unresolved; snapshot missing"
 	}
 	parts := []string{"formula=" + snapshot.FormulaVersion, "cache_fingerprint=" + snapshot.PopulationFingerprint}
-	for _, category := range []string{"agents", "coding", "instruction-following", "long-context", "reasoning", "writing"} {
+	for _, category := range []string{agents1, coding1, instructionFollowing, longContext, reasoningCategory, writingCategory} {
 		score := scores[category]
 		if score == nil {
 			parts = append(parts, category+"=unresolved")
@@ -314,7 +331,7 @@ func appendCatalogMetricModels(cat *catalog.Catalog, snapshot *evals.OMLXScoreSn
 		seen[model] = struct{}{}
 	}
 	additional := make([]string, 0)
-	if provider == "omlx" {
+	if provider == omlx1 {
 		if snapshot == nil {
 			return models
 		}
@@ -379,10 +396,6 @@ func groupRows(rows []modelRow) []groupedModelRow {
 	return out
 }
 
-func fetchAvailableModels(name string, cfg providers.Config, timeoutSec int) []string {
-	return fetchAvailableModelsContext(context.Background(), name, cfg, timeoutSec)
-}
-
 func fetchAvailableModelsContext(ctx context.Context, name string, cfg providers.Config, timeoutSec int) []string {
 	if timeoutSec <= 0 {
 		timeoutSec = 10
@@ -394,20 +407,12 @@ func fetchAvailableModelsContext(ctx context.Context, name string, cfg providers
 	return fetchOpenAICompatibleModelsContext(ctx, name, cfg, timeoutSec)
 }
 
-func fetchOpenAICompatibleModels(name string, cfg providers.Config, timeoutSec int) []string {
-	return fetchOpenAICompatibleModelsContext(context.Background(), name, cfg, timeoutSec)
-}
-
 func fetchOpenAICompatibleModelsContext(ctx context.Context, name string, cfg providers.Config, timeoutSec int) []string {
 	if strings.TrimSuffix(cfg.BaseURL, "/") == "" {
 		return nil
 	}
 	spec := catalog.BuildOpenAIModelsRequestSpec(cfg.BaseURL, providers.GetAPIKey(name, cfg), cfg.ExtraHeaders)
 	return fetchModelListContext(ctx, spec.Endpoint, spec.Headers, timeoutSec, catalog.DecodeOpenAICompatibleModelIDs)
-}
-
-func fetchGeminiModels(name string, cfg providers.Config, timeoutSec int) []string {
-	return fetchGeminiModelsContext(context.Background(), name, cfg, timeoutSec)
 }
 
 func fetchGeminiModelsContext(ctx context.Context, name string, cfg providers.Config, timeoutSec int) []string {
@@ -442,7 +447,7 @@ func fetchModelListContext(ctx context.Context, endpoint string, headers map[str
 	if err != nil {
 		return nil
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil
 	}
@@ -461,13 +466,4 @@ func fetchModelListContext(ctx context.Context, endpoint string, headers map[str
 	out = append(out, models...)
 	sort.Strings(out)
 	return out
-}
-
-// Scalar helpers retain their signatures with independent default options.
-func modelProviderAllowed(name string) bool {
-	return defaultInvocationOptions().modelProviderAllowed(name)
-}
-
-func runModels(cmd *commandIO, args []string) error {
-	return defaultInvocationOptions().runModels(cmd, args)
 }

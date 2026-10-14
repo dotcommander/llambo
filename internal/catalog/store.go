@@ -5,11 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/dotcommander/llambo/internal/filetxn"
 	"os"
 	"path/filepath"
 	"syscall"
 	"time"
+
+	"github.com/dotcommander/llambo/internal/filetxn"
 )
 
 const catalogLockRetry = 10 * time.Millisecond
@@ -46,7 +47,7 @@ func Update(ctx context.Context, path string, mutate func(*Catalog) error) error
 	if err != nil {
 		return fmt.Errorf("open catalog lock: %w", err)
 	}
-	defer lock.Close()
+	defer func() { _ = lock.Close() }()
 	if err := lockCatalog(ctx, lock); err != nil {
 		return err
 	}

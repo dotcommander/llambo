@@ -134,7 +134,7 @@ func TestLocalRunStoreOutputLock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer first.Close()
+	defer func() { _ = first.Close() }()
 	if _, err := OpenLocalRunStore(dir, m); err == nil {
 		t.Fatal("concurrent output owner acquired lock")
 	}
@@ -157,7 +157,7 @@ func TestLocalRunStoreRefusesInDoubtRedispatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	exec := &recordingLocalExecutor{}
 	if _, err := RunStoredLocalEvaluation(context.Background(), m, in, exec, store); err == nil || exec.Count() != 0 {
 		t.Fatalf("in-doubt attempt redispatched: calls=%d err=%v", exec.Count(), err)

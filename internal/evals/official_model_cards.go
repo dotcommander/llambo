@@ -10,6 +10,23 @@ import (
 	"strings"
 )
 
+// Repeated string literals consolidated by goconst.
+const (
+	aider1           = "aider"
+	aime1            = "aime"
+	bfclV4           = "bfcl-v4"
+	gpqa1            = "gpqa"
+	gptOssX20bHigh   = "gpt-oss-20b-high"
+	iFBench          = "IFBench"
+	ifbench1         = "ifbench"
+	livecodebenchV6  = "livecodebench-v6"
+	mmluPro          = "mmlu-pro"
+	multiIf          = "multi-if"
+	sweBenchVerified = "swe-bench-verified"
+	tau2Bench        = "tau2-bench"
+	tauBenchRetail   = "tau-bench-retail"
+)
+
 const (
 	lfm25Revision       = "a334ee78cd38458bb71eda24109ac42dcec1309d"
 	lfm25ContentSHA     = "321173d06e4d13010fdf8ad9fffb2b4fbb76f39ffcc4c493cdd0895b39d7a37c"
@@ -24,32 +41,32 @@ const (
 	lfm25A1BRevision    = "b9aebfcbe28b6cb374042f495d733037550ab146"
 	lfm25A1BContentSHA  = "10950a8975d3f43c4b51a74def690603ac82be6c53a2d8eb509e6e31177b6efc"
 	modelCardUnit       = "percent"
-	modelCardDirection  = "higher"
-	modelCardEvidence   = "first_party"
+	modelCardDirection  = higher1
+	modelCardEvidence   = firstParty
 	modelCardSourceType = "published comparison table"
 
-	llmStatsSourceID           = "llm-stats"
-	artificialAnalysisSourceID = "artificial-analysis"
-	writingBenchSourceID       = "writingbench"
-	eqBenchCreativeSourceID    = "eqbench-creative-v3"
+	llmStatsSourceID           = llmStats
+	artificialAnalysisSourceID = artificialAnalysis
+	writingBenchSourceID       = writingbench1
+	eqBenchCreativeSourceID    = eqbenchCreativeV3
 	lfm25SourceID              = "liquidai-lfm25-2.6b-card"
 	qwen38SourceID             = "qwen3.8-27b-card"
 	gptOSSSourceID             = "openai-gpt-oss-model-card"
 	lfm25VLSourceID            = "liquidai-lfm25-vl-3b-card"
 	gemma4SourceID             = "google-gemma4-model-card"
 	organizationLiquidAI       = "Liquid AI"
-	organizationQwen           = "Qwen"
+	organizationQwen           = qwen1
 	organizationOpenAI         = "OpenAI"
 	organizationGoogle         = "Google"
 	officialLFM25A1BCacheName  = "official-lfm25-8b-a1b"
 	lfm25A1BSourceID           = "liquidai-lfm25-8b-a1b-card"
 	lfm25A1BModelKey           = "lfm-2.5-8b-a1b"
 	lfm25A1BURL                = "https://huggingface.co/LiquidAI/LFM2.5-8B-A1B/resolve/b9aebfcbe28b6cb374042f495d733037550ab146/README.md"
-	ifevalOfficialSourceID     = "ifeval-official"
+	ifevalOfficialSourceID     = ifevalOfficial
 	gemma431BHostedID          = "google/gemma-4-31B-it"
 	gemma431BModelKey          = "gemma-4-31b-it"
 	gemma431BModelName         = "Gemma 4 31B"
-	scoreConfidenceLow         = "low"
+	scoreConfidenceLow         = low1
 	estimatorMethodPrior       = "organization-balanced-prior"
 	estimatorMethodRidge       = "ridge"
 	estimatorMethodKNN         = "similarity-knn"
@@ -59,24 +76,24 @@ const (
 // card. It is intentionally checked again when loading cache snapshots because
 // the raw source bytes live in the sealed cache, not the JSON summary.
 var officialCardTargetScores = map[string]map[string]map[string]float64{
-	"official-lfm25-2.6b": {"lfm-2.5-2.6b": {
-		"aime": 51.87, "livecodebench-v6": 59.41, "ifbench": 59.17, "multi-if": 80.07, "ifstruct": 85.49, "bfcl-v4": 56.88, "toolsandbox": 77.83,
+	officialLfm25X2X6b: {"lfm-2.5-2.6b": {
+		aime1: 51.87, livecodebenchV6: 59.41, ifbench1: 59.17, multiIf: 80.07, ifstruct1: 85.49, bfclV4: 56.88, toolsandbox1: 77.83,
 	}},
-	"official-qwen3.8-27b": {"qwen3.8-27b": {
-		"swe-bench-pro": 61.7, "ifbench": 79.5, "gpqa": 89.2, "livecodebench-v6": 90.3,
+	officialQwen3X8X27b: {"qwen3.8-27b": {
+		sweBenchPro: 61.7, ifbench1: 79.5, gpqa1: 89.2, livecodebenchV6: 90.3,
 	}},
-	"official-gpt-oss-20b": {"gpt-oss-20b-high": {
-		"aime": 91.7, "gpqa": 71.5, "swe-bench-verified": 60.7, "tau-bench-retail": 54.8, "aider": 34.2,
+	officialGptOssX20b: {gptOssX20bHigh: {
+		aime1: 91.7, gpqa1: 71.5, sweBenchVerified: 60.7, tauBenchRetail: 54.8, aider1: 34.2,
 	}},
-	"official-lfm25-vl-3b": {"lfm-2.5-vl-3b": {
-		"toolsandbox": 59.5, "bfcl-v4": 32.5,
+	officialLfm25VlX3b: {"lfm-2.5-vl-3b": {
+		toolsandbox1: 59.5, bfclV4: 32.5,
 	}},
-	"official-gemma4": {
-		"gemma-4-31b-it":     {"mmlu-pro": 85.2, "aime": 89.2, "livecodebench-v6": 80.0, "gpqa": 84.3, "tau2-bench": 76.9},
-		"gemma-4-26b-a4b-it": {"mmlu-pro": 82.6, "aime": 88.3, "livecodebench-v6": 77.1, "gpqa": 82.3, "tau2-bench": 68.2},
+	officialGemma4: {
+		"gemma-4-31b-it": {mmluPro: 85.2, aime1: 89.2, livecodebenchV6: 80.0, gpqa1: 84.3, tau2Bench: 76.9},
+		gemmaX4X26bA4bIt: {mmluPro: 82.6, aime1: 88.3, livecodebenchV6: 77.1, gpqa1: 82.3, tau2Bench: 68.2},
 	},
 	officialLFM25A1BCacheName: {lfm25A1BModelKey: {
-		"aime": 42.53, ifevalOfficialSourceID: 91.84, "ifbench": 56.47, "multi-if": 79.93,
+		aime1: 42.53, ifevalOfficialSourceID: 91.84, ifbench1: 56.47, multiIf: 79.93,
 	}},
 }
 
@@ -142,7 +159,7 @@ func qwen38CardSpec() officialCardSpec {
 
 func gptOSSCardSpec() officialCardSpec {
 	return officialCardSpec{
-		sourceID: gptOSSSourceID, modelKey: "gpt-oss-20b-high", modelName: "gpt-oss-20b (high)", organization: organizationOpenAI, revision: gptOSSRevision, contentSHA: gptOSSContentSHA,
+		sourceID: gptOSSSourceID, modelKey: gptOssX20bHigh, modelName: "gpt-oss-20b (high)", organization: organizationOpenAI, revision: gptOSSRevision, contentSHA: gptOSSContentSHA,
 		url: func(opts Options) string { return opts.OfficialGPTOSSURL }, parse: parseGPTOSSCard, columns: 6,
 	}
 }
@@ -160,7 +177,7 @@ func gemma4CardSpec() officialCardSpec {
 		url: func(opts Options) string { return opts.OfficialGemmaURL }, parse: parseGemma4Card, columns: 6,
 		targets: []officialCardTarget{
 			{modelKey: gemma431BModelKey, modelName: gemma431BModelName, organization: organizationGoogle, column: 0},
-			{modelKey: "gemma-4-26b-a4b-it", modelName: "Gemma 4 26B A4B", organization: organizationGoogle, column: 1},
+			{modelKey: gemmaX4X26bA4bIt, modelName: "Gemma 4 26B A4B", organization: organizationGoogle, column: 1},
 		},
 	}
 }
@@ -173,11 +190,11 @@ func lfm25A1BCardSpec() officialCardSpec {
 }
 
 var officialCardDescriptors = [officialCardCount]officialCardDescriptor{
-	{cacheName: "official-lfm25-2.6b", spec: lfm25CardSpec(), fetcher: &fetchOfficialLFM25Source},
-	{cacheName: "official-qwen3.8-27b", spec: qwen38CardSpec(), fetcher: &fetchOfficialQwen38Source},
-	{cacheName: "official-gpt-oss-20b", spec: gptOSSCardSpec(), fetcher: &fetchOfficialGPTOSSSource},
-	{cacheName: "official-lfm25-vl-3b", spec: lfm25VLCardSpec(), fetcher: &fetchOfficialLFMVLSource},
-	{cacheName: "official-gemma4", spec: gemma4CardSpec(), fetcher: &fetchOfficialGemmaSource},
+	{cacheName: officialLfm25X2X6b, spec: lfm25CardSpec(), fetcher: &fetchOfficialLFM25Source},
+	{cacheName: officialQwen3X8X27b, spec: qwen38CardSpec(), fetcher: &fetchOfficialQwen38Source},
+	{cacheName: officialGptOssX20b, spec: gptOSSCardSpec(), fetcher: &fetchOfficialGPTOSSSource},
+	{cacheName: officialLfm25VlX3b, spec: lfm25VLCardSpec(), fetcher: &fetchOfficialLFMVLSource},
+	{cacheName: officialGemma4, spec: gemma4CardSpec(), fetcher: &fetchOfficialGemmaSource},
 	{cacheName: officialLFM25A1BCacheName, spec: lfm25A1BCardSpec()},
 }
 
@@ -244,7 +261,7 @@ func (spec officialCardSpec) cardTargets() []officialCardTarget {
 		return append([]officialCardTarget(nil), spec.targets...)
 	}
 	column := 0
-	if spec.modelKey == "gpt-oss-20b-high" {
+	if spec.modelKey == gptOssX20bHigh {
 		// Table 3 orders six model+reasoning-effort configurations as 120B
 		// low/medium/high then 20B low/medium/high.
 		column = 5
@@ -331,31 +348,31 @@ func pinnedOfficialCardURL(spec officialCardSpec) string {
 
 func parseLFM25Card(data []byte) (map[string][]float64, error) {
 	return parseMarkdownTable(data, map[string]string{
-		"AIME25": "aime", "LiveCodeBenchv6": "livecodebench-v6", "IFBench": "ifbench", "Multi-IF": "multi-if", "IFStruct": "ifstruct", "BFCLv4": "bfcl-v4", "ToolSandbox": "toolsandbox",
+		"AIME25": aime1, "LiveCodeBenchv6": livecodebenchV6, iFBench: ifbench1, "Multi-IF": multiIf, "IFStruct": ifstruct1, "BFCLv4": bfclV4, "ToolSandbox": toolsandbox1,
 	})
 }
 
 func parseQwen38Card(data []byte) (map[string][]float64, error) {
 	return parseHTMLTable(data, map[string]string{
-		"SWE-bench Pro": "swe-bench-pro", "IFBench": "ifbench", "GPQA Diamond": "gpqa", "LiveCodeBench v6": "livecodebench-v6",
+		"SWE-bench Pro": sweBenchPro, iFBench: ifbench1, "GPQA Diamond": gpqa1, "LiveCodeBench v6": livecodebenchV6,
 	})
 }
 
 func parseGPTOSSCard(data []byte) (map[string][]float64, error) {
 	return parseHTMLTable(data, map[string]string{
-		"AIME 2025 (no tools)": "aime", "GPQA Diamond (no tools)": "gpqa", "SWE-Bench Verified": "swe-bench-verified", "Tau-Bench Retail": "tau-bench-retail", "Aider Polyglot": "aider",
+		"AIME 2025 (no tools)": aime1, "GPQA Diamond (no tools)": gpqa1, "SWE-Bench Verified": sweBenchVerified, "Tau-Bench Retail": tauBenchRetail, "Aider Polyglot": aider1,
 	})
 }
 
 func parseLFM25VLCard(data []byte) (map[string][]float64, error) {
 	return parseMarkdownTable(data, map[string]string{
-		"ToolSandBox": "toolsandbox", "BFCLv4": "bfcl-v4",
+		"ToolSandBox": toolsandbox1, "BFCLv4": bfclV4,
 	})
 }
 
 func parseGemma4Card(data []byte) (map[string][]float64, error) {
 	return parseMarkdownTable(data, map[string]string{
-		"MMLU Pro": "mmlu-pro", "AIME 2026 no tools": "aime", "LiveCodeBench v6": "livecodebench-v6", "GPQA Diamond": "gpqa", "Tau2 (average over 3)": "tau2-bench",
+		"MMLU Pro": mmluPro, "AIME 2026 no tools": aime1, "LiveCodeBench v6": livecodebenchV6, "GPQA Diamond": gpqa1, "Tau2 (average over 3)": tau2Bench,
 	})
 }
 
@@ -363,7 +380,7 @@ func parseGemma4Card(data []byte) (map[string][]float64, error) {
 // value is consistent everywhere in the pinned card. BFCLv4 is deliberately
 // absent: this revision reports both 48.50 and 49.73 for the same target.
 func parseLFM25A1BCard(data []byte) (map[string][]float64, error) {
-	labels := map[string]string{"IFEval": ifevalOfficialSourceID, "IFBench": "ifbench", "Multi-IF": "multi-if", "AIME25": "aime"}
+	labels := map[string]string{"IFEval": ifevalOfficialSourceID, iFBench: ifbench1, "Multi-IF": multiIf, "AIME25": aime1}
 	rows := parseLFM25A1BRows(string(data), labels)
 	if _, err := checkedCardRows(rows, labels); err != nil {
 		return nil, err
@@ -424,7 +441,7 @@ func appendLFM25A1BRowScores(rows map[string][]float64, columns map[int]string, 
 func validateLFM25A1BRowCounts(rows map[string][]float64) error {
 	for benchmark, values := range rows {
 		minimum := 8
-		if benchmark == "aime" {
+		if benchmark == aime1 {
 			minimum = 6
 		}
 		if len(values) < minimum {

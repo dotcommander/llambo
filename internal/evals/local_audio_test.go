@@ -22,7 +22,7 @@ func TestOMLXAudioAdapterASRAndTTS(t *testing.T) {
 			if err != nil {
 				t.Error(err)
 			} else {
-				defer file.Close()
+				defer func() { _ = file.Close() }()
 				got, _ := io.ReadAll(file)
 				if string(got) != string(wav) {
 					t.Error("ASR did not send sealed WAV")

@@ -3,6 +3,7 @@ package evals
 import (
 	"bytes"
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"math"
 	"strconv"
@@ -31,7 +32,7 @@ func ParseEQBenchCreativeJS(data []byte) ([]EQBenchCreativeScore, error) {
 		return nil, fmt.Errorf("parse EQ-Bench Creative CSV: %w", err)
 	}
 	if len(records) < 2 {
-		return nil, fmt.Errorf("EQ-Bench Creative CSV has no scores")
+		return nil, errors.New("EQ-Bench Creative CSV has no scores")
 	}
 	headers := make(map[string]int, len(records[0]))
 	for index, header := range records[0] {
@@ -43,7 +44,7 @@ func ParseEQBenchCreativeJS(data []byte) ([]EQBenchCreativeScore, error) {
 	modelColumn, hasModel := headers["model_name"]
 	eloColumn, hasELO := headers["elo_score"]
 	if !hasModel || !hasELO {
-		return nil, fmt.Errorf("EQ-Bench Creative CSV requires model_name and elo_score")
+		return nil, errors.New("EQ-Bench Creative CSV requires model_name and elo_score")
 	}
 	organizationColumn, hasOrganization := headers["organization"]
 	result := make([]EQBenchCreativeScore, 0, len(records)-1)
@@ -74,7 +75,7 @@ func ParseEQBenchCreativeJS(data []byte) ([]EQBenchCreativeScore, error) {
 		result = append(result, EQBenchCreativeScore{Model: strings.TrimSpace(record[modelColumn]), Organization: organization, Result: BenchmarkResult{Score: &elo, Details: details}})
 	}
 	if len(result) == 0 {
-		return nil, fmt.Errorf("EQ-Bench Creative CSV has no scored models")
+		return nil, errors.New("EQ-Bench Creative CSV has no scored models")
 	}
 	return result, nil
 }
@@ -83,15 +84,15 @@ func eqBenchCreativeCSV(data []byte) ([]byte, error) {
 	const header = "model_name,elo_score"
 	start := bytes.Index(data, []byte(header))
 	if start < 0 {
-		return nil, fmt.Errorf("EQ-Bench Creative JS has no score CSV header")
+		return nil, errors.New("EQ-Bench Creative JS has no score CSV header")
 	}
 	open := bytes.LastIndexByte(data[:start], '`')
 	if open < 0 {
-		return nil, fmt.Errorf("EQ-Bench Creative CSV is not a template literal")
+		return nil, errors.New("EQ-Bench Creative CSV is not a template literal")
 	}
 	close := bytes.IndexByte(data[start:], '`')
 	if close < 0 {
-		return nil, fmt.Errorf("EQ-Bench Creative CSV template literal is unterminated")
+		return nil, errors.New("EQ-Bench Creative CSV template literal is unterminated")
 	}
 	return data[open+1 : start+close], nil
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -322,7 +323,7 @@ func TestAnthropicTypedStatusWinsOverText(t *testing.T) {
 	if status := anthropicStatusFromError(fmt.Errorf("wrapped: %w", gatewayStatusError{status: 403})); status != 403 {
 		t.Fatalf("typed status lost: %d", status)
 	}
-	if status := anthropicStatusFromError(fmt.Errorf("model identifier 429, output tokens 401")); status != 502 {
+	if status := anthropicStatusFromError(errors.New("model identifier 429, output tokens 401")); status != 502 {
 		t.Fatalf("arbitrary numbers classified as HTTP: %d", status)
 	}
 }

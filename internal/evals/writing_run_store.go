@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"syscall"
 )
@@ -40,7 +41,7 @@ func OpenWritingRunStore(dir string, manifest WritingRunManifest) (*WritingRunSt
 func openWritingRunStore(dir string, manifest WritingRunManifest, openLedger func(string, int, os.FileMode) (*os.File, error)) (*WritingRunStore, error) {
 	dir = filepath.Clean(dir)
 	if dir == "." || dir == "" || filepath.Dir(dir) == dir {
-		return nil, fmt.Errorf("writing run output directory must be explicit")
+		return nil, errors.New("writing run output directory must be explicit")
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("create writing run directory: %w", err)
@@ -60,7 +61,7 @@ func openWritingRunStore(dir string, manifest WritingRunManifest, openLedger fun
 			_ = lock.Close()
 		}
 	}()
-	manifestPath := filepath.Join(dir, "manifest.json")
+	manifestPath := filepath.Join(dir, manifestJSON)
 	if data, err := os.ReadFile(manifestPath); err == nil {
 		var existing WritingRunManifest
 		if err := json.Unmarshal(data, &existing); err != nil {
@@ -72,11 +73,10 @@ func openWritingRunStore(dir string, manifest WritingRunManifest, openLedger fun
 		if err := os.Chmod(manifestPath, 0o600); err != nil {
 			return nil, fmt.Errorf("secure writing manifest: %w", err)
 		}
-		manifest = existing
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, fmt.Errorf("read writing manifest: %w", err)
 	} else {
-		for _, name := range []string{"intents.jsonl", "generations.jsonl", "judgments.jsonl", "receipt.json", "report.json", "report.md", "quality-import.json"} {
+		for _, name := range []string{intentsJsonl, "generations.jsonl", "judgments.jsonl", "receipt.json", reportJSON1, reportMd, qualityImportJSON} {
 			if _, statErr := os.Stat(filepath.Join(dir, name)); statErr == nil {
 				return nil, fmt.Errorf("writing run directory has %s but no manifest; use a new --output-dir", name)
 			} else if !errors.Is(statErr, os.ErrNotExist) {
@@ -110,7 +110,7 @@ func openWritingRunStore(dir string, manifest WritingRunManifest, openLedger fun
 	if err := store.load(); err != nil {
 		return nil, err
 	}
-	store.intentFile, err = openLedger(filepath.Join(dir, "intents.jsonl"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	store.intentFile, err = openLedger(filepath.Join(dir, intentsJsonl), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("open dispatch intent ledger: %w", err)
 	}
@@ -148,13 +148,13 @@ func sameWritingRunIdentity(existing, requested WritingRunManifest) error {
 		return err
 	}
 	if !bytes.Equal(a, b) {
-		return fmt.Errorf("resume manifest identity mismatch; use a new --output-dir")
+		return errors.New("resume manifest identity mismatch; use a new --output-dir")
 	}
 	return nil
 }
 
 func (s *WritingRunStore) load() error {
-	if err := readWritingJSONL(filepath.Join(s.dir, "intents.jsonl"), func(data []byte) error {
+	if err := readWritingJSONL(filepath.Join(s.dir, intentsJsonl), func(data []byte) error {
 		var intent WritingDispatchIntent
 		if err := json.Unmarshal(data, &intent); err != nil {
 			return err
@@ -180,7 +180,7 @@ func (s *WritingRunStore) load() error {
 		if record.Attempt > s.generationAttempts[record.Key] {
 			s.generationAttempts[record.Key] = record.Attempt
 		}
-		if record.Status == "success" {
+		if record.Status == success1 {
 			s.generationSuccess[record.Key] = record
 		}
 		return nil
@@ -196,7 +196,7 @@ func (s *WritingRunStore) load() error {
 		if record.Attempt > s.judgmentAttempts[record.Key] {
 			s.judgmentAttempts[record.Key] = record.Attempt
 		}
-		if record.Status == "success" {
+		if record.Status == success1 {
 			s.judgmentSuccess[record.Key] = record
 		}
 		return nil
@@ -207,12 +207,12 @@ func (s *WritingRunStore) load() error {
 }
 
 func writingIntentKey(kind, key string, attempt int) string {
-	return kind + "\x00" + key + "\x00" + fmt.Sprintf("%d", attempt)
+	return kind + "\x00" + key + "\x00" + strconv.Itoa(attempt)
 }
 
 func validateWritingDispatchIntent(intent WritingDispatchIntent) error {
-	if (intent.Kind != "generation" && intent.Kind != "judgment") || intent.Key == "" || intent.Attempt < 1 || len(intent.CallSHA256) != 64 || intent.DispatchedAt.IsZero() {
-		return fmt.Errorf("invalid dispatch intent")
+	if (intent.Kind != generation1 && intent.Kind != judgment1) || intent.Key == "" || intent.Attempt < 1 || len(intent.CallSHA256) != 64 || intent.DispatchedAt.IsZero() {
+		return errors.New("invalid dispatch intent")
 	}
 	return nil
 }
@@ -223,7 +223,7 @@ func (s *WritingRunStore) AppendDispatchIntent(intent WritingDispatchIntent) err
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.intentFile == nil {
-		return fmt.Errorf("writing run store is closed")
+		return errors.New("writing run store is closed")
 	}
 	if err := validateWritingDispatchIntent(intent); err != nil {
 		return err
@@ -247,7 +247,7 @@ func (s *WritingRunStore) CheckNoInDoubtDispatch() error {
 	defer s.mu.Unlock()
 	for intentKey, intent := range s.intents {
 		switch intent.Kind {
-		case "generation":
+		case generation1:
 			found := false
 			for _, record := range s.generations {
 				if record.Key == intent.Key && record.Attempt == intent.Attempt {
@@ -258,7 +258,7 @@ func (s *WritingRunStore) CheckNoInDoubtDispatch() error {
 			if !found {
 				return fmt.Errorf("dispatch %s has no durable generation result; attempt is in doubt and will not be resumed", intentKey)
 			}
-		case "judgment":
+		case judgment1:
 			found := false
 			for _, record := range s.judgments {
 				if record.Key == intent.Key && record.Attempt == intent.Attempt {
@@ -282,7 +282,7 @@ func readWritingJSONL(path string, consume func([]byte) error) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 64<<10), maxWritingRunRecordSize)
 	line := 0
@@ -309,7 +309,7 @@ func (s *WritingRunStore) AppendGeneration(record WritingGenerationRecord) error
 	if record.Attempt > s.generationAttempts[record.Key] {
 		s.generationAttempts[record.Key] = record.Attempt
 	}
-	if record.Status == "success" {
+	if record.Status == success1 {
 		s.generationSuccess[record.Key] = record
 	}
 	return nil
@@ -325,7 +325,7 @@ func (s *WritingRunStore) AppendJudgment(record WritingJudgmentRecord) error {
 	if record.Attempt > s.judgmentAttempts[record.Key] {
 		s.judgmentAttempts[record.Key] = record.Attempt
 	}
-	if record.Status == "success" {
+	if record.Status == success1 {
 		s.judgmentSuccess[record.Key] = record
 	}
 	return nil

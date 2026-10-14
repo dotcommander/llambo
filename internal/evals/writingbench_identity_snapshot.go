@@ -6,6 +6,7 @@ import (
 	_ "embed"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
@@ -113,7 +114,7 @@ func WritingBenchSnapshotProvesNoCampaignMatches(snapshot WritingBenchIdentitySn
 
 func validateWritingBenchIdentitySnapshot(snapshot WritingBenchIdentitySnapshot) error {
 	if snapshot.SchemaVersion != "writingbench-identity-snapshot-v1" || snapshot.FetchedAt.IsZero() || !validLedgerURL(snapshot.Locator) || !validLedgerRevision(snapshot.Revision) || !validLedgerRevision(snapshot.CommitSHA) || !sourceLedgerHash.MatchString(snapshot.ContentSHA256) || !validLedgerText(snapshot.Methodology) || snapshot.RowCount != 54 || len(snapshot.Rows) != snapshot.RowCount {
-		return fmt.Errorf("WritingBench identity snapshot is incomplete or invalid")
+		return errors.New("WritingBench identity snapshot is incomplete or invalid")
 	}
 	keys, identities := make(map[string]struct{}, len(snapshot.Rows)), make(map[string]struct{}, len(snapshot.Rows))
 	for i, row := range snapshot.Rows {
@@ -129,7 +130,7 @@ func validateWritingBenchIdentitySnapshot(snapshot WritingBenchIdentitySnapshot)
 		}
 		keys[row.Key], identities[row.NormalizedIdentity] = struct{}{}, struct{}{}
 		if i > 0 && (snapshot.Rows[i-1].NormalizedIdentity > row.NormalizedIdentity || snapshot.Rows[i-1].NormalizedIdentity == row.NormalizedIdentity && snapshot.Rows[i-1].Key >= row.Key) {
-			return fmt.Errorf("WritingBench identity snapshot rows are not sorted")
+			return errors.New("WritingBench identity snapshot rows are not sorted")
 		}
 	}
 	return nil

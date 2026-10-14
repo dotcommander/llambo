@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -18,7 +19,7 @@ func (cliOpts *invocationOptions) runCanaryStart(cmd *commandIO, _ []string) err
 			return fmt.Errorf("provider %q is not enabled", cliOpts.canaryStartProvider)
 		}
 		if cliOpts.canaryStartTrafficPct <= 0 || cliOpts.canaryStartTrafficPct > 1.0 {
-			return fmt.Errorf("--traffic must be in (0.0, 1.0]")
+			return errors.New("--traffic must be in (0.0, 1.0]")
 		}
 		cfg.Routing.Canary = &providers.CanaryConfig{Provider: cliOpts.canaryStartProvider, TrafficPct: cliOpts.canaryStartTrafficPct, PromoteAfter: cliOpts.canaryStartPromoteAfter, Baseline: cliOpts.canaryStartBaseline, StartedAt: time.Now().UTC().Format(time.RFC3339)}
 		return nil
@@ -65,7 +66,7 @@ func runCanaryPromote(cmd *commandIO, _ []string) error {
 	var targetPriority int
 	if err := providers.UpdateGlobalConfig(cmd.Context(), func(cfg *providers.GlobalConfig) error {
 		if cfg.Routing.Canary == nil {
-			return fmt.Errorf("no canary configured")
+			return errors.New("no canary configured")
 		}
 		canaryName, targetPriority = providers.PromoteCanaryConfig(cfg, *cfg.Routing.Canary)
 		return nil
@@ -95,9 +96,4 @@ func runCanaryStop(cmd *commandIO, _ []string) error {
 
 	fmt.Fprintf(cmd.OutOrStdout(), "Canary routing stopped for %s\n", provider)
 	return nil
-}
-
-// Scalar helpers retain their signatures with independent default options.
-func runCanaryStart(cmd *commandIO, ignored1 []string) error {
-	return defaultInvocationOptions().runCanaryStart(cmd, ignored1)
 }

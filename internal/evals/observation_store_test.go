@@ -19,7 +19,7 @@ func TestRebuildObservationIndexAndDeterministicExport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	var count int
 	if err := db.QueryRow("SELECT count(*) FROM observations").Scan(&count); err != nil || count != 1 {
 		t.Fatalf("count=%d err=%v", count, err)

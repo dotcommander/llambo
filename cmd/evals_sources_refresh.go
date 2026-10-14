@@ -9,8 +9,12 @@ import (
 	"github.com/dotcommander/llambo/internal/evals"
 )
 
+// Repeated string literals consolidated by goconst.
+
+const offline1 = "offline"
+
 func (c *evalsSourcesRefreshCommand) Run(parent *evalsCommand, io *commandIO) error {
-	for _, name := range []string{"refresh", "refresh-official-model-cards", "live-omlx", "offline", "format", "output"} {
+	for _, name := range []string{refresh1, refreshOfficialModelCards, liveOMLX, offline1, format1, output1} {
 		if io.FlagChanged(name) {
 			return fmt.Errorf("--%s is not supported with evals sources refresh", name)
 		}
@@ -36,7 +40,7 @@ func (c *evalsSourcesRefreshCommand) Run(parent *evalsCommand, io *commandIO) er
 	}
 	for _, status := range statuses {
 		if status.Cache == "cached" {
-			refreshedAgo := "never"
+			refreshedAgo := never1
 			if !status.FetchedAt.IsZero() {
 				refreshedAgo = humanDuration(time.Since(status.FetchedAt)) + " ago"
 			}

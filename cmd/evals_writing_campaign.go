@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -28,7 +29,7 @@ type evalsWritingCampaignCommand struct {
 }
 
 func (c *evalsWritingCampaignCommand) Run(_ *evalsCommand, io *commandIO) error {
-	for _, name := range []string{"refresh", "refresh-official-model-cards", "format", "output", "export-prompts", "prompt-source", "prompt-limit", "discover-open-models", "discover-limit", "limit", "allow-partial", "rank-by", "offline", "live-omlx", "projections", "validation-receipts", "min-score", "max-output-price", "omlx-url", "cache-dir"} {
+	for _, name := range []string{refresh1, refreshOfficialModelCards, format1, output1, exportPrompts1, promptSource1, promptLimit1, discoverOpenModels, discoverLimit1, "limit", "allow-partial", rankBy, offline1, liveOMLX, "projections", validationReceipts, minScore, maxOutputPrice, omlxURL1, "cache-dir"} {
 		if io.FlagChanged(name) {
 			return fmt.Errorf("--%s is not supported with evals writing campaign", name)
 		}
@@ -60,7 +61,7 @@ func (c *evalsWritingCampaignCommand) Run(_ *evalsCommand, io *commandIO) error 
 			}
 		}
 		if len(active) == 0 {
-			return fmt.Errorf("locked writing roster has no enabled models")
+			return errors.New("locked writing roster has no enabled models")
 		}
 		roster.Models = active
 	}

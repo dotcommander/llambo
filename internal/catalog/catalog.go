@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -152,7 +153,7 @@ type PingState struct {
 func CatalogPath() (string, error) {
 	home := os.Getenv("HOME")
 	if home == "" {
-		return "", fmt.Errorf("HOME env var not set")
+		return "", errors.New("HOME env var not set")
 	}
 	return filepath.Join(home, ".config", "llambo", "catalog.json"), nil
 }

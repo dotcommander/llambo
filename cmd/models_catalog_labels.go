@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/dotcommander/llambo/internal/catalog"
@@ -53,7 +54,7 @@ func paramsLabel(m *catalog.ModelEntry) string {
 	if m == nil || len(m.Metadata.SupportedParameters) == 0 {
 		return "—"
 	}
-	return fmt.Sprintf("%d", len(m.Metadata.SupportedParameters))
+	return strconv.Itoa(len(m.Metadata.SupportedParameters))
 }
 
 func reasoningLabel(m *catalog.ModelEntry) string {
@@ -64,9 +65,9 @@ func reasoningLabel(m *catalog.ModelEntry) string {
 		return "mandatory"
 	}
 	if enabled, ok := m.Metadata.Reasoning["default_enabled"].(bool); ok && enabled {
-		return "default"
+		return defaultStr
 	}
-	return "yes"
+	return yes1
 }
 
 func qualityLabel(m *catalog.ModelEntry) string {
@@ -81,7 +82,7 @@ func compactCount(n int) string {
 	if n >= 1000 && n%1000 == 0 {
 		return fmt.Sprintf("%dK", n/1000)
 	}
-	return fmt.Sprintf("%d", n)
+	return strconv.Itoa(n)
 }
 
 func sortedCatalogProviders(cat *catalog.Catalog) []string {

@@ -13,10 +13,6 @@ func (cliOpts *invocationOptions) pingTimeoutForProvider(_ string) time.Duration
 	return time.Duration(cliOpts.pingTimeout) * time.Second
 }
 
-func pingProvider(name string, cfg providers.Config, prompt string, timeout time.Duration) PingResult {
-	return pingProviderContext(context.Background(), name, cfg, prompt, timeout)
-}
-
 func pingProviderContext(parent context.Context, name string, cfg providers.Config, prompt string, timeout time.Duration) PingResult {
 	result := PingResult{
 		Provider: name,
@@ -118,9 +114,4 @@ func tokenizeWords(text string) []string {
 	}
 
 	return words
-}
-
-// Scalar helpers retain their signatures with independent default options.
-func pingTimeoutForProvider(ignored0 string) time.Duration {
-	return defaultInvocationOptions().pingTimeoutForProvider(ignored0)
 }

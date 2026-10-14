@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -32,7 +33,7 @@ type JobStats struct {
 	IntegrityIssues []string
 }
 
-func (cliOpts *invocationOptions) runJobsRun(cmd *commandIO, args []string) error {
+func (cliOpts *invocationOptions) runJobsRun(cmd *commandIO) error {
 	out := cmd.OutOrStdout()
 	fmt.Fprintf(out, "%s Submitting batch job with %d requests\n",
 		styles.Info.Render(">>"),
@@ -73,7 +74,7 @@ func (cliOpts *invocationOptions) runJobsRun(cmd *commandIO, args []string) erro
 	return nil
 }
 
-func (cliOpts *invocationOptions) runJobsStress(cmd *commandIO, args []string) error {
+func (cliOpts *invocationOptions) runJobsStress(cmd *commandIO) error {
 	out := cmd.OutOrStdout()
 	fmt.Fprintf(out, "%s Starting stress test: %d jobs x %d requests = %d total requests\n",
 		styles.Info.Render(">>"),
@@ -94,7 +95,7 @@ func (cliOpts *invocationOptions) runJobsStress(cmd *commandIO, args []string) e
 		requests := make([]gateway.JobRequest, cliOpts.stressRequestsPerJob)
 		for j := 0; j < cliOpts.stressRequestsPerJob; j++ {
 			n := jobIndex*cliOpts.stressRequestsPerJob + j + 1
-			prompt := strings.ReplaceAll(cliOpts.stressPrompt, "{n}", fmt.Sprintf("%d", n))
+			prompt := strings.ReplaceAll(cliOpts.stressPrompt, "{n}", strconv.Itoa(n))
 			requests[j] = gateway.JobRequest{
 				ID:       fmt.Sprintf("job%d-req-%03d", jobIndex+1, j+1),
 				Messages: []gateway.Message{{Role: "user", Content: prompt}},
@@ -129,17 +130,13 @@ func buildRequests(count int, promptTemplate string) []gateway.JobRequest {
 	requests := make([]gateway.JobRequest, count)
 	for i := 0; i < count; i++ {
 		n := i + 1
-		prompt := strings.ReplaceAll(promptTemplate, "{n}", fmt.Sprintf("%d", n))
+		prompt := strings.ReplaceAll(promptTemplate, "{n}", strconv.Itoa(n))
 		requests[i] = gateway.JobRequest{
 			ID:       fmt.Sprintf("req-%03d", n),
 			Messages: []gateway.Message{{Role: "user", Content: prompt}},
 		}
 	}
 	return requests
-}
-
-func submitJob(serverURL string, requests []gateway.JobRequest, systemPrompt string) (*gateway.JobResponse, error) {
-	return submitJobContext(context.Background(), serverURL, requests, systemPrompt)
 }
 
 func submitJobContext(ctx context.Context, serverURL string, requests []gateway.JobRequest, systemPrompt string) (*gateway.JobResponse, error) {
@@ -162,7 +159,7 @@ func submitJobContext(ctx context.Context, serverURL string, requests []gateway.
 	if err != nil {
 		return nil, fmt.Errorf("post request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20)) // 1 MB cap on error bodies
@@ -177,16 +174,8 @@ func submitJobContext(ctx context.Context, serverURL string, requests []gateway.
 	return &jobResp, nil
 }
 
-func waitForJob(serverURL, jobID string, pollInterval, timeout time.Duration) (*gateway.JobResponse, error) {
-	return waitForJobContext(context.Background(), serverURL, jobID, pollInterval, timeout)
-}
-
 func waitForJobContext(ctx context.Context, serverURL, jobID string, pollInterval, timeout time.Duration) (*gateway.JobResponse, error) {
 	return waitForJobWithWriterContext(ctx, os.Stdout, serverURL, jobID, pollInterval, timeout)
-}
-
-func waitForJobWithWriter(out io.Writer, serverURL, jobID string, pollInterval, timeout time.Duration) (*gateway.JobResponse, error) {
-	return waitForJobWithWriterContext(context.Background(), out, serverURL, jobID, pollInterval, timeout)
 }
 
 func waitForJobWithWriterContext(ctx context.Context, out io.Writer, serverURL, jobID string, pollInterval, timeout time.Duration) (*gateway.JobResponse, error) {
@@ -213,10 +202,10 @@ func waitForJobWithWriterContext(ctx context.Context, out io.Writer, serverURL, 
 
 		var jobResp gateway.JobResponse
 		if err := json.NewDecoder(resp.Body).Decode(&jobResp); err != nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			return nil, fmt.Errorf("decode response: %w", err)
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		// Print progress if changed
 		if jobResp.Completed != lastCompleted {
@@ -225,7 +214,7 @@ func waitForJobWithWriterContext(ctx context.Context, out io.Writer, serverURL, 
 		}
 
 		// Check if done
-		if jobResp.Status == "completed" || jobResp.Status == "failed" || jobResp.Status == "cancelled" {
+		if jobResp.Status == "completed" || jobResp.Status == failed1 || jobResp.Status == "cancelled" {
 			return &jobResp, nil
 		}
 
@@ -239,10 +228,6 @@ func waitForJobWithWriterContext(ctx context.Context, out io.Writer, serverURL, 
 	}
 
 	return nil, fmt.Errorf("timeout after %v", timeout)
-}
-
-func printProgress(resp *gateway.JobResponse) {
-	printProgressTo(os.Stdout, resp)
 }
 
 func printProgressTo(out io.Writer, resp *gateway.JobResponse) {
@@ -260,13 +245,4 @@ func printProgressTo(out io.Writer, resp *gateway.JobResponse) {
 		resp.Completed,
 		resp.Failed,
 		pending)
-}
-
-// Scalar helpers retain their signatures with independent default options.
-func runJobsStress(cmd *commandIO, args []string) error {
-	return defaultInvocationOptions().runJobsStress(cmd, args)
-}
-
-func runJobsRun(cmd *commandIO, args []string) error {
-	return defaultInvocationOptions().runJobsRun(cmd, args)
 }

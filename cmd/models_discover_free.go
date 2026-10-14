@@ -43,7 +43,7 @@ func (cliOpts *invocationOptions) runModelsDiscoverFree(cmd *commandIO, args []s
 		return fmt.Errorf("load model costs: %w", err)
 	}
 	selected, err := catalog.ResolveModels(cat, cfg.Providers, costMap, catalog.SelectorOptions{
-		Selector:           "free",
+		Selector:           free1,
 		ProviderFilter:     cliOpts.discoverFreeProviders,
 		IncludeQuarantine:  cliOpts.discoverFreeIncludeQuarantine,
 		Blocklist:          providers.NewBlocklist(cfg.Blocklist),
@@ -116,9 +116,4 @@ func findCatalogEntry(cat *catalog.Catalog, providerName, modelID string) *catal
 		return nil
 	}
 	return pc.Models[modelID]
-}
-
-// Scalar helpers retain their signatures with independent default options.
-func runModelsDiscoverFree(cmd *commandIO, args []string) error {
-	return defaultInvocationOptions().runModelsDiscoverFree(cmd, args)
 }

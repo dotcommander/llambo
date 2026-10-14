@@ -2,9 +2,15 @@ package evals
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
+)
+
+// Repeated string literals consolidated by goconst.
+const (
+	task1 = "task"
 )
 
 // ProseScreenAdapter is a writer-candidate pre-screen. It intentionally does
@@ -32,13 +38,13 @@ func (a ProseScreenAdapter) ValidateRecord(record WritingPromptRecord) error {
 		return err
 	}
 	if sourcePrompt := writingJSONFieldString(object, "prompt"); sourcePrompt == "" || sourcePrompt != strings.TrimSpace(record.Prompt) {
-		return fmt.Errorf("normalized prompt does not match source_record")
+		return errors.New("normalized prompt does not match source_record")
 	}
-	if writingJSONFieldString(object, "task") == "" {
-		return fmt.Errorf("source_record has no public task")
+	if writingJSONFieldString(object, task1) == "" {
+		return errors.New("source_record has no public task")
 	}
 	if writingJSONFieldString(object, "reader_profile") == "" {
-		return fmt.Errorf("source_record has no public reader_profile")
+		return errors.New("source_record has no public reader_profile")
 	}
 	return nil
 }
@@ -47,12 +53,12 @@ func (ProseScreenAdapter) Criteria(WritingPromptRecord) ([]WritingCriterion, err
 }
 func proseScreenCriteria() []WritingCriterion {
 	return []WritingCriterion{
-		{ID: "depth_and_development", Description: "Mechanisms, implications, and examples are adequately developed."},
-		{ID: "structural_coherence", Description: "Sequence, headings, transitions, and paragraph progression are coherent."},
-		{ID: "prose_craft", Description: "Language is precise, clear, concrete, and economical."},
-		{ID: "anti_repetition", Description: "The candidate avoids repetition, recap padding, filler, and AI clichés."},
-		{ID: "target_reader_fit", Description: "The candidate serves the stated public target reader."},
-		{ID: "mechanics", Description: "Grammar, punctuation, formatting, and artifact-free presentation are sound."},
+		{ID: depthAndDevelopment, Description: "Mechanisms, implications, and examples are adequately developed."},
+		{ID: structuralCoherence, Description: "Sequence, headings, transitions, and paragraph progression are coherent."},
+		{ID: proseCraft, Description: "Language is precise, clear, concrete, and economical."},
+		{ID: antiRepetition, Description: "The candidate avoids repetition, recap padding, filler, and AI clichés."},
+		{ID: targetReaderFit, Description: "The candidate serves the stated public target reader."},
+		{ID: mechanics1, Description: "Grammar, punctuation, formatting, and artifact-free presentation are sound."},
 	}
 }
 
@@ -78,7 +84,7 @@ func (ProseScreenAdapter) JudgmentSettings(WritingRunManifest) (WritingGeneratio
 	if err := json.Unmarshal(projected, &schema); err != nil {
 		return WritingGenerationSettings{}, fmt.Errorf("parse projected prose screen schema: %w", err)
 	}
-	return WritingGenerationSettings{Temperature: 0, TemperatureSet: true, ExtraBody: map[string]any{"generationConfig": map[string]any{"responseMimeType": "application/json", "responseSchema": schema}}}, nil
+	return WritingGenerationSettings{Temperature: 0, TemperatureSet: true, ExtraBody: map[string]any{"generationConfig": map[string]any{"responseMimeType": applicationJSON, "responseSchema": schema}}}, nil
 }
 func (a ProseScreenAdapter) ParseJudgment(raw, response string, _ []WritingCriterion) ([]WritingCriterionJudgment, error) {
 	evaluation, err := DecodeProseEvaluation([]byte(raw), response)
@@ -96,7 +102,7 @@ func (a ProseScreenAdapter) input(record WritingPromptRecord, response string) (
 	if err != nil {
 		return ProseEvaluationInput{}, err
 	}
-	return ProseEvaluationInput{Task: writingJSONFieldString(object, "task"), ReaderProfile: writingJSONFieldString(object, "reader_profile"), Prose: response}, nil
+	return ProseEvaluationInput{Task: writingJSONFieldString(object, task1), ReaderProfile: writingJSONFieldString(object, "reader_profile"), Prose: response}, nil
 }
 
 func proseScreenSourceObject(raw json.RawMessage) (map[string]json.RawMessage, error) {
@@ -110,7 +116,7 @@ func proseScreenSourceObject(raw json.RawMessage) (map[string]json.RawMessage, e
 	unknown := make([]string, 0)
 	for key := range object {
 		switch key {
-		case "prompt", "task", "reader_profile":
+		case "prompt", task1, "reader_profile":
 		default:
 			unknown = append(unknown, key)
 		}
@@ -119,7 +125,7 @@ func proseScreenSourceObject(raw json.RawMessage) (map[string]json.RawMessage, e
 		sort.Strings(unknown)
 		return nil, fmt.Errorf("source_record contains non-public fields: %s", strings.Join(unknown, ", "))
 	}
-	for _, key := range []string{"prompt", "task", "reader_profile"} {
+	for _, key := range []string{"prompt", task1, "reader_profile"} {
 		rawValue, ok := object[key]
 		if !ok {
 			return nil, fmt.Errorf("source_record has no public %s", key)
@@ -153,17 +159,17 @@ func proseAggregateFromJudgments(results []WritingCriterionJudgment) (ProseEvalu
 		}
 		converted := ProseDimensionEvaluation{Score: result.Score, Applicable: result.Applicable, Rationale: result.Reason, Evidence: result.Evidence}
 		switch dimension.ID {
-		case "depth_and_development":
+		case depthAndDevelopment:
 			value.DepthAndDevelopment = converted
-		case "structural_coherence":
+		case structuralCoherence:
 			value.StructuralCoherence = converted
-		case "prose_craft":
+		case proseCraft:
 			value.ProseCraft = converted
-		case "anti_repetition":
+		case antiRepetition:
 			value.AntiRepetition = converted
-		case "target_reader_fit":
+		case targetReaderFit:
 			value.TargetReaderFit = converted
-		case "mechanics":
+		case mechanics1:
 			value.Mechanics = converted
 		}
 	}

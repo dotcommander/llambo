@@ -64,19 +64,6 @@ func usageOrEstimate(usage *LLMUsage, systemPrompt, userContent, content string)
 	}
 }
 
-func wormholeToolCalls(chunk whtypes.TextChunk) []ToolCall {
-	if len(chunk.ToolCalls) > 0 {
-		return convertWormholeToolCalls(chunk.ToolCalls)
-	}
-	if chunk.ToolCall != nil {
-		return convertWormholeToolCalls([]whtypes.ToolCall{*chunk.ToolCall})
-	}
-	if chunk.Delta != nil && len(chunk.Delta.ToolCalls) > 0 {
-		return convertWormholeToolCalls(chunk.Delta.ToolCalls)
-	}
-	return nil
-}
-
 func convertWormholeToolCalls(in []whtypes.ToolCall) []ToolCall {
 	if len(in) == 0 {
 		return nil
@@ -105,7 +92,7 @@ func convertWormholeToolCalls(in []whtypes.ToolCall) []ToolCall {
 	return out
 }
 
-func wrapProviderError(err error, cfg Config) *OpenAIError {
+func wrapProviderError(err error) *OpenAIError {
 	if err == nil {
 		return nil
 	}

@@ -58,7 +58,7 @@ func (s *Server) handleChatCompletionStream(w http.ResponseWriter, r *http.Reque
 			Created: created,
 			Choices: []Choice{{
 				Index: 0,
-				Delta: &Delta{Role: "assistant"},
+				Delta: &Delta{Role: assistant1},
 			}},
 		}); err != nil {
 			return err
@@ -78,7 +78,7 @@ func (s *Server) handleChatCompletionStream(w http.ResponseWriter, r *http.Reque
 		if chunk.ContentDelta != "" || len(chunk.ToolDeltas) > 0 {
 			tools := make([]OpenAIToolDelta, 0, len(chunk.ToolDeltas))
 			for _, td := range chunk.ToolDeltas {
-				tools = append(tools, OpenAIToolDelta{Index: td.Index, ID: td.ID, Type: "function", Function: OpenAIToolFunction{Name: td.Name, Arguments: td.ArgumentsDelta}})
+				tools = append(tools, OpenAIToolDelta{Index: td.Index, ID: td.ID, Type: function1, Function: OpenAIToolFunction{Name: td.Name, Arguments: td.ArgumentsDelta}})
 			}
 			if err := emitAssistantRole(); err != nil {
 				return err
@@ -134,7 +134,7 @@ func (s *Server) handleChatCompletionStream(w http.ResponseWriter, r *http.Reque
 		}
 		b, _ := json.Marshal(errPayload)
 		if _, writeErr := fmt.Fprintf(w, "data: %s\n\n", b); writeErr != nil {
-			slog.Debug("sse error chunk write failed", "error", writeErr)
+			slog.DebugContext(r.Context(), "sse error chunk write failed", errorStr, writeErr)
 		} else {
 			flusher.Flush()
 		}
@@ -198,7 +198,7 @@ func writeOpenAISSEChunk(w http.ResponseWriter, flusher http.Flusher, chunk Chat
 
 func writeOpenAISSEDone(w http.ResponseWriter, flusher http.Flusher) {
 	if _, err := fmt.Fprintf(w, "data: [DONE]\n\n"); err != nil {
-		slog.Debug("sse done write failed", "error", err)
+		slog.Debug("sse done write failed", errorStr, err)
 	}
 	flusher.Flush()
 }

@@ -12,6 +12,13 @@ import (
 	"github.com/dotcommander/llambo/providers"
 )
 
+// Repeated string literals consolidated by goconst.
+const (
+	accept1 = "Accept"
+)
+
+const applicationJSON = "application/json"
+
 type openaiCompatFetcher struct{}
 
 // OpenAIModelsRequestSpec describes the OpenAI-compatible model-list request.
@@ -30,7 +37,7 @@ func BuildOpenAIModelsRequestSpec(baseURL, apiKey string, extraHeaders map[strin
 		base = "/v1"
 	}
 
-	headers := map[string]string{"Accept": "application/json"}
+	headers := map[string]string{accept1: applicationJSON}
 	if apiKey != "" {
 		headers["Authorization"] = "Bearer " + apiKey
 	}
@@ -283,7 +290,7 @@ func (geminiFetcher) Fetch(ctx context.Context, cfg providers.Config) ([]Upstrea
 		requestURL += "?key=" + url.QueryEscape(key)
 	}
 
-	body, err := doGet(ctx, requestURL, map[string]string{"Accept": "application/json"})
+	body, err := doGet(ctx, requestURL, map[string]string{accept1: applicationJSON})
 	if err != nil {
 		return nil, endpoint, err
 	}
@@ -308,7 +315,7 @@ func (anthropicFetcher) Fetch(ctx context.Context, cfg providers.Config) ([]Upst
 	endpoint := base + "/v1/models"
 
 	headers := map[string]string{
-		"Accept":            "application/json",
+		accept1:             applicationJSON,
 		"anthropic-version": "2023-06-01",
 	}
 	if key != "" {

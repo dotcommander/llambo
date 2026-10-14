@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -23,7 +24,7 @@ type commandToolChatClient struct {
 func newCommandToolChatClient(errOut io.Writer, selector string, timeout time.Duration) (*commandToolChatClient, error) {
 	providerName, model, ok := strings.Cut(strings.TrimSpace(selector), "/")
 	if !ok || providerName == "" || model == "" {
-		return nil, fmt.Errorf("tool model must be exact provider/model")
+		return nil, errors.New("tool model must be exact provider/model")
 	}
 	global, err := providers.LoadGlobalConfig()
 	if err != nil {
@@ -98,7 +99,7 @@ func newTypedLocalExecutor(errOut io.Writer, suite evals.LocalSuite, model, refe
 		return evals.ASRLocalExecutor{Adapter: evals.OMLXAudioAdapter{BaseURL: baseURL, VerifiedServedModel: verified}}, func() {}, nil
 	case evals.LocalSuiteTTS:
 		if strings.TrimSpace(referenceModel) == "" || strings.TrimSpace(verifiedReference) == "" {
-			return nil, nil, fmt.Errorf("TTS execution requires --reference-model naming the completed exact ASR model")
+			return nil, nil, errors.New("TTS execution requires --reference-model naming the completed exact ASR model")
 		}
 		return evals.TTSLocalExecutor{
 			Adapter: evals.OMLXAudioAdapter{BaseURL: baseURL, VerifiedServedModel: verified},
@@ -109,14 +110,14 @@ func newTypedLocalExecutor(errOut io.Writer, suite evals.LocalSuite, model, refe
 		}, func() {}, nil
 	case evals.LocalSuiteAcceleration:
 		if !exclusiveApproved {
-			return nil, nil, fmt.Errorf("acceleration requires --exclusive-omlx-settings-approved after separate approval")
+			return nil, nil, errors.New("acceleration requires --exclusive-omlx-settings-approved after separate approval")
 		}
 		if strings.TrimSpace(settingsPath) == "" || !strings.HasPrefix(featureModel, "omlx/") || !strings.HasPrefix(referenceModel, "omlx/") {
-			return nil, nil, fmt.Errorf("acceleration requires --omlx-settings, exact --reference-model parent, and exact --feature-model helper")
+			return nil, nil, errors.New("acceleration requires --omlx-settings, exact --reference-model parent, and exact --feature-model helper")
 		}
 		parent := strings.TrimPrefix(referenceModel, "omlx/")
 		if model != referenceModel {
-			return nil, nil, fmt.Errorf("acceleration --model must equal the exact --reference-model parent")
+			return nil, nil, errors.New("acceleration --model must equal the exact --reference-model parent")
 		}
 		client := &http.Client{Timeout: timeout}
 		reload := func(runCtx context.Context) error { return postOMLXReload(runCtx, client, baseURL) }
@@ -140,7 +141,7 @@ func postOMLXReload(ctx context.Context, client *http.Client, baseURL string) er
 	if err != nil {
 		return err
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return fmt.Errorf("OMLX reload HTTP %d", response.StatusCode)
 	}

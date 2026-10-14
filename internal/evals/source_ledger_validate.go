@@ -1,11 +1,19 @@
 package evals
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"net/url"
 	"regexp"
 	"strings"
+)
+
+// Repeated string literals consolidated by goconst.
+const (
+	normalizedFrozen = "normalized-frozen"
+	present1         = "present"
+	sha256Verified   = "sha256-verified"
 )
 
 var (
@@ -18,7 +26,7 @@ var (
 
 func ValidateSourceResearchLedger(ledger *SourceResearchLedger, manifest coverageCampaignManifest) error {
 	if ledger == nil {
-		return fmt.Errorf("source research ledger is nil")
+		return errors.New("source research ledger is nil")
 	}
 	normalizeSourceResearchLedger(ledger)
 	return validateSourceResearchLedger(*ledger, &manifest)
@@ -29,10 +37,10 @@ func validateSourceResearchLedger(ledger SourceResearchLedger, manifest *coverag
 		return fmt.Errorf("source research ledger has unsupported schema version %q", ledger.SchemaVersion)
 	}
 	if ledger.TargetVersion == "" {
-		return fmt.Errorf("source research ledger has no target version")
+		return errors.New("source research ledger has no target version")
 	}
 	if len(ledger.Sources) == 0 || len(ledger.Claims) == 0 || len(ledger.Searches) == 0 || len(ledger.ScopedNulls) == 0 {
-		return fmt.Errorf("source research ledger requires sources, searches, and scoped-null receipts")
+		return errors.New("source research ledger requires sources, searches, and scoped-null receipts")
 	}
 	sourceIDs := make(map[string]struct{}, len(ledger.Sources))
 	for i, source := range ledger.Sources {
@@ -78,14 +86,14 @@ func validateSourceResearchLedger(ledger SourceResearchLedger, manifest *coverag
 
 func validateResearchSource(source ResearchSource) error {
 	if !validLedgerID(source.ID) || !validLedgerURL(source.Locator) || !validLedgerText(source.Owner) || !validLedgerText(source.Title) || !validLedgerRevision(source.Revision) || !sourceLedgerHash.MatchString(source.ContentSHA256) || !validLedgerText(source.Methodology) || source.AccessedAt.IsZero() || !validArtifactVerification(source.ArtifactKind, source.Verification, source.Status) || !validLedgerClass(source.SourceClass) || !validIndependence(source.Independence) || !validSourceStatus(source.Status) {
-		return fmt.Errorf("is incomplete or invalid")
+		return errors.New("is incomplete or invalid")
 	}
 	return nil
 }
 
 func validateResearchClaim(claim ResearchClaim, sourceIDs map[string]struct{}) error {
 	if !validLedgerID(claim.ID) || !validLedgerText(claim.Claim) || !validLedgerText(claim.ChangeCondition) || !finiteConfidence(claim.Confidence) {
-		return fmt.Errorf("is incomplete or invalid")
+		return errors.New("is incomplete or invalid")
 	}
 	if claim.Kind != "direct" && claim.Kind != "computed" && claim.Kind != "inferred" {
 		return fmt.Errorf("has invalid kind %q", claim.Kind)
@@ -97,14 +105,14 @@ func validateResearchClaim(claim ResearchClaim, sourceIDs map[string]struct{}) e
 		return err
 	}
 	if overlapStrings(claim.SupportingIDs, claim.ContradictingIDs) {
-		return fmt.Errorf("uses a source as both supporting and contradicting evidence")
+		return errors.New("uses a source as both supporting and contradicting evidence")
 	}
 	return nil
 }
 
 func validateResearchSearch(search ResearchSearch, sourceIDs map[string]struct{}) error {
 	if !validLedgerID(search.ID) || !validLedgerClass(search.SourceClass) || !validLedgerText(search.Query) || !validLedgerText(search.Result) || !validLedgerRevision(search.Revision) || !validLedgerText(search.NextSearchDiffers) {
-		return fmt.Errorf("is incomplete or invalid")
+		return errors.New("is incomplete or invalid")
 	}
 	return validateOptionalLedgerReferences(search.SourceIDs, sourceIDs, "search source")
 }
@@ -114,7 +122,7 @@ func validateScopedNullReceipts(receipts []ScopedNullReceipt, manifest coverageC
 	for _, target := range manifest.Targets {
 		for _, category := range categorySpecs {
 			cell := target.Cells[category.name]
-			if cell.Status != "present" {
+			if cell.Status != present1 {
 				want[coverageCellKey(target.Key, category.name)] = cell
 			}
 		}
@@ -136,7 +144,7 @@ func validateScopedNullReceipts(receipts []ScopedNullReceipt, manifest coverageC
 		if receipt.Status != cell.Status || receipt.Reason != cell.Reason || receipt.LastCheckedRevision != cell.LastCheckedRevision {
 			return fmt.Errorf("scoped-null receipt %s does not match frozen campaign status, reason, or revision", key)
 		}
-		if !validCoverageStatus(receipt.Status) || receipt.Status == "present" || !validLedgerText(receipt.NextCheck) {
+		if !validCoverageStatus(receipt.Status) || receipt.Status == present1 || !validLedgerText(receipt.NextCheck) {
 			return fmt.Errorf("scoped-null receipt %s is incomplete or invalid", key)
 		}
 		if !equalStringSlices(receipt.OrderedSourceClasses, orderedPrimaryClasses(receipt.Category)) {
@@ -196,17 +204,17 @@ func validIndependence(value string) bool {
 }
 
 func validSourceStatus(value string) bool {
-	return value == "frozen" || value == "normalized-frozen" || value == "superseded" || value == "unavailable"
+	return value == "frozen" || value == normalizedFrozen || value == "superseded" || value == unavailable1
 }
 
 func validArtifactVerification(kind, verification, status string) bool {
 	switch kind {
 	case "checked-in-raw-reference":
-		return verification == "sha256-verified" && status == "frozen"
+		return verification == sha256Verified && status == "frozen"
 	case "normalized-snapshot":
-		return verification == "metadata-only" && status == "normalized-frozen"
+		return verification == "metadata-only" && status == normalizedFrozen
 	case "normalized-identity-snapshot":
-		return verification == "sha256-verified" && status == "normalized-frozen"
+		return verification == sha256Verified && status == normalizedFrozen
 	default:
 		return false
 	}
@@ -227,8 +235,8 @@ func validateWritingBenchCampaignBlock(ledger SourceResearchLedger, manifest cov
 			break
 		}
 	}
-	if source == nil || source.ArtifactKind != "normalized-identity-snapshot" || source.Verification != "sha256-verified" || source.Status != "normalized-frozen" || source.Locator != snapshot.Locator || source.Revision != snapshot.Revision || source.ContentSHA256 != snapshot.ContentSHA256 || !strings.Contains(source.Methodology, snapshot.Methodology) {
-		return fmt.Errorf("WritingBench ledger source is not bound to the verified identity snapshot")
+	if source == nil || source.ArtifactKind != "normalized-identity-snapshot" || source.Verification != sha256Verified || source.Status != normalizedFrozen || source.Locator != snapshot.Locator || source.Revision != snapshot.Revision || source.ContentSHA256 != snapshot.ContentSHA256 || !strings.Contains(source.Methodology, snapshot.Methodology) {
+		return errors.New("WritingBench ledger source is not bound to the verified identity snapshot")
 	}
 	claimFound, searchFound := false, false
 	for _, claim := range ledger.Claims {
@@ -242,11 +250,11 @@ func validateWritingBenchCampaignBlock(ledger SourceResearchLedger, manifest cov
 		}
 	}
 	if !claimFound || !searchFound {
-		return fmt.Errorf("WritingBench no-match claim or search is not bound to the verified identity snapshot")
+		return errors.New("WritingBench no-match claim or search is not bound to the verified identity snapshot")
 	}
 	for _, target := range manifest.Targets {
 		for _, receipt := range ledger.ScopedNulls {
-			if receipt.ModelKey != target.Key || receipt.Category != "writing" {
+			if receipt.ModelKey != target.Key || receipt.Category != writing1 {
 				continue
 			}
 			if receipt.Status != "externally-blocked" || receipt.LastCheckedRevision != snapshot.Revision || !containsString(receipt.SourceIDs, source.ID) {

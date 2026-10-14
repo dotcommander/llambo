@@ -7,6 +7,42 @@ import (
 	"strings"
 )
 
+// Repeated string literals consolidated by goconst.
+const (
+	aaAgenticIndex         = "aa_agentic_index"
+	aaCodingIndex          = "aa_coding_index"
+	aggregatorSelfReported = "aggregator_self_reported"
+	aggregatorUnspecified  = "aggregator_unspecified"
+	aggregatorVerified     = "aggregator_verified"
+	firstParty             = "first_party"
+	helmet1                = "helmet"
+	ifstruct1              = "ifstruct"
+	llmGpqa                = "llm_gpqa"
+	llmInstructionGeneral  = "llm_instruction_general"
+	llmLongContextIndex    = "llm_long_context_index"
+	llmScicode             = "llm_scicode"
+	llmSweBenchPro         = "llm_swe_bench_pro"
+	longbenchV2            = "longbench-v2"
+	low1                   = "low"
+	lower1                 = "lower"
+	medium1                = "medium"
+	ruler1                 = "ruler"
+	scicode1               = "scicode"
+	sweBenchPro            = "swe-bench-pro"
+	toolsandbox1           = "toolsandbox"
+	writingbenchDomain     = "writingbench_domain"
+)
+
+const writingbenchRequirements = "writingbench_requirements"
+
+const writingbenchLength = "writingbench_length"
+
+const writingbenchFormat = "writingbench_format"
+
+const llmSweBenchVerified = "llm_swe_bench_verified"
+
+const llmMcpAtlas = "llm_mcp_atlas"
+
 type benchmarkEvidence struct {
 	Benchmark           string            `json:"benchmark"`
 	RawScore            *float64          `json:"raw_score,omitempty"`
@@ -102,18 +138,18 @@ func scoreCategory(model Model, spec categorySpec, reference FormulaReference) *
 
 func legacyCategorySpec(name string) categorySpec {
 	switch name {
-	case "agents":
-		return categorySpec{primaries: []benchmarkSpec{{"mcp-atlas", "llm_mcp_atlas", "llm_mcp_atlas", llmValue(func(v *LLMStatsMetrics) *float64 { return v.MCPAtlas })}, {"bfcl-v4", "bfcl_v4", "bfcl_v4", benchmarkValue("bfcl-v4")}, {"tau2-bench", "tau2_bench", "tau2_bench", benchmarkValue("tau2-bench")}, {"tau3-bench", "tau3_bench", "tau3_bench", benchmarkValue("tau3-bench")}, {"toolsandbox", "toolsandbox", "toolsandbox", benchmarkValue("toolsandbox")}}, checks: []benchmarkSpec{{"artificial-analysis-agentic-index", "aa_agentic_index", "aa_agentic_index", aaValue(func(v *ArtificialMetrics) *float64 { return v.Agentic })}}}
-	case "coding":
-		return categorySpec{primaries: []benchmarkSpec{{"swe-bench-verified", "llm_swe_bench_verified", "llm_swe_bench_verified", llmValue(func(v *LLMStatsMetrics) *float64 { return v.SWEVerified })}, {"swe-bench-pro", "llm_swe_bench_pro", "llm_swe_bench_pro", benchmarkValue("swe-bench-pro")}, {"scicode", "llm_scicode", "llm_scicode", benchmarkValue("scicode")}, {"livecodebench-v6", "livecodebench_v6", "livecodebench_v6", benchmarkValue("livecodebench-v6")}}, checks: []benchmarkSpec{{"swe-bench-pro", "llm_swe_bench_pro", "llm_swe_bench_pro", llmValue(func(v *LLMStatsMetrics) *float64 { return v.SWEPro })}, {"scicode", "llm_scicode", "llm_scicode", llmValue(func(v *LLMStatsMetrics) *float64 { return v.SciCode })}, {"artificial-analysis-coding-index", "aa_coding_index", "aa_coding_index", aaValue(func(v *ArtificialMetrics) *float64 { return v.Coding })}}}
-	case "instruction-following":
-		return categorySpec{primaries: []benchmarkSpec{{"instruction-following-index", "llm_instruction_general", "llm_instruction_general", llmIndexValue("instruction_following")}, {"ifeval-official", "ifeval_official", "ifeval_official", benchmarkValue("ifeval-official")}, {"ifbench", "ifbench", "ifbench", benchmarkValue("ifbench")}, {"multi-if", "multi_if", "multi_if", benchmarkValue("multi-if")}, {"ifstruct", "ifstruct", "ifstruct", benchmarkValue("ifstruct")}}, checks: []benchmarkSpec{{"writingbench-format", "writingbench_format", "writingbench_format", benchmarkDetailAverageValue("writingbench", "format_r", "format_c")}, {"writingbench-length", "writingbench_length", "writingbench_length", benchmarkDetailAverageValue("writingbench", "length_r", "length_c")}}}
-	case "writing":
-		return categorySpec{primaries: []benchmarkSpec{{"writingbench", "writingbench_overall", "writingbench_overall", benchmarkValue("writingbench")}}, checks: []benchmarkSpec{{"writingbench-domain", "writingbench_domain", "writingbench_domain", benchmarkDetailPrefixAverageValue("writingbench", "domain1_", "domain2_")}, {"writingbench-requirements", "writingbench_requirements", "writingbench_requirements", benchmarkDetailPrefixAverageValue("writingbench", "style_", "format_", "length_")}, {"eqbench-creative-v3", "eqbench_creative_v3", "eqbench_creative_v3", benchmarkValue("eqbench-creative-v3")}}}
-	case "reasoning":
-		return categorySpec{primaries: []benchmarkSpec{{"gpqa", "llm_gpqa", "llm_gpqa", llmValue(func(v *LLMStatsMetrics) *float64 { return v.GPQA })}, {"aime-versioned", "aime_versioned", "aime_versioned", benchmarkValue("aime-versioned")}}}
-	case "long-context":
-		return categorySpec{primaries: []benchmarkSpec{{"long-context-index", "llm_long_context_index", "llm_long_context_index", llmIndexValue("long_context")}, {"longbench-v2", "longbench_v2", "longbench_v2", benchmarkValue("longbench-v2")}, {"ruler", "ruler", "ruler", benchmarkValue("ruler")}, {"helmet", "helmet", "helmet", benchmarkValue("helmet")}}}
+	case agents1:
+		return categorySpec{primaries: []benchmarkSpec{{"mcp-atlas", llmMcpAtlas, llmMcpAtlas, llmValue(func(v *LLMStatsMetrics) *float64 { return v.MCPAtlas })}, {bfclV4, "bfcl_v4", "bfcl_v4", benchmarkValue(bfclV4)}, {tau2Bench, "tau2_bench", "tau2_bench", benchmarkValue(tau2Bench)}, {"tau3-bench", "tau3_bench", "tau3_bench", benchmarkValue("tau3-bench")}, {toolsandbox1, toolsandbox1, toolsandbox1, benchmarkValue(toolsandbox1)}}, checks: []benchmarkSpec{{"artificial-analysis-agentic-index", aaAgenticIndex, aaAgenticIndex, aaValue(func(v *ArtificialMetrics) *float64 { return v.Agentic })}}}
+	case coding1:
+		return categorySpec{primaries: []benchmarkSpec{{sweBenchVerified, llmSweBenchVerified, llmSweBenchVerified, llmValue(func(v *LLMStatsMetrics) *float64 { return v.SWEVerified })}, {sweBenchPro, llmSweBenchPro, llmSweBenchPro, benchmarkValue(sweBenchPro)}, {scicode1, llmScicode, llmScicode, benchmarkValue(scicode1)}, {livecodebenchV6, "livecodebench_v6", "livecodebench_v6", benchmarkValue(livecodebenchV6)}}, checks: []benchmarkSpec{{sweBenchPro, llmSweBenchPro, llmSweBenchPro, llmValue(func(v *LLMStatsMetrics) *float64 { return v.SWEPro })}, {scicode1, llmScicode, llmScicode, llmValue(func(v *LLMStatsMetrics) *float64 { return v.SciCode })}, {"artificial-analysis-coding-index", aaCodingIndex, aaCodingIndex, aaValue(func(v *ArtificialMetrics) *float64 { return v.Coding })}}}
+	case instructionFollowing:
+		return categorySpec{primaries: []benchmarkSpec{{"instruction-following-index", llmInstructionGeneral, llmInstructionGeneral, llmIndexValue("instruction_following")}, {ifevalOfficial, ifevalOfficialKey, ifevalOfficialKey, benchmarkValue(ifevalOfficial)}, {ifbench1, ifbench1, ifbench1, benchmarkValue(ifbench1)}, {multiIf, "multi_if", "multi_if", benchmarkValue(multiIf)}, {ifstruct1, ifstruct1, ifstruct1, benchmarkValue(ifstruct1)}}, checks: []benchmarkSpec{{"writingbench-format", writingbenchFormat, writingbenchFormat, benchmarkDetailAverageValue(writingbench1, "format_r", "format_c")}, {"writingbench-length", writingbenchLength, writingbenchLength, benchmarkDetailAverageValue(writingbench1, "length_r", "length_c")}}}
+	case writing1:
+		return categorySpec{primaries: []benchmarkSpec{{writingbench1, writingbenchOverall, writingbenchOverall, benchmarkValue(writingbench1)}}, checks: []benchmarkSpec{{"writingbench-domain", writingbenchDomain, writingbenchDomain, benchmarkDetailPrefixAverageValue(writingbench1, "domain1_", "domain2_")}, {"writingbench-requirements", writingbenchRequirements, writingbenchRequirements, benchmarkDetailPrefixAverageValue(writingbench1, "style_", "format_", "length_")}, {eqbenchCreativeV3, eqbenchCreativeV3Key, eqbenchCreativeV3Key, benchmarkValue(eqbenchCreativeV3)}}}
+	case reasoning1:
+		return categorySpec{primaries: []benchmarkSpec{{gpqa1, llmGpqa, llmGpqa, llmValue(func(v *LLMStatsMetrics) *float64 { return v.GPQA })}, {"aime-versioned", "aime_versioned", "aime_versioned", benchmarkValue("aime-versioned")}}}
+	case longContext:
+		return categorySpec{primaries: []benchmarkSpec{{"long-context-index", llmLongContextIndex, llmLongContextIndex, llmIndexValue("long_context")}, {longbenchV2, "longbench_v2", "longbench_v2", benchmarkValue(longbenchV2)}, {ruler1, ruler1, ruler1, benchmarkValue(ruler1)}, {helmet1, helmet1, helmet1, benchmarkValue(helmet1)}}}
 	default:
 		return categorySpec{}
 	}
@@ -150,7 +186,7 @@ func scoreCategoryV3WithContext(model Model, spec categorySpec, models []Model, 
 			if len(cohort) < 5 {
 				continue
 			}
-			higher := result.Direction != "lower"
+			higher := result.Direction != lower1
 			percentile := empiricalPercentile(cohort, *result.Score, higher)
 			trust := evidenceMultiplier(result.EvidenceGrade) * identityMultiplier(result.Identity)
 			evidence := evidenceForResult(benchmark, family.name, 1, result, percentile, len(cohort))
@@ -180,37 +216,21 @@ func scoreCategoryV3WithContext(model Model, spec categorySpec, models []Model, 
 	// Evidence grade, partial family coverage, and projection identity describe
 	// uncertainty separately; they no longer erase the measured difference.
 	score := mean(percentiles)
-	confidence := "low"
+	confidence := low1
 	if !stale && trustedCoverage >= .75 {
-		confidence = "high"
+		confidence = high1
 	} else if !stale && trustedCoverage >= .50 {
-		confidence = "medium"
+		confidence = medium1
 	}
 	sort.Strings(conflicts)
 	return &LlamboScore{Score: score, Coverage: coverage, TrustedCoverage: trustedCoverage, Contributions: contributions, Primary: &primary, Confidence: confidence, Families: represented, Stale: stale, Conflicts: conflicts}
-}
-
-func eligibleCohort(models []Model, benchmark string) []float64 {
-	return eligibleCohortRevision(models, benchmark, "")
-}
-
-func eligibleCohortRevision(models []Model, benchmark, version string) []float64 {
-	values := make([]float64, 0, len(models))
-	for _, model := range models {
-		result, ok := model.Benchmarks[benchmark]
-		if ok && eligibleCanonicalResult(result) && (version == "" || result.Version == version) {
-			values = append(values, *result.Score)
-		}
-	}
-	sort.Float64s(values)
-	return values
 }
 
 func eligibleCanonicalResult(result BenchmarkResult) bool {
 	if result.Score == nil || !finite(*result.Score) || result.Identity != IdentityMatchExact || !validSHA256(result.ContentSHA) || strings.TrimSpace(result.Version) == "" || strings.TrimSpace(result.Method) == "" {
 		return false
 	}
-	if result.Direction != "" && result.Direction != "higher" && result.Direction != "lower" {
+	if result.Direction != "" && result.Direction != higher1 && result.Direction != lower1 {
 		return false
 	}
 	return evidenceMultiplier(result.EvidenceGrade) > 0 && registeredSourceEligible(result)
@@ -225,17 +245,17 @@ func identityMultiplier(identity IdentityMatch) float64 {
 
 func evidenceMultiplier(grade string) float64 {
 	switch grade {
-	case "owner", "benchmark_owner":
+	case owner1, "benchmark_owner":
 		return 1
-	case "first_party", "official_submission":
+	case firstParty, "official_submission":
 		return .90
 	case "official", "official_judgment":
 		return .85
-	case "aggregator_verified":
+	case aggregatorVerified:
 		return .80
-	case "aggregator_self_reported":
+	case aggregatorSelfReported:
 		return .50
-	case "", "aggregator_unspecified", "sealed_direct":
+	case "", aggregatorUnspecified, "sealed_direct":
 		return .35
 	default:
 		return 0
@@ -299,7 +319,7 @@ func evidenceFor(model Model, spec benchmarkSpec, raw *float64, percentile float
 	evidence := benchmarkEvidence{Benchmark: spec.benchmark, RawScore: cloneFloat64(raw), Percentile: scoreFloat64Ptr(percentile), ReferencePopulation: referencePopulation}
 	result, ok := model.Benchmarks[spec.benchmark]
 	if !ok && strings.HasPrefix(spec.benchmark, "writingbench-") {
-		result, ok = model.Benchmarks["writingbench"]
+		result, ok = model.Benchmarks[writingbench1]
 	}
 	if ok {
 		evidence.SourceVersion, evidence.URL, evidence.CommitSHA, evidence.ContentSHA, evidence.Methodology, evidence.JudgeVersion = result.Version, result.URL, result.CommitSHA, result.ContentSHA, result.Method, result.Judge
@@ -313,21 +333,21 @@ func scoreFloat64Ptr(value float64) *float64 { return &value }
 
 func categoryConfidence(identity IdentityMatch, stale bool, agreement *float64, checks int) string {
 	if stale {
-		return "low"
+		return low1
 	}
 	if identity == IdentityMatchProjected || identity == IdentityMatchAmbiguous || identity == IdentityMatchUnmatched {
-		return "low"
+		return low1
 	}
 	if agreement != nil && checks >= 2 && *agreement >= 90 && identity == IdentityMatchExact {
-		return "high"
+		return high1
 	}
 	if agreement != nil && *agreement >= 80 {
-		return "medium"
+		return medium1
 	}
 	if checks == 0 && (identity == IdentityMatchExact || identity == IdentityMatchNormalized) {
-		return "medium"
+		return medium1
 	}
-	return "low"
+	return low1
 }
 
 func operationalScore(model Model, dimension string, reference FormulaReference) *ExternalScore {
@@ -345,7 +365,7 @@ func operationalScore(model Model, dimension string, reference FormulaReference)
 	if len(values) == 0 {
 		return nil
 	}
-	return &ExternalScore{Score: mean(values), RawScore: mean(values), Low: mean(values), High: mean(values), Coverage: 1, Confidence: "medium", Signals: len(values)}
+	return &ExternalScore{Score: mean(values), RawScore: mean(values), Low: mean(values), High: mean(values), Coverage: 1, Confidence: medium1, Signals: len(values)}
 }
 
 func empiricalPercentile(sortedValues []float64, value float64, higher bool) float64 {

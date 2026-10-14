@@ -3,7 +3,7 @@ package evals
 import (
 	"context"
 	"crypto/sha256"
-	"fmt"
+	"encoding/hex"
 	"time"
 )
 
@@ -26,15 +26,15 @@ func fetchEQBenchCreative(ctx context.Context, opts Options) (sourceSnapshot, er
 	models := make([]Model, 0, len(rows))
 	for _, row := range rows {
 		result := row.Result
-		result.URL, result.Version, result.CommitSHA, result.ContentSHA = opts.EQBenchCreativeURL, EQBenchCreativeCommit, EQBenchCreativeCommit, fmt.Sprintf("%x", sum)
-		result.SourceID = "eqbench-creative-v3"
+		result.URL, result.Version, result.CommitSHA, result.ContentSHA = opts.EQBenchCreativeURL, EQBenchCreativeCommit, EQBenchCreativeCommit, hex.EncodeToString(sum[:])
+		result.SourceID = eqbenchCreativeV3
 		result.SourceClass = string(SourceOwnerResult)
-		result.EvidenceGrade = "owner"
+		result.EvidenceGrade = owner1
 		result.SourceRevision = EQBenchCreativeCommit
 		result.Method = "EQ-Bench Creative v3 elo_score from pinned creative_writing.js"
 		result.Judge = "Claude Sonnet 4.6"
 		result.FetchedAt = fetchedAt
-		models = append(models, Model{Key: "eqbench-creative-v3:" + canonicalKey(row.Model), Name: row.Model, Organization: row.Organization, Benchmarks: map[string]BenchmarkResult{"eqbench-creative-v3": result}})
+		models = append(models, Model{Key: "eqbench-creative-v3:" + canonicalKey(row.Model), Name: row.Model, Organization: row.Organization, Benchmarks: map[string]BenchmarkResult{eqbenchCreativeV3: result}})
 	}
-	return sourceSnapshot{FetchedAt: fetchedAt, Models: models, URL: opts.EQBenchCreativeURL, Version: EQBenchCreativeCommit, CommitSHA: EQBenchCreativeCommit, ContentSHA: fmt.Sprintf("%x", sum), Method: "EQ-Bench Creative v3 elo_score from pinned creative_writing.js"}, nil
+	return sourceSnapshot{FetchedAt: fetchedAt, Models: models, URL: opts.EQBenchCreativeURL, Version: EQBenchCreativeCommit, CommitSHA: EQBenchCreativeCommit, ContentSHA: hex.EncodeToString(sum[:]), Method: "EQ-Bench Creative v3 elo_score from pinned creative_writing.js"}, nil
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -53,7 +54,7 @@ type validationReceiptRecord struct {
 // sealed local receipts. It never changes scores, row order, or filtering.
 func ApplyValidationReceipts(report *Report, path string) error {
 	if report == nil {
-		return fmt.Errorf("validation report is nil")
+		return errors.New("validation report is nil")
 	}
 	document, err := readValidationReceipts(path)
 	if err != nil {

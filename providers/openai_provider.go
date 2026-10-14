@@ -89,7 +89,7 @@ func (p *OpenAIProvider) SetFailoverCallback(callback FailoverCallback) {
 }
 
 func (p *OpenAIProvider) Name() string {
-	return "openai"
+	return openai1
 }
 
 func (p *OpenAIProvider) MaxTokens() int {
@@ -305,11 +305,6 @@ func (p *OpenAIProvider) chatStreamRequest(ctx context.Context, backendName stri
 	result.clientKey = lease.keyForRotation()
 	result.clientGeneration = lease.generationForRotation()
 	return result, emitted, reqErr
-}
-
-func (p *OpenAIProvider) rotateKeyForResult(backend string, result chatRequestResult) bool {
-	rotated, _ := p.rotateKeyWithErrorForResult(backend, result)
-	return rotated
 }
 
 func (p *OpenAIProvider) rotateKeyWithErrorForResult(backend string, result chatRequestResult) (bool, error) {

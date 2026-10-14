@@ -1,13 +1,13 @@
 package evals
 
 import (
-	"fmt"
+	"errors"
 	"strings"
 )
 
 type EQCreativeLocalRubricAdapter struct{}
 
-func (EQCreativeLocalRubricAdapter) ID() string      { return "eqbench-creative-v3" }
+func (EQCreativeLocalRubricAdapter) ID() string      { return eqbenchCreativeV3 }
 func (EQCreativeLocalRubricAdapter) Version() string { return "eqbench-creative-v3-local-rubric-v1" }
 func (EQCreativeLocalRubricAdapter) ScoreIdentity() string {
 	return "eqbench-creative-v3/local-rubric"
@@ -20,7 +20,7 @@ func (EQCreativeLocalRubricAdapter) Iterations(requested int) (int, error) {
 		return 3, nil
 	}
 	if requested < 1 || requested > 3 {
-		return 0, fmt.Errorf("EQ-Bench Creative v3 --iterations must be between 1 and 3")
+		return 0, errors.New("EQ-Bench Creative v3 --iterations must be between 1 and 3")
 	}
 	return requested, nil
 }
@@ -32,10 +32,10 @@ func (a EQCreativeLocalRubricAdapter) ValidateRecord(record WritingPromptRecord)
 	}
 	sourcePrompt := writingJSONFieldString(object, "writing_prompt", "prompt", "query")
 	if sourcePrompt == "" {
-		return fmt.Errorf("source_record has no writing prompt")
+		return errors.New("source_record has no writing prompt")
 	}
 	if sourcePrompt != strings.TrimSpace(record.Prompt) {
-		return fmt.Errorf("normalized prompt does not match source_record")
+		return errors.New("normalized prompt does not match source_record")
 	}
 	return nil
 }

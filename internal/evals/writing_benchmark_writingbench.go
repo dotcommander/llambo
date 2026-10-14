@@ -2,6 +2,7 @@ package evals
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -9,14 +10,14 @@ import (
 
 type WritingBenchAdapter struct{}
 
-func (WritingBenchAdapter) ID() string            { return "writingbench" }
+func (WritingBenchAdapter) ID() string            { return writingbench1 }
 func (WritingBenchAdapter) Version() string       { return "writingbench-checklist-v2" }
 func (WritingBenchAdapter) ScoreIdentity() string { return "writingbench/local-checklist" }
 func (WritingBenchAdapter) GenerationSettings() WritingGenerationSettings {
 	return WritingGenerationSettings{}
 }
 func (WritingBenchAdapter) Iterations(requested int) (int, error) {
-	return singleWritingIteration("WritingBench", requested)
+	return singleWritingIteration(writingBench1, requested)
 }
 
 func (a WritingBenchAdapter) ValidateRecord(record WritingPromptRecord) error {
@@ -25,7 +26,7 @@ func (a WritingBenchAdapter) ValidateRecord(record WritingPromptRecord) error {
 		return err
 	}
 	if sourcePrompt := writingJSONFieldString(object, "prompt", "query", "question", "instruction", "input"); sourcePrompt == "" || sourcePrompt != strings.TrimSpace(record.Prompt) {
-		return fmt.Errorf("normalized prompt does not match source_record")
+		return errors.New("normalized prompt does not match source_record")
 	}
 	criteria, err := a.Criteria(record)
 	if err != nil {
@@ -44,7 +45,7 @@ func (WritingBenchAdapter) Criteria(record WritingPromptRecord) ([]WritingCriter
 	}
 	raw, ok := object["checklist"]
 	if !ok {
-		return nil, fmt.Errorf("source_record has no checklist")
+		return nil, errors.New("source_record has no checklist")
 	}
 	var items []json.RawMessage
 	if err := json.Unmarshal(raw, &items); err != nil {

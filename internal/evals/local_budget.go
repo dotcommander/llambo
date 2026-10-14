@@ -2,6 +2,7 @@ package evals
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -57,7 +58,7 @@ type CampaignReservationOwner struct {
 // reservation without allowing a duplicate concurrent authorization.
 func NewCampaignReservationOwner(runID, runIdentity, outputDir string) (CampaignReservationOwner, error) {
 	if strings.TrimSpace(outputDir) == "" {
-		return CampaignReservationOwner{}, fmt.Errorf("output directory is required")
+		return CampaignReservationOwner{}, errors.New("output directory is required")
 	}
 	abs, err := filepath.Abs(outputDir)
 	if err != nil {
@@ -74,7 +75,7 @@ func NewCampaignReservationOwner(runID, runIdentity, outputDir string) (Campaign
 
 func (o CampaignReservationOwner) validate() error {
 	if strings.TrimSpace(o.RunID) == "" || strings.TrimSpace(o.RunIdentity) == "" || strings.TrimSpace(o.AttemptID) == "" || strings.TrimSpace(o.OutputDir) == "" {
-		return fmt.Errorf("run id, run identity, attempt id, and output directory are required")
+		return errors.New("run id, run identity, attempt id, and output directory are required")
 	}
 	return nil
 }
@@ -96,7 +97,7 @@ type CampaignLedger struct {
 
 func OpenCampaignLedger(path string, maxCost float64) (*CampaignLedger, error) {
 	if strings.TrimSpace(path) == "" {
-		return nil, fmt.Errorf("campaign ledger path is required")
+		return nil, errors.New("campaign ledger path is required")
 	}
 	l := &CampaignLedger{path: path}
 	unlock, err := lockCampaignPath(path)
@@ -107,7 +108,7 @@ func OpenCampaignLedger(path string, maxCost float64) (*CampaignLedger, error) {
 	b, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		if !validCost(maxCost) || maxCost <= 0 {
-			return nil, fmt.Errorf("positive campaign maximum is required")
+			return nil, errors.New("positive campaign maximum is required")
 		}
 		l.Budget = CampaignBudget{SchemaVersion: 2, MaxCostUSD: maxCost}
 		if err := l.save(); err != nil {
@@ -122,10 +123,10 @@ func OpenCampaignLedger(path string, maxCost float64) (*CampaignLedger, error) {
 		return nil, fmt.Errorf("parse campaign ledger: %w", err)
 	}
 	if !validCost(l.Budget.MaxCostUSD) || l.Budget.MaxCostUSD <= 0 {
-		return nil, fmt.Errorf("invalid campaign budget")
+		return nil, errors.New("invalid campaign budget")
 	}
 	if maxCost > 0 && math.Abs(maxCost-l.Budget.MaxCostUSD) > 1e-12 {
-		return nil, fmt.Errorf("campaign maximum differs from existing ledger")
+		return nil, errors.New("campaign maximum differs from existing ledger")
 	}
 	return l, nil
 }
@@ -153,7 +154,7 @@ func (l *CampaignLedger) Reserve(owner CampaignReservationOwner, worstCase, maxR
 	}
 	owner.OutputDir = filepath.Clean(owner.OutputDir)
 	if !validCost(worstCase) || worstCase < 0 || !validCost(maxRun) || maxRun <= 0 {
-		return CampaignAttempt{}, fmt.Errorf("finite non-negative worst-case and positive run budget are required")
+		return CampaignAttempt{}, errors.New("finite non-negative worst-case and positive run budget are required")
 	}
 	if worstCase > maxRun+1e-12 {
 		return CampaignAttempt{}, fmt.Errorf("worst-case run estimate $%.6f exceeds --max-run-cost $%.6f", worstCase, maxRun)
@@ -161,7 +162,7 @@ func (l *CampaignLedger) Reserve(owner CampaignReservationOwner, worstCase, maxR
 	for _, attempt := range l.Budget.Attempts {
 		if owner.matches(attempt) {
 			if attempt.WorstCaseCostUSD != worstCase {
-				return CampaignAttempt{}, fmt.Errorf("recovered reservation worst-case differs from recorded attempt")
+				return CampaignAttempt{}, errors.New("recovered reservation worst-case differs from recorded attempt")
 			}
 			if campaignAttemptHoldsReservation(attempt) {
 				return attempt, nil
@@ -214,10 +215,10 @@ func (l *CampaignLedger) RecordOwned(owner CampaignReservationOwner, observed *f
 	}
 	owner.OutputDir = filepath.Clean(owner.OutputDir)
 	if strings.TrimSpace(status) == "" {
-		return fmt.Errorf("attempt status is required")
+		return errors.New("attempt status is required")
 	}
 	if observed != nil && (!validCost(*observed) || *observed < 0) {
-		return fmt.Errorf("observed cost must be finite and non-negative")
+		return errors.New("observed cost must be finite and non-negative")
 	}
 	for i := range l.Budget.Attempts {
 		attempt := &l.Budget.Attempts[i]

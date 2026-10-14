@@ -3,7 +3,7 @@ package evals
 import (
 	"context"
 	"crypto/sha256"
-	"fmt"
+	"encoding/hex"
 	"strings"
 	"time"
 )
@@ -32,10 +32,10 @@ func fetchWritingBench(ctx context.Context, opts Options) (sourceSnapshot, error
 	models := make([]Model, 0, len(rows))
 	for _, row := range rows {
 		result := row.Result
-		result.URL, result.Version, result.CommitSHA, result.ContentSHA = opts.WritingBenchURL, version, commit, fmt.Sprintf("%x", sum)
-		result.SourceID = "writingbench"
+		result.URL, result.Version, result.CommitSHA, result.ContentSHA = opts.WritingBenchURL, version, commit, hex.EncodeToString(sum[:])
+		result.SourceID = writingbench1
 		result.SourceClass = string(SourceOwnerResult)
-		result.EvidenceGrade = "owner"
+		result.EvidenceGrade = owner1
 		result.SourceRevision = commit
 		if result.SourceRevision == "" {
 			result.SourceRevision = version
@@ -43,7 +43,7 @@ func fetchWritingBench(ctx context.Context, opts Options) (sourceSnapshot, error
 		result.Method = "WritingBench official score.xlsx Overall"
 		result.Judge = "Claude-Sonnet-4-5"
 		result.FetchedAt = fetchedAt
-		models = append(models, Model{Key: "writingbench:" + canonicalKey(row.Model), Name: row.Model, Organization: row.Organization, Benchmarks: map[string]BenchmarkResult{"writingbench": result}})
+		models = append(models, Model{Key: "writingbench:" + canonicalKey(row.Model), Name: row.Model, Organization: row.Organization, Benchmarks: map[string]BenchmarkResult{writingbench1: result}})
 	}
-	return sourceSnapshot{FetchedAt: fetchedAt, Models: models, URL: opts.WritingBenchURL, Version: version, CommitSHA: commit, ContentSHA: fmt.Sprintf("%x", sum), Method: "WritingBench official score.xlsx Overall"}, nil
+	return sourceSnapshot{FetchedAt: fetchedAt, Models: models, URL: opts.WritingBenchURL, Version: version, CommitSHA: commit, ContentSHA: hex.EncodeToString(sum[:]), Method: "WritingBench official score.xlsx Overall"}, nil
 }

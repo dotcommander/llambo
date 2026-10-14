@@ -13,6 +13,16 @@ import (
 	"unicode/utf8"
 )
 
+// Repeated string literals consolidated by goconst.
+const (
+	antiRepetition      = "anti_repetition"
+	depthAndDevelopment = "depth_and_development"
+	mechanics1          = "mechanics"
+	proseCraft          = "prose_craft"
+	structuralCoherence = "structural_coherence"
+	targetReaderFit     = "target_reader_fit"
+)
+
 const (
 	ProseEvaluationPromptVersion = "prose-evaluation-v2"
 	ProseEvaluationSchemaName    = "ProseEvaluation"
@@ -88,7 +98,7 @@ func ProseEvaluationSchema() json.RawMessage {
 }
 
 func (input ProseEvaluationInput) Validate() error {
-	for _, field := range []struct{ name, value string }{{"task", input.Task}, {"reader profile", input.ReaderProfile}, {"prose", input.Prose}} {
+	for _, field := range []struct{ name, value string }{{task1, input.Task}, {"reader profile", input.ReaderProfile}, {"prose", input.Prose}} {
 		if strings.TrimSpace(field.value) == "" {
 			return fmt.Errorf("prose %s must contain non-whitespace text", field.name)
 		}
@@ -100,7 +110,7 @@ func NewProseJudgeRequest(input ProseEvaluationInput) (ProseJudgeRequest, error)
 		return ProseJudgeRequest{}, err
 	}
 	if !json.Valid(proseEvaluationSchema) {
-		return ProseJudgeRequest{}, fmt.Errorf("embedded prose evaluation schema is invalid JSON")
+		return ProseJudgeRequest{}, errors.New("embedded prose evaluation schema is invalid JSON")
 	}
 	payload, err := json.Marshal(input)
 	if err != nil {
@@ -115,23 +125,23 @@ func DecodeProseEvaluation(raw []byte, prose string) (ProseEvaluation, error) {
 		return ProseEvaluation{}, fmt.Errorf("%w: response is empty", ErrInvalidProseEvaluation)
 	}
 	if err := rejectDuplicateProseJSONKeys(trimmed); err != nil {
-		return ProseEvaluation{}, fmt.Errorf("%w: %v", ErrInvalidProseEvaluation, err)
+		return ProseEvaluation{}, fmt.Errorf("%w: %w", ErrInvalidProseEvaluation, err)
 	}
 	var wire proseEvaluationWire
 	decoder := json.NewDecoder(bytes.NewReader(trimmed))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&wire); err != nil {
-		return ProseEvaluation{}, fmt.Errorf("%w: parse strict JSON: %v", ErrInvalidProseEvaluation, err)
+		return ProseEvaluation{}, fmt.Errorf("%w: parse strict JSON: %w", ErrInvalidProseEvaluation, err)
 	}
 	if err := ensureJSONEOF(decoder); err != nil {
-		return ProseEvaluation{}, fmt.Errorf("%w: %v", ErrInvalidProseEvaluation, err)
+		return ProseEvaluation{}, fmt.Errorf("%w: %w", ErrInvalidProseEvaluation, err)
 	}
 	evaluation, err := wire.evaluation()
 	if err != nil {
-		return ProseEvaluation{}, fmt.Errorf("%w: %v", ErrInvalidProseEvaluation, err)
+		return ProseEvaluation{}, fmt.Errorf("%w: %w", ErrInvalidProseEvaluation, err)
 	}
 	if err := evaluation.Validate(prose); err != nil {
-		return ProseEvaluation{}, fmt.Errorf("%w: %v", ErrInvalidProseEvaluation, err)
+		return ProseEvaluation{}, fmt.Errorf("%w: %w", ErrInvalidProseEvaluation, err)
 	}
 	evaluation.Aggregate = ComputeProseEvaluationAggregate(evaluation)
 	return evaluation, nil
@@ -151,27 +161,27 @@ func (wire proseEvaluationWire) evaluation() (ProseEvaluation, error) {
 		}
 		return ProseDimensionEvaluation{Score: *value.Score, Applicable: *value.Applicable, Rationale: *value.Rationale, Evidence: evidence}, nil
 	}
-	depth, err := convert("depth_and_development", wire.DepthAndDevelopment)
+	depth, err := convert(depthAndDevelopment, wire.DepthAndDevelopment)
 	if err != nil {
 		return ProseEvaluation{}, err
 	}
-	structure, err := convert("structural_coherence", wire.StructuralCoherence)
+	structure, err := convert(structuralCoherence, wire.StructuralCoherence)
 	if err != nil {
 		return ProseEvaluation{}, err
 	}
-	craft, err := convert("prose_craft", wire.ProseCraft)
+	craft, err := convert(proseCraft, wire.ProseCraft)
 	if err != nil {
 		return ProseEvaluation{}, err
 	}
-	repetition, err := convert("anti_repetition", wire.AntiRepetition)
+	repetition, err := convert(antiRepetition, wire.AntiRepetition)
 	if err != nil {
 		return ProseEvaluation{}, err
 	}
-	reader, err := convert("target_reader_fit", wire.TargetReaderFit)
+	reader, err := convert(targetReaderFit, wire.TargetReaderFit)
 	if err != nil {
 		return ProseEvaluation{}, err
 	}
-	mechanics, err := convert("mechanics", wire.Mechanics)
+	mechanics, err := convert(mechanics1, wire.Mechanics)
 	if err != nil {
 		return ProseEvaluation{}, err
 	}
@@ -184,16 +194,16 @@ func (e ProseEvaluation) Dimensions() []struct {
 	return []struct {
 		ID    string
 		Value ProseDimensionEvaluation
-	}{{"depth_and_development", e.DepthAndDevelopment}, {"structural_coherence", e.StructuralCoherence}, {"prose_craft", e.ProseCraft}, {"anti_repetition", e.AntiRepetition}, {"target_reader_fit", e.TargetReaderFit}, {"mechanics", e.Mechanics}}
+	}{{depthAndDevelopment, e.DepthAndDevelopment}, {structuralCoherence, e.StructuralCoherence}, {proseCraft, e.ProseCraft}, {antiRepetition, e.AntiRepetition}, {targetReaderFit, e.TargetReaderFit}, {mechanics1, e.Mechanics}}
 }
 func (e ProseEvaluation) Validate(prose string) error {
 	if strings.TrimSpace(prose) == "" {
-		return fmt.Errorf("candidate prose is empty")
+		return errors.New("candidate prose is empty")
 	}
 	for _, dimension := range e.Dimensions() {
 		v := dimension.Value
-		if dimension.ID == "mechanics" && !v.Applicable {
-			return fmt.Errorf("mechanics must be applicable")
+		if dimension.ID == mechanics1 && !v.Applicable {
+			return errors.New("mechanics must be applicable")
 		}
 		if v.Score < 1 || v.Score > 5 {
 			return fmt.Errorf("%s score must be an integer from 1 through 5, got %d", dimension.ID, v.Score)
@@ -215,7 +225,7 @@ func (e ProseEvaluation) Validate(prose string) error {
 
 // ComputeProseEvaluationAggregate is Go-owned. Mechanics caps the result so artifacts cannot be offset by fluent prose.
 func ComputeProseEvaluationAggregate(e ProseEvaluation) ProseEvaluationAggregate {
-	weights := map[string]float64{"depth_and_development": .20, "structural_coherence": .20, "prose_craft": .20, "anti_repetition": .15, "target_reader_fit": .15, "mechanics": .10}
+	weights := map[string]float64{depthAndDevelopment: .20, structuralCoherence: .20, proseCraft: .20, antiRepetition: .15, targetReaderFit: .15, mechanics1: .10}
 	total, weight, applicable := 0.0, 0.0, 0
 	for _, dimension := range e.Dimensions() {
 		if dimension.Value.Applicable {
@@ -244,7 +254,7 @@ func rejectDuplicateProseJSONKeys(raw []byte) error {
 	}
 	if _, err := decoder.Token(); err != io.EOF {
 		if err == nil {
-			return fmt.Errorf("response contains trailing JSON")
+			return errors.New("response contains trailing JSON")
 		}
 		return fmt.Errorf("parse JSON tail: %w", err)
 	}
@@ -269,7 +279,7 @@ func walkProseJSONValue(decoder *json.Decoder) error {
 			}
 			key, ok := keyToken.(string)
 			if !ok {
-				return fmt.Errorf("object key is not a string")
+				return errors.New("object key is not a string")
 			}
 			if _, exists := seen[key]; exists {
 				return fmt.Errorf("duplicate field %q", key)

@@ -3,6 +3,7 @@ package evals
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -23,7 +24,7 @@ var geminiUnsupportedSchemaKeywords = map[string]struct{}{
 func projectGeminiProseSchema(schema json.RawMessage) ([]byte, error) {
 	trimmed := bytes.TrimSpace(schema)
 	if len(trimmed) == 0 {
-		return nil, fmt.Errorf("project prose schema for Gemini: schema is empty")
+		return nil, errors.New("project prose schema for Gemini: schema is empty")
 	}
 	if err := rejectDuplicateProseJSONKeys(trimmed); err != nil {
 		return nil, fmt.Errorf("project prose schema for Gemini: %w", err)
@@ -35,7 +36,7 @@ func projectGeminiProseSchema(schema json.RawMessage) ([]byte, error) {
 		return nil, fmt.Errorf("project prose schema for Gemini: parse schema: %w", err)
 	}
 	if _, ok := root.(map[string]any); !ok {
-		return nil, fmt.Errorf("project prose schema for Gemini: root must be an object")
+		return nil, errors.New("project prose schema for Gemini: root must be an object")
 	}
 	projected, err := projectGeminiProseSchemaNode(root, root, make(map[string]bool))
 	if err != nil {
@@ -54,7 +55,7 @@ func projectGeminiProseSchemaNode(node, root any, resolving map[string]bool) (an
 		if rawReference, ok := value["$ref"]; ok {
 			reference, ok := rawReference.(string)
 			if !ok || strings.TrimSpace(reference) == "" {
-				return nil, fmt.Errorf("$ref must be a non-empty string")
+				return nil, errors.New("$ref must be a non-empty string")
 			}
 			if len(value) != 1 {
 				return nil, fmt.Errorf("$ref %q must not have sibling keywords", reference)
@@ -137,7 +138,7 @@ func decodeJSONPointerToken(encoded string) (string, error) {
 			continue
 		}
 		if index+1 >= len(encoded) {
-			return "", fmt.Errorf("trailing JSON Pointer escape")
+			return "", errors.New("trailing JSON Pointer escape")
 		}
 		index++
 		switch encoded[index] {
