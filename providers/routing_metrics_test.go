@@ -139,7 +139,7 @@ func TestRoutingMetricsStore_LoadQuarantinesMalformedJSON(t *testing.T) {
 	if len(store.Providers) != 0 {
 		t.Fatalf("expected empty metrics after corrupt load, got %+v", store.Providers)
 	}
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
+	if _, err = os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("expected original malformed metrics file to be quarantined, stat err=%v", err)
 	}
 
@@ -299,7 +299,7 @@ func TestConcurrentMetricsSavesPublishCompleteSnapshots(t *testing.T) {
 		go func() { done <- store.Save() }()
 	}
 	for range 12 {
-		if err := <-done; err != nil {
+		if err = <-done; err != nil {
 			t.Fatal(err)
 		}
 	}

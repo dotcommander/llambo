@@ -183,11 +183,13 @@ func (cliOpts *invocationOptions) loadPingTargetsWithIO(cmd *commandIO) ([]pingT
 		if selector == "" && cliOpts.pingFreeOnly {
 			selector = free1
 		}
-		catPath, err := catalog.CatalogPath()
+		var catPath string
+		catPath, err = catalog.CatalogPath()
 		if err != nil {
 			return nil, providers.RoutingConfig{}, err
 		}
-		selected, err := resolveTextChatSelection(cmd.ErrOrStderr(), catPath, cfg.Providers, costMap, catalog.SelectorOptions{
+		var selected []catalog.ModelTarget
+		selected, err = resolveTextChatSelection(cmd.ErrOrStderr(), catPath, cfg.Providers, costMap, catalog.SelectorOptions{
 			Selector:           selector,
 			ProviderFilter:     cliOpts.pingProviders,
 			IncludeQuarantine:  cliOpts.pingIncludeQuarantine,

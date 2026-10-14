@@ -43,11 +43,13 @@ func (c *evalsOMLXCommand) Run(parent *evalsCommand, io *commandIO) error {
 		return err
 	}
 	if !live {
-		snapshotPath, err := evals.OMLXScoreSnapshotPath()
+		var snapshotPath string
+		snapshotPath, err = evals.OMLXScoreSnapshotPath()
 		if err != nil {
 			return err
 		}
-		snapshot, err := evals.LoadOMLXScoreSnapshot(snapshotPath)
+		var snapshot *evals.OMLXScoreSnapshot
+		snapshot, err = evals.LoadOMLXScoreSnapshot(snapshotPath)
 		if err != nil {
 			return err
 		}
@@ -56,7 +58,7 @@ func (c *evalsOMLXCommand) Run(parent *evalsCommand, io *commandIO) error {
 		}
 		return writeOMLXScoreOutput(io, snapshot, format, nil)
 	}
-	if err := validateOMLXURL(parent.OMLXURL); err != nil {
+	if err = validateOMLXURL(parent.OMLXURL); err != nil {
 		return err
 	}
 	discovery, err := evals.DiscoverOMLXModels(io.Context(), parent.OMLXURL, os.Getenv("OMLX_API_KEY"), omlxDiscoveryHTTPClient)

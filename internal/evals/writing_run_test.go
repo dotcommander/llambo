@@ -118,7 +118,7 @@ func TestProseScreenRunUsesAdapterOwnedSchemaAndControls(t *testing.T) {
 	}
 	defer func() { _ = store.Close() }()
 	executor := &recordingProseScreenExecutor{}
-	if err := RunWritingEvaluation(t.Context(), manifest, []WritingPromptRecord{record}, adapter, executor, store); err != nil {
+	if err = RunWritingEvaluation(t.Context(), manifest, []WritingPromptRecord{record}, adapter, executor, store); err != nil {
 		t.Fatal(err)
 	}
 	if len(executor.calls) != 2 {
@@ -219,7 +219,7 @@ func TestWritingRunRefusesInDoubtDispatchIntent(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 	key := writingGenerationKey(adapter.ID(), records[0].ID, model.ID(), 1)
-	if err := store.AppendDispatchIntent(WritingDispatchIntent{Kind: "generation", Key: key, Attempt: 1, CallSHA256: writingHash("call"), DispatchedAt: time.Now().UTC()}); err != nil {
+	if err = store.AppendDispatchIntent(WritingDispatchIntent{Kind: "generation", Key: key, Attempt: 1, CallSHA256: writingHash("call"), DispatchedAt: time.Now().UTC()}); err != nil {
 		t.Fatal(err)
 	}
 	executor := &fixtureWritingExecutor{}

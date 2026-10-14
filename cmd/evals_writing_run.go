@@ -96,7 +96,7 @@ func runWritingEvaluationCommand(cmd *commandIO, options *evalsWritingRunCommand
 	if len(records) > limit {
 		records = records[:limit]
 	}
-	if err := evals.ValidateWritingPromptRecords(records, adapter); err != nil {
+	if err = evals.ValidateWritingPromptRecords(records, adapter); err != nil {
 		return err
 	}
 	models, judge, configs, err := resolveWritingModels([]string{options.Model}, options.JudgeModel, judgeTokens, options.PricingFile)
@@ -134,7 +134,7 @@ func runWritingEvaluationCommand(cmd *commandIO, options *evalsWritingRunCommand
 	if plan.WorstCaseCostUSD > options.MaxRunCost+1e-12 {
 		return fmt.Errorf("worst-case run estimate $%.6f exceeds --max-run-cost $%.6f", plan.WorstCaseCostUSD, options.MaxRunCost)
 	}
-	if err := verifyWritingOMLXModels(cmd.Context(), manifest, configs); err != nil {
+	if err = verifyWritingOMLXModels(cmd.Context(), manifest, configs); err != nil {
 		return err
 	}
 	ledger, err := evals.OpenCampaignLedger(options.CampaignLedger, options.MaxCampaignCost)
@@ -149,7 +149,7 @@ func runWritingEvaluationCommand(cmd *commandIO, options *evalsWritingRunCommand
 	if err != nil {
 		return errors.Join(err, store.Close())
 	}
-	if _, err := ledger.Reserve(owner, plan.WorstCaseCostUSD, options.MaxRunCost); err != nil {
+	if _, err = ledger.Reserve(owner, plan.WorstCaseCostUSD, options.MaxRunCost); err != nil {
 		return errors.Join(err, store.Close())
 	}
 	executor, err := newCommandWritingExecutor(cmd.ErrOrStderr(), configs, options.Timeout)
@@ -249,7 +249,8 @@ func resolveWritingModels(modelSelectors []string, judgeSelector string, judgeMa
 		return nil, evals.WritingModelSpec{}, nil, fmt.Errorf("load model costs: %w", err)
 	}
 	if strings.TrimSpace(pricingFile) != "" {
-		overlay, err := costs.Load(pricingFile)
+		var overlay map[string]costs.ModelCost
+		overlay, err = costs.Load(pricingFile)
 		if err != nil {
 			return nil, evals.WritingModelSpec{}, nil, fmt.Errorf("load run pricing overlay: %w", err)
 		}
@@ -272,7 +273,8 @@ func resolveWritingModels(modelSelectors []string, judgeSelector string, judgeMa
 		if !exactWritingModelSelector(selector) {
 			return evals.WritingModelSpec{}, providers.Config{}, fmt.Errorf("model selector %q must be exact provider/model", selector)
 		}
-		targets, err := catalog.ResolveModels(cat, globalCfg.Providers, costMap, catalog.SelectorOptions{
+		var targets []catalog.ModelTarget
+		targets, err = catalog.ResolveModels(cat, globalCfg.Providers, costMap, catalog.SelectorOptions{
 			Selector:           selector,
 			IncludeUnknownCost: true,
 			Blocklist:          providers.NewBlocklist(globalCfg.Blocklist),
@@ -296,7 +298,8 @@ func resolveWritingModels(modelSelectors []string, judgeSelector string, judgeMa
 		} else if maxTokens <= 0 {
 			maxTokens = 4096
 		}
-		evidenceClass, evidenceSource, evidenceNote, err := writingExternalEvidence(cat, target.Provider, target.Model)
+		var evidenceClass, evidenceSource, evidenceNote string
+		evidenceClass, evidenceSource, evidenceNote, err = writingExternalEvidence(cat, target.Provider, target.Model)
 		if err != nil {
 			return evals.WritingModelSpec{}, providers.Config{}, err
 		}
@@ -309,7 +312,9 @@ func resolveWritingModels(modelSelectors []string, judgeSelector string, judgeMa
 	configs := make(map[string]providers.Config)
 	seen := make(map[string]struct{})
 	for _, selector := range modelSelectors {
-		spec, cfg, err := resolve(selector, false)
+		var spec evals.WritingModelSpec
+		var cfg providers.Config
+		spec, cfg, err = resolve(selector, false)
 		if err != nil {
 			return nil, evals.WritingModelSpec{}, nil, err
 		}

@@ -176,7 +176,7 @@ func TestJobManager_CancelJob_SlotReleasedAfterStreamExits(t *testing.T) {
 
 	// While the ProcessStream goroutine is still in flight, the slot must
 	// remain held: a new job cannot be admitted.
-	if _, err := manager.CreateJobIfCapacity(t.Context(), requests, "System"); err == nil {
+	if _, err = manager.CreateJobIfCapacity(t.Context(), requests, "System"); err == nil {
 		t.Fatal("expected saturation error: slot must stay held until stream exits")
 	}
 

@@ -33,7 +33,7 @@ func TestJobManager_BeginShutdownRejectsAdmissionAndDrains(t *testing.T) {
 	if _, err := manager.CreateJobIfCapacity(t.Context(), requests, "system"); !errors.Is(err, ErrJobManagerShuttingDown) {
 		t.Fatalf("CreateJobIfCapacity() error = %v, want ErrJobManagerShuttingDown", err)
 	}
-	if job := manager.CreateJob(t.Context(), requests, "system"); job != nil {
+	if created := manager.CreateJob(t.Context(), requests, "system"); created != nil {
 		t.Fatal("CreateJob() admitted a job after BeginShutdown")
 	}
 

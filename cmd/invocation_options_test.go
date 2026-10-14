@@ -161,7 +161,7 @@ func TestFusionRejectsNonChatSelection(t *testing.T) {
 		t.Fatal(err)
 	}
 	cat := &catalog.Catalog{Providers: map[string]*catalog.ProviderCatalog{"fixture": {Models: map[string]*catalog.ModelEntry{"embed": {Metadata: catalog.ModelMetadata{Architecture: catalog.ModelArchitecture{OutputModalities: []string{"embedding"}}}}}}}}
-	if err := catalog.Save(catPath, cat); err != nil {
+	if err = catalog.Save(catPath, cat); err != nil {
 		t.Fatal(err)
 	}
 	_, err = (&invocationOptions{}).resolveFirstFusionTarget("fixture/embed")

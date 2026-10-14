@@ -39,7 +39,7 @@ func TestDiscoverFreePreservesChangesDuringProbe(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write(models)
 		case "/v1/chat/completions":
-			err := catalog.Update(r.Context(), path, func(cat *catalog.Catalog) error {
+			err := catalog.Update(r.Context(), path, func(cat *catalog.Catalog) error { //nolint:govet // test-server handler goroutine must not touch outer err
 				catalog.AddTag(cat.Providers["p"].Models["m"], "during-probe")
 				return nil
 			})

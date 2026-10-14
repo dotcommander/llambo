@@ -178,7 +178,8 @@ func TestRefreshLLMStatsStatsV1SourceReplacesCacheAfterValidation(t *testing.T) 
 	if backup == "" {
 		t.Fatal("predecessor cache was not preserved")
 	}
-	if data, err := os.ReadFile(backup); err != nil || !strings.Contains(string(data), `"key": "previous"`) {
+	var data []byte
+	if data, err = os.ReadFile(backup); err != nil || !strings.Contains(string(data), `"key": "previous"`) {
 		t.Fatalf("invalid predecessor backup: %s %v", data, err)
 	}
 	snapshot, err := readSnapshot(previous)

@@ -54,7 +54,7 @@ func RebuildObservationIndex(ctx context.Context, path string, observations []Ob
 			_ = os.Remove(tmp)
 		}
 	}()
-	if _, err := db.ExecContext(ctx, `CREATE TABLE observations (
+	if _, err = db.ExecContext(ctx, `CREATE TABLE observations (
 observation_id INTEGER PRIMARY KEY,
 source_id TEXT NOT NULL, source_revision TEXT NOT NULL, source_sha256 TEXT NOT NULL,
 benchmark TEXT NOT NULL, benchmark_version TEXT NOT NULL, cohort TEXT NOT NULL,

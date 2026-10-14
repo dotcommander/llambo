@@ -29,14 +29,14 @@ func TestEncodeWritingCatalog(t *testing.T) {
 		t.Fatal(err)
 	}
 	var decoded evals.WritingCatalog
-	if err := json.Unmarshal(jsonData, &decoded); err != nil {
+	if err = json.Unmarshal(jsonData, &decoded); err != nil {
 		t.Fatal(err)
 	}
 	if decoded.RegistryVersion != evals.WritingCatalogVersion || len(decoded.OpenModels) == 0 {
 		t.Fatalf("unexpected JSON catalog: %#v", decoded)
 	}
 
-	if _, err := encodeWritingCatalog(catalog, "html"); err == nil || !strings.Contains(err.Error(), "supported: markdown, json") {
+	if _, err = encodeWritingCatalog(catalog, "html"); err == nil || !strings.Contains(err.Error(), "supported: markdown, json") {
 		t.Fatalf("unexpected unsupported format error: %v", err)
 	}
 	catalog.OpenModelDiscovery = &evals.WritingOpenModelDiscovery{

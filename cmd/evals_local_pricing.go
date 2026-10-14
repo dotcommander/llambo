@@ -23,7 +23,8 @@ func authoritativeLocalPricing(model string) (evals.LocalPricing, bool, error) {
 	if err != nil {
 		return evals.LocalPricing{}, false, fmt.Errorf("load configured model pricing: %w", err)
 	}
-	if cost, ok := costMap[costs.Key(providerName, modelID)]; ok && cost.InputExplicit && cost.OutputExplicit {
+	var cost costs.ModelCost
+	if cost, ok = costMap[costs.Key(providerName, modelID)]; ok && cost.InputExplicit && cost.OutputExplicit {
 		return evals.LocalPricing{InputPer1M: cost.InputPer1M, OutputPer1M: cost.OutputPer1M, Known: true}, true, nil
 	}
 	config, err := providers.LoadRawGlobalConfig()

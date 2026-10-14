@@ -111,7 +111,7 @@ func OpenCampaignLedger(path string, maxCost float64) (*CampaignLedger, error) {
 			return nil, errors.New("positive campaign maximum is required")
 		}
 		l.Budget = CampaignBudget{SchemaVersion: 2, MaxCostUSD: maxCost}
-		if err := l.save(); err != nil {
+		if err = l.save(); err != nil {
 			return nil, err
 		}
 		return l, nil

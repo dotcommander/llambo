@@ -193,7 +193,7 @@ func (s *Server) handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	if validator, ok := s.embedder.(interface {
 		ValidateEmbeddingTarget(providers.ResolvedTarget) error
 	}); ok {
-		if err := validator.ValidateEmbeddingTarget(target); err != nil {
+		if err = validator.ValidateEmbeddingTarget(target); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 			return
 		}

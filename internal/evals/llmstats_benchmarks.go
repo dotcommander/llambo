@@ -51,7 +51,7 @@ func fetchLLMStatsBenchmarkLeads(ctx context.Context, opts Options) ([]Observati
 		return nil, err
 	}
 	root := filepath.Join(opts.CacheDir, "sealed", llmStats)
-	if err := writeSealed(sealedRevisionPath(root, "catalog", catalogBytes, ".json"), catalogBytes); err != nil {
+	if err = writeSealed(sealedRevisionPath(root, "catalog", catalogBytes, ".json"), catalogBytes); err != nil {
 		return nil, err
 	}
 
@@ -71,7 +71,7 @@ func fetchLLMStatsBenchmarkLeads(ctx context.Context, opts Options) ([]Observati
 		go func() {
 			defer wg.Done()
 			for benchmark := range jobs {
-				observations, err := fetchLLMStatsBenchmarkPages(ctx, opts, root, benchmark)
+				observations, err := fetchLLMStatsBenchmarkPages(ctx, opts, root, benchmark) //nolint:govet // worker goroutine must not race the outer err
 				results <- result{benchmark: benchmark.ID, observations: observations, err: err}
 			}
 		}()
@@ -109,11 +109,12 @@ func fetchLLMStatsBenchmarkLeads(ctx context.Context, opts Options) ([]Observati
 	}
 	sort.Slice(blocked, func(i, j int) bool { return blocked[i][benchmark1] < blocked[j][benchmark1] })
 	if len(blocked) > 0 {
-		receipts, err := encodeJSONLMaps(blocked)
+		var receipts []byte
+		receipts, err = encodeJSONLMaps(blocked)
 		if err != nil {
 			return nil, err
 		}
-		if err := writeSealed(sealedRevisionPath(root, blocked1, receipts, ".jsonl"), receipts); err != nil {
+		if err = writeSealed(sealedRevisionPath(root, blocked1, receipts, ".jsonl"), receipts); err != nil {
 			return nil, err
 		}
 	}

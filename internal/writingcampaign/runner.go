@@ -51,7 +51,8 @@ func Run(ctx context.Context, client *Client, roster Roster, source, systemPromp
 		return nil, Plan{}, err
 	}
 	if !options.Execute {
-		receipts, err := LoadReceipts(options.OutputDir)
+		var receipts []Receipt
+		receipts, err = LoadReceipts(options.OutputDir)
 		return receipts, plan, err
 	}
 	if strings.TrimSpace(client.APIKey) == "" {

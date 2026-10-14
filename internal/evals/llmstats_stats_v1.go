@@ -218,7 +218,7 @@ func fetchLLMStatsStatsV1BenchmarkLeads(ctx context.Context, opts Options) ([]Ob
 		return nil, err
 	}
 	root := filepath.Join(opts.CacheDir, "sealed", "llm-stats-stats-v1")
-	if err := writeSealed(sealedRevisionPath(root, "catalog", catalogData, ".json"), catalogData); err != nil {
+	if err = writeSealed(sealedRevisionPath(root, "catalog", catalogData, ".json"), catalogData); err != nil {
 		return nil, err
 	}
 
@@ -255,11 +255,12 @@ func fetchLLMStatsStatsV1BenchmarkLeads(ctx context.Context, opts Options) ([]Ob
 	}
 	sort.Slice(blocked, func(i, j int) bool { return blocked[i][benchmark1] < blocked[j][benchmark1] })
 	if len(blocked) > 0 {
-		receipts, err := encodeJSONLMaps(blocked)
+		var receipts []byte
+		receipts, err = encodeJSONLMaps(blocked)
 		if err != nil {
 			return nil, err
 		}
-		if err := writeSealed(sealedRevisionPath(root, blocked1, receipts, ".jsonl"), receipts); err != nil {
+		if err = writeSealed(sealedRevisionPath(root, blocked1, receipts, ".jsonl"), receipts); err != nil {
 			return nil, err
 		}
 	}
@@ -280,7 +281,7 @@ func fetchLLMStatsStatsV1BenchmarkLeads(ctx context.Context, opts Options) ([]Ob
 		go func() {
 			defer wg.Done()
 			for benchmark := range jobs {
-				observations, err := fetchLLMStatsStatsV1BenchmarkScores(ctx, opts, root, benchmark)
+				observations, err := fetchLLMStatsStatsV1BenchmarkScores(ctx, opts, root, benchmark) //nolint:govet // worker goroutine must not race the outer err
 				results <- result{benchmark: benchmark.ID, observations: observations, err: err}
 			}
 		}()

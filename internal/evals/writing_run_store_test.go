@@ -54,10 +54,10 @@ func TestWritingRunStoreResumeAndManifest(t *testing.T) {
 		t.Fatal(err)
 	}
 	record := WritingGenerationRecord{Key: "g1", Attempt: 1, Status: "success", Content: "hello", ContentSHA256: writingHash("hello")}
-	if err := store.AppendGeneration(record); err != nil {
+	if err = store.AppendGeneration(record); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Close(); err != nil {
+	if err = store.Close(); err != nil {
 		t.Fatal(err)
 	}
 	resumed, err := OpenWritingRunStore(dir, manifest)
@@ -95,7 +95,7 @@ func TestWritingRunStoreNormalizesLegacyEQBenchTemperatureIdentity(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Close(); err != nil {
+	if err = store.Close(); err != nil {
 		t.Fatal(err)
 	}
 	resumed, err := OpenWritingRunStore(dir, current)

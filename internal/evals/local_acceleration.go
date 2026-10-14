@@ -170,16 +170,17 @@ func (g OMLXSettingsGuard) WithMTPEnabled(ctx context.Context, enabled bool, run
 		return err
 	}
 	if bytesSHA256(changed) == originalHash {
-		if err := g.Reload(ctx); err != nil {
+		if err = g.Reload(ctx); err != nil {
 			return fmt.Errorf("reload unchanged model settings: %w", err)
 		}
-		if err := g.Health(ctx); err != nil {
+		if err = g.Health(ctx); err != nil {
 			return fmt.Errorf("verify OMLX health with unchanged MTP settings: %w", err)
 		}
-		if err := run(ctx); err != nil {
+		if err = run(ctx); err != nil {
 			return err
 		}
-		current, err := os.ReadFile(g.Path)
+		var current []byte
+		current, err = os.ReadFile(g.Path)
 		if err != nil {
 			return fmt.Errorf("read unchanged model settings after run: %w", err)
 		}
@@ -195,7 +196,7 @@ func (g OMLXSettingsGuard) WithMTPEnabled(ctx context.Context, enabled bool, run
 	if bytesSHA256(current) != originalHash {
 		return errors.New("model settings changed concurrently before mutation")
 	}
-	if err := os.WriteFile(g.Path, changed, info.Mode().Perm()); err != nil {
+	if err = os.WriteFile(g.Path, changed, info.Mode().Perm()); err != nil {
 		return fmt.Errorf("write guarded model settings: %w", err)
 	}
 	changedHash := bytesSHA256(changed)

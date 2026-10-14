@@ -19,7 +19,8 @@ func CanonicalPath(path string) (string, error) {
 		return "", err
 	}
 	if _, err := os.Lstat(abs); err == nil {
-		resolved, err := filepath.EvalSymlinks(abs)
+		var resolved string
+		resolved, err = filepath.EvalSymlinks(abs)
 		if err != nil {
 			return "", fmt.Errorf("resolve file path: %w", err)
 		}
@@ -97,16 +98,16 @@ func WriteAtomic(path string, data []byte, mode os.FileMode) error {
 	}
 	defer func() { _ = os.Remove(tmp.Name()) }()
 	defer func() { _ = tmp.Close() }()
-	if err := tmp.Chmod(mode); err != nil {
+	if err = tmp.Chmod(mode); err != nil {
 		return err
 	}
-	if _, err := tmp.Write(data); err != nil {
+	if _, err = tmp.Write(data); err != nil {
 		return err
 	}
-	if err := tmp.Sync(); err != nil {
+	if err = tmp.Sync(); err != nil {
 		return err
 	}
-	if err := tmp.Close(); err != nil {
+	if err = tmp.Close(); err != nil {
 		return err
 	}
 	if err := os.Rename(tmp.Name(), path); err != nil {

@@ -88,7 +88,8 @@ func (c *evalsWritingCampaignCommand) Run(_ *evalsCommand, io *commandIO) error 
 	}
 	client := &writingcampaign.Client{Now: time.Now}
 	if c.Execute {
-		cfg, err := providers.GetProviderConfig("openrouter")
+		var cfg providers.Config
+		cfg, err = providers.GetProviderConfig("openrouter")
 		if err != nil {
 			return err
 		}
@@ -98,7 +99,7 @@ func (c *evalsWritingCampaignCommand) Run(_ *evalsCommand, io *commandIO) error 
 		client.HTTPClient = &http.Client{Timeout: c.Timeout}
 	}
 	receipts, plan, runErr := writingcampaign.Run(io.Context(), client, roster, string(source), string(systemPrompt), options)
-	if err := writingcampaign.WriteHTML(options.HTMLPath, roster, receipts, time.Now()); err != nil {
+	if err = writingcampaign.WriteHTML(options.HTMLPath, roster, receipts, time.Now()); err != nil {
 		return fmt.Errorf("write comparison HTML: %w", err)
 	}
 	encoded, err := json.MarshalIndent(plan, "", "  ")

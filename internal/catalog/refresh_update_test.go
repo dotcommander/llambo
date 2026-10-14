@@ -28,7 +28,7 @@ func TestRefreshFetchesOutsideUpdateLockAndPreservesInterveningState(t *testing.
 	require.NoError(t, err)
 	updated := make(chan error, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		err := Update(r.Context(), path, func(cat *Catalog) error {
+		err := Update(r.Context(), path, func(cat *Catalog) error { //nolint:govet // test-server handler goroutine must not touch outer err
 			entry := cat.Providers["openai"].Models["model"]
 			entry.Pinned = true
 			entry.Tags = []string{"smart"}
@@ -56,7 +56,7 @@ func TestRefreshFetchesOutsideUpdateLockAndPreservesInterveningState(t *testing.
 	require.Len(t, results, 1)
 	require.NoError(t, results[0].Err)
 	select {
-	case err := <-updated:
+	case err = <-updated:
 		require.NoError(t, err)
 	default:
 		t.Fatal("refresh did not fetch models")

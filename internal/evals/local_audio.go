@@ -72,17 +72,17 @@ func (a OMLXAudioAdapter) Transcribe(ctx context.Context, model string, input AS
 	}
 	var body bytes.Buffer
 	form := multipart.NewWriter(&body)
-	if err := form.WriteField("model", endpointModel); err != nil {
+	if err = form.WriteField("model", endpointModel); err != nil {
 		return ASREvaluation{}, err
 	}
 	part, err := form.CreateFormFile("file", filename)
 	if err != nil {
 		return ASREvaluation{}, err
 	}
-	if _, err := part.Write(wav); err != nil {
+	if _, err = part.Write(wav); err != nil {
 		return ASREvaluation{}, err
 	}
-	if err := form.Close(); err != nil {
+	if err = form.Close(); err != nil {
 		return ASREvaluation{}, err
 	}
 	response, responseBody, elapsed, err := a.doHTTP(ctx, http.MethodPost, root+"/v1/audio/transcriptions", &body, form.FormDataContentType()) //nolint:bodyclose // doHTTP drains and closes the body before returning
@@ -97,7 +97,7 @@ func (a OMLXAudioAdapter) Transcribe(ctx context.Context, model string, input AS
 		Model    string `json:"model"`
 		Provider string `json:"provider"`
 	}
-	if err := json.Unmarshal(responseBody, &payload); err != nil {
+	if err = json.Unmarshal(responseBody, &payload); err != nil {
 		return ASREvaluation{}, fmt.Errorf("parse transcription response: %w", err)
 	}
 	if strings.TrimSpace(payload.Text) == "" {

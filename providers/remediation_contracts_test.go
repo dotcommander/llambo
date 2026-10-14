@@ -22,7 +22,7 @@ func TestExactTargetPreservesCaseAndEmbeddedSlash(t *testing.T) {
 	if err != nil || target.Model() != "Org/Case" || !target.Allows("router") || target.Allows("other") {
 		t.Fatalf("target %+v: %v", target, err)
 	}
-	if _, err := ResolveTarget(configs, "org/case", ""); err == nil {
+	if _, err = ResolveTarget(configs, "org/case", ""); err == nil {
 		t.Fatal("case mismatch admitted")
 	}
 	bare, err := ResolveTarget(configs, "Org/Case", "")
@@ -52,7 +52,7 @@ func TestStructuredHistoryAndExactQueueModelReachWormhole(t *testing.T) {
 		t.Fatal(err)
 	}
 	request := StructuredChatRequest{Messages: []whtypes.Message{whtypes.NewSystemMessage("policy"), whtypes.NewUserMessage("first"), &whtypes.AssistantMessage{Content: "answer"}, whtypes.NewUserMessage("second")}, Stop: []string{"one", "two"}}
-	if _, err := provider.ChatStructuredWithInfoContext(context.Background(), request, target); err != nil {
+	if _, err = provider.ChatStructuredWithInfoContext(context.Background(), request, target); err != nil {
 		t.Fatal(err)
 	}
 	got := <-requests

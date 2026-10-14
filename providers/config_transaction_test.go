@@ -17,7 +17,7 @@ func TestConfigTransactionsPreserveConcurrentChangesAndRawKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := filetxn.WriteAtomic(path, data, 0o600); err != nil {
+	if err = filetxn.WriteAtomic(path, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	var wg sync.WaitGroup
@@ -40,7 +40,7 @@ func TestConfigTransactionsPreserveConcurrentChangesAndRawKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 	var got GlobalConfig
-	if err := json.Unmarshal(data, &got); err != nil {
+	if err = json.Unmarshal(data, &got); err != nil {
 		t.Fatal(err)
 	}
 	if got.MaxOutputCost != 3 || len(got.Blocklist) != 1 || got.Providers["p"].APIKey != "" || got.Providers["p"].Model != "Case/Model" {

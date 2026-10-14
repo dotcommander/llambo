@@ -261,7 +261,8 @@ func RefreshLLMStatsStatsV1Source(ctx context.Context, opts Options) (SourceStat
 		if err := os.MkdirAll(filepath.Dir(backup), 0o755); err != nil {
 			return SourceStatus{}, "", fmt.Errorf("create LLM Stats backup directory: %w", err)
 		}
-		data, err := os.ReadFile(cachePath)
+		var data []byte
+		data, err = os.ReadFile(cachePath)
 		if err != nil {
 			return SourceStatus{}, "", fmt.Errorf("read previous LLM Stats cache: %w", err)
 		}

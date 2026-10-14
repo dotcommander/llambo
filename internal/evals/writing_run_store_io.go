@@ -28,22 +28,22 @@ func writeDurableFile(path string, data []byte, dirMode, fileMode os.FileMode, p
 	}
 	tmpPath := tmp.Name()
 	defer func() { _ = os.Remove(tmpPath) }()
-	if err := tmp.Chmod(fileMode); err != nil {
+	if err = tmp.Chmod(fileMode); err != nil {
 		_ = tmp.Close()
 		return err
 	}
-	if _, err := tmp.Write(data); err != nil {
+	if _, err = tmp.Write(data); err != nil {
 		_ = tmp.Close()
 		return err
 	}
-	if err := tmp.Sync(); err != nil {
+	if err = tmp.Sync(); err != nil {
 		_ = tmp.Close()
 		return err
 	}
-	if err := tmp.Close(); err != nil {
+	if err = tmp.Close(); err != nil {
 		return err
 	}
-	if err := os.Rename(tmpPath, path); err != nil {
+	if err = os.Rename(tmpPath, path); err != nil {
 		return err
 	}
 	d, err := os.Open(dir)

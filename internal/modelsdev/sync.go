@@ -81,7 +81,7 @@ func RunSync(ctx context.Context, opts SyncOptions) (*SyncResult, costs.ModelsDe
 		if opts.DryRun {
 			return nil
 		}
-		if err := ctx.Err(); err != nil {
+		if err := ctx.Err(); err != nil { //nolint:govet // apply closure must not race the outer err
 			return err
 		}
 		return writeAtomic(path, next)

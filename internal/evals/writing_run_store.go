@@ -50,7 +50,7 @@ func openWritingRunStore(dir string, manifest WritingRunManifest, openLedger fun
 	if err != nil {
 		return nil, fmt.Errorf("open writing run lock: %w", err)
 	}
-	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+	if err = syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		_ = lock.Close()
 		return nil, fmt.Errorf("writing output directory is already active: %s", dir)
 	}
@@ -62,15 +62,16 @@ func openWritingRunStore(dir string, manifest WritingRunManifest, openLedger fun
 		}
 	}()
 	manifestPath := filepath.Join(dir, manifestJSON)
-	if data, err := os.ReadFile(manifestPath); err == nil {
+	var data []byte
+	if data, err = os.ReadFile(manifestPath); err == nil {
 		var existing WritingRunManifest
-		if err := json.Unmarshal(data, &existing); err != nil {
+		if err = json.Unmarshal(data, &existing); err != nil {
 			return nil, fmt.Errorf("parse existing writing manifest: %w", err)
 		}
-		if err := sameWritingRunIdentity(existing, manifest); err != nil {
+		if err = sameWritingRunIdentity(existing, manifest); err != nil {
 			return nil, err
 		}
-		if err := os.Chmod(manifestPath, 0o600); err != nil {
+		if err = os.Chmod(manifestPath, 0o600); err != nil {
 			return nil, fmt.Errorf("secure writing manifest: %w", err)
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
@@ -83,7 +84,7 @@ func openWritingRunStore(dir string, manifest WritingRunManifest, openLedger fun
 				return nil, fmt.Errorf("inspect writing run directory: %w", statErr)
 			}
 		}
-		if err := writeSyncedJSON(manifestPath, manifest); err != nil {
+		if err = writeSyncedJSON(manifestPath, manifest); err != nil {
 			return nil, fmt.Errorf("write writing manifest: %w", err)
 		}
 	}
@@ -107,7 +108,7 @@ func openWritingRunStore(dir string, manifest WritingRunManifest, openLedger fun
 		}
 	}()
 	lockOwned = false
-	if err := store.load(); err != nil {
+	if err = store.load(); err != nil {
 		return nil, err
 	}
 	store.intentFile, err = openLedger(filepath.Join(dir, intentsJsonl), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)

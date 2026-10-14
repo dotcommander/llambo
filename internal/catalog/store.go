@@ -48,12 +48,12 @@ func Update(ctx context.Context, path string, mutate func(*Catalog) error) error
 		return fmt.Errorf("open catalog lock: %w", err)
 	}
 	defer func() { _ = lock.Close() }()
-	if err := lockCatalog(ctx, lock); err != nil {
+	if err = lockCatalog(ctx, lock); err != nil {
 		return err
 	}
 	defer func() { _ = syscall.Flock(int(lock.Fd()), syscall.LOCK_UN) }()
 
-	if err := ctx.Err(); err != nil {
+	if err = ctx.Err(); err != nil {
 		return err
 	}
 	cat, err := Load(path)

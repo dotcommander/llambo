@@ -60,13 +60,13 @@ func TestLocalRunStoreManifestFirstResumeAndFinalize(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "manifest.json")); err != nil {
+	if _, err = os.Stat(filepath.Join(dir, "manifest.json")); err != nil {
 		t.Fatalf("manifest was not durable before calls: %v", err)
 	}
-	if err := store.AppendCall(LocalCall{CaseID: "1", RequestedModel: "groq/exact", ServedModel: "groq/exact", Input: in.Cases[0], Output: json.RawMessage(`{"calls":[]}`), ObservedCostUSD: .01, At: time.Now()}); err != nil {
+	if err = store.AppendCall(LocalCall{CaseID: "1", RequestedModel: "groq/exact", ServedModel: "groq/exact", Input: in.Cases[0], Output: json.RawMessage(`{"calls":[]}`), ObservedCostUSD: .01, At: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Close(); err != nil {
+	if err = store.Close(); err != nil {
 		t.Fatal(err)
 	}
 	store, err = OpenLocalRunStore(dir, m)
@@ -147,10 +147,10 @@ func TestLocalRunStoreRefusesInDoubtRedispatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.AppendIntent(LocalDispatchIntent{CaseID: "1", InputSHA256: localSHA(in.Cases[0]), At: time.Now()}); err != nil {
+	if err = store.AppendIntent(LocalDispatchIntent{CaseID: "1", InputSHA256: localSHA(in.Cases[0]), At: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Close(); err != nil {
+	if err = store.Close(); err != nil {
 		t.Fatal(err)
 	}
 	store, err = OpenLocalRunStore(dir, m)

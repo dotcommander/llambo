@@ -83,7 +83,12 @@ func executeChatRequestWithIdentity(
 		}
 		resp, err := client.Text(ctx, attemptRequest)
 		if err == nil {
-			content, usage, finishReason, toolCalls, identity, err := extractContentFromTextResponseWithIdentity(resp, cfg.Model)
+			var content string
+			var usage *LLMUsage
+			var finishReason string
+			var toolCalls []ToolCall
+			var identity chatResponseIdentity
+			content, usage, finishReason, toolCalls, identity, err = extractContentFromTextResponseWithIdentity(resp, cfg.Model)
 			outcome := "success"
 			if err != nil {
 				outcome = "error"
@@ -104,7 +109,7 @@ func executeChatRequestWithIdentity(
 		if action == chatRetryStop {
 			break
 		}
-		if err := waitChatBackoff(ctx, reqConfig, attempt); err != nil {
+		if err = waitChatBackoff(ctx, reqConfig, attempt); err != nil {
 			slog.DebugContext(ctx, "provider chat request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "error")
 			return "", nil, "", nil, chatResponseIdentity{}, err
 		}
@@ -166,7 +171,7 @@ func executeChatStreamRequestWithIdentity(
 				slog.DebugContext(ctx, "provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "error")
 				return "", nil, "", nil, false, chatResponseIdentity{}, lastErr
 			}
-			if err := waitChatBackoff(ctx, reqConfig, attempt); err != nil {
+			if err = waitChatBackoff(ctx, reqConfig, attempt); err != nil {
 				slog.DebugContext(ctx, "provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "error")
 				return "", nil, "", nil, false, chatResponseIdentity{}, err
 			}

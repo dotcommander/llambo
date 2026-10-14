@@ -75,7 +75,7 @@ func TestWriteNormalizedDatasetWritesManifestAndHashedArtifacts(t *testing.T) {
 		"scores.jsonl", "score_contributions.jsonl", "operational_metrics.jsonl", "projections.jsonl",
 		"frozen_cohorts.jsonl", "drift_diagnostics.jsonl",
 	} {
-		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
+		if _, err = os.Stat(filepath.Join(dir, name)); err != nil {
 			t.Fatalf("artifact %s: %v", name, err)
 		}
 		if name == "manifest.json" {
@@ -88,7 +88,7 @@ func TestWriteNormalizedDatasetWritesManifestAndHashedArtifacts(t *testing.T) {
 	if manifest.SchemaVersion != NormalizedDatasetSchemaVersion || manifest.RowCounts["scores.jsonl"] != 12 {
 		t.Fatalf("unexpected manifest: %#v", manifest)
 	}
-	if _, err := WriteNormalizedDataset(result, report, dir); err == nil || !strings.Contains(err.Error(), "already exists") {
+	if _, err = WriteNormalizedDataset(result, report, dir); err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("existing output directory was not rejected: %v", err)
 	}
 

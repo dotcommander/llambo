@@ -77,32 +77,32 @@ func (s *LocalRunStore) open() error {
 	b, err := os.ReadFile(manifestPath)
 	if os.IsNotExist(err) {
 		// The manifest is the durable start marker and must precede any call.
-		if err := writeDurableLocalJSON(manifestPath, s.manifest); err != nil {
+		if err = writeDurableLocalJSON(manifestPath, s.manifest); err != nil {
 			return fmt.Errorf("write manifest: %w", err)
 		}
 	} else if err != nil {
 		return err
 	} else {
 		var existing LocalRunManifest
-		if err := json.Unmarshal(b, &existing); err != nil {
+		if err = json.Unmarshal(b, &existing); err != nil {
 			return fmt.Errorf("parse existing manifest: %w", err)
 		}
-		if err := sameLocalRunIdentity(existing, s.manifest); err != nil {
+		if err = sameLocalRunIdentity(existing, s.manifest); err != nil {
 			return err
 		}
 	}
-	if _, err := os.Stat(filepath.Join(s.dir, "receipt.json")); err == nil {
-		if err := VerifyLocalReceipt(s.dir); err != nil {
+	if _, err = os.Stat(filepath.Join(s.dir, "receipt.json")); err == nil {
+		if err = VerifyLocalReceipt(s.dir); err != nil {
 			return fmt.Errorf("completed output receipt is invalid: %w", err)
 		}
 		return errors.New("completed output directory is immutable; use a new --output-dir")
 	} else if !os.IsNotExist(err) {
 		return err
 	}
-	if err := s.loadCalls(); err != nil {
+	if err = s.loadCalls(); err != nil {
 		return err
 	}
-	if err := s.loadIntents(); err != nil {
+	if err = s.loadIntents(); err != nil {
 		return err
 	}
 	intents, err := os.OpenFile(filepath.Join(s.dir, intentsJsonl), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
@@ -345,7 +345,7 @@ func (s *LocalRunStore) Finalize(report LocalReport, finished time.Time) (LocalR
 		return LocalReceipt{}, err
 	}
 	if _, err := os.Stat(filepath.Join(s.dir, "receipt.json")); err == nil {
-		if err := VerifyLocalReceipt(s.dir); err != nil {
+		if err = VerifyLocalReceipt(s.dir); err != nil {
 			return LocalReceipt{}, fmt.Errorf("completed output receipt is invalid: %w", err)
 		}
 		return LocalReceipt{}, errors.New("completed output directory is immutable; use a new --output-dir")

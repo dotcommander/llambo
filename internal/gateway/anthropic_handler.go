@@ -67,7 +67,7 @@ func (s *Server) parseAnthropicMessagesRequest(w http.ResponseWriter, r *http.Re
 		writeAnthropicError(w, http.StatusBadRequest, requestID, err.Error())
 		return nil, false
 	}
-	if err := validateAnthropicOptionalFields(req); err != nil {
+	if err = validateAnthropicOptionalFields(req); err != nil {
 		writeAnthropicError(w, http.StatusBadRequest, requestID, err.Error())
 		return nil, false
 	}

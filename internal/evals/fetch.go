@@ -50,15 +50,17 @@ func Fetch(ctx context.Context, opts Options) (Result, error) {
 		return fetchCachedOnly(opts, ifeval)
 	}
 	if opts.RefreshOfficialCards {
-		statuses, err := refreshOfficialModelCards(ctx, opts)
+		var statuses []SourceStatus
+		statuses, err = refreshOfficialModelCards(ctx, opts)
 		if err != nil {
 			return Result{}, err
 		}
-		result, err := fetchCachedOnly(opts, ifeval)
+		var result Result
+		result, err = fetchCachedOnly(opts, ifeval)
 		if err != nil {
 			return Result{}, err
 		}
-		if err := mergeRefreshedStatuses(result.Sources, statuses); err != nil {
+		if err = mergeRefreshedStatuses(result.Sources, statuses); err != nil {
 			return Result{}, err
 		}
 		return result, nil

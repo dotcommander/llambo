@@ -123,10 +123,10 @@ func TestFetchCachedOnlyAttachesFrozenTargetsAndReportsMissingArtifact(t *testin
 		t.Fatal(err)
 	}
 	legacyTarget := frozenLLMStatsResult(cohorts.Benchmarks["longbench-v2"])
-	if err := writeSnapshot(filepath.Join(dir, "llm-stats.json"), sourceSnapshot{FetchedAt: now, Models: []Model{{Key: "longbench-v2-000", Name: "Target", LLMStats: &LLMStatsMetrics{}, Benchmarks: map[string]BenchmarkResult{"longbench-v2": legacyTarget}}}}); err != nil {
+	if err = writeSnapshot(filepath.Join(dir, "llm-stats.json"), sourceSnapshot{FetchedAt: now, Models: []Model{{Key: "longbench-v2-000", Name: "Target", LLMStats: &LLMStatsMetrics{}, Benchmarks: map[string]BenchmarkResult{"longbench-v2": legacyTarget}}}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeSnapshot(filepath.Join(dir, "artificial-analysis.json"), sourceSnapshot{FetchedAt: now, Models: []Model{}}); err != nil {
+	if err = writeSnapshot(filepath.Join(dir, "artificial-analysis.json"), sourceSnapshot{FetchedAt: now, Models: []Model{}}); err != nil {
 		t.Fatal(err)
 	}
 	opts := Options{CacheDir: dir, Now: func() time.Time { return now }}
@@ -139,10 +139,10 @@ func TestFetchCachedOnlyAttachesFrozenTargetsAndReportsMissingArtifact(t *testin
 		t.Fatalf("missing sealed artifact did not fail closed while preserving cached models: %#v %#v", status, result.Models)
 	}
 	artifactPath := llmStatsFrozenCohortArtifactPath(dir)
-	if err := os.MkdirAll(filepath.Dir(artifactPath), 0o755); err != nil {
+	if err = os.MkdirAll(filepath.Dir(artifactPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(artifactPath, []byte("corrupt"), 0o600); err != nil {
+	if err = os.WriteFile(artifactPath, []byte("corrupt"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	result, err = fetchCachedOnly(opts, sourceSnapshot{})

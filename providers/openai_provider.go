@@ -293,7 +293,8 @@ func (p *OpenAIProvider) chatStreamRequest(ctx context.Context, backendName stri
 	start := time.Now()
 	lease, err := p.oc.acquireClient(ctx, backendName)
 	if err != nil {
-		result, err := finalizeChatRequest(backendName, cfg, start, "", nil, "", nil, err)
+		var result chatRequestResult
+		result, err = finalizeChatRequest(backendName, cfg, start, "", nil, "", nil, err)
 		return result, false, err
 	}
 	defer p.oc.releaseAttempt(backendName, lease)

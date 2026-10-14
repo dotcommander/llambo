@@ -20,23 +20,23 @@ func TestWritingRunReportDeterministic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.AppendGeneration(generations[0]); err != nil {
+	if err = store.AppendGeneration(generations[0]); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.AppendJudgment(judgments[0]); err != nil {
+	if err = store.AppendJudgment(judgments[0]); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Close(); err != nil {
+	if err = store.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := WriteWritingRunArtifacts(dir, manifest, adapter, generations, judgments, true, time.Unix(10, 0)); err != nil {
+	if _, err = WriteWritingRunArtifacts(dir, manifest, adapter, generations, judgments, true, time.Unix(10, 0)); err != nil {
 		t.Fatal(err)
 	}
 	first, err := os.ReadFile(filepath.Join(dir, "report.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := WriteWritingRunArtifacts(dir, manifest, adapter, generations, judgments, true, time.Unix(20, 0)); err == nil {
+	if _, err = WriteWritingRunArtifacts(dir, manifest, adapter, generations, judgments, true, time.Unix(20, 0)); err == nil {
 		t.Fatal("immutable completed output accepted a rewrite")
 	}
 	second, err := os.ReadFile(filepath.Join(dir, "report.json"))
@@ -100,7 +100,7 @@ func TestProseScreenArtifactsSuppressQualityImportAndUsePreScreenStatus(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Close(); err != nil {
+	if err = store.Close(); err != nil {
 		t.Fatal(err)
 	}
 	generation := WritingGenerationRecord{Key: "g", Status: "success", Provider: "p", Model: "writer", PromptID: "case"}

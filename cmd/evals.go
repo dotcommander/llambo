@@ -67,7 +67,7 @@ func (cliOpts *invocationOptions) runEvals(cmd *commandIO, _ []string) error {
 		return err
 	}
 	if strings.TrimSpace(cliOpts.evalsValidationReceipts) != "" {
-		if err := evals.ApplyValidationReceipts(&report, strings.TrimSpace(cliOpts.evalsValidationReceipts)); err != nil {
+		if err = evals.ApplyValidationReceipts(&report, strings.TrimSpace(cliOpts.evalsValidationReceipts)); err != nil {
 			return err
 		}
 	}

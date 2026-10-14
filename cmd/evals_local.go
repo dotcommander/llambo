@@ -180,10 +180,10 @@ func runLocalEvaluationCommandAt(io *commandIO, o *evalsLocalRunCommand, omlxURL
 	if observedErr != nil && runErr == nil && artifactErr == nil {
 		return fmt.Errorf("derive observed campaign cost: %w", observedErr)
 	}
-	if err := ledger.RecordOwned(owner, observedPtr, status); err != nil && runErr == nil && artifactErr == nil {
+	if err = ledger.RecordOwned(owner, observedPtr, status); err != nil && runErr == nil && artifactErr == nil {
 		return fmt.Errorf("record campaign cost: %w", err)
 	}
-	if err := errors.Join(runErr, scoreErr); err != nil {
+	if err = errors.Join(runErr, scoreErr); err != nil {
 		return err
 	}
 	if artifactErr != nil {

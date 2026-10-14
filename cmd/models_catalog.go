@@ -212,7 +212,7 @@ func runModelsCatalogImportQuality(cmd *commandIO, args []string) error {
 		return fmt.Errorf("read quality import: %w", err)
 	}
 	var records []catalog.QualityImportRecord
-	if err := json.Unmarshal(data, &records); err != nil {
+	if err = json.Unmarshal(data, &records); err != nil {
 		return fmt.Errorf("parse quality import: %w", err)
 	}
 	if len(records) == 0 {

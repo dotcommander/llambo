@@ -134,7 +134,7 @@ func TestSourceResearchLedgerDerivesExactRuntimeUnresolvedCells(t *testing.T) {
 	if err != nil || len(active) != 66 {
 		t.Fatalf("all active receipts=%d err=%v", len(active), err)
 	}
-	if err := ValidateActiveScopedNullReceipts(active, *allUnresolved); err != nil {
+	if err = ValidateActiveScopedNullReceipts(active, *allUnresolved); err != nil {
 		t.Fatal(err)
 	}
 
@@ -145,7 +145,7 @@ func TestSourceResearchLedgerDerivesExactRuntimeUnresolvedCells(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := ValidateActiveScopedNullReceipts(active, *withPresent); err == nil {
+	if err = ValidateActiveScopedNullReceipts(active, *withPresent); err == nil {
 		t.Fatal("historical receipt for runtime-present cell accepted as active")
 	}
 	activeWithPresent, err := DeriveActiveScopedNullReceipts(ledger, *withPresent)

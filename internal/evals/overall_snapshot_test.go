@@ -38,7 +38,7 @@ func TestOMLXScoreSnapshotRoundTripRetainsEmptyInventoryAndProvenance(t *testing
 	if loaded.FormulaVersion != CategoryFormulaVersion || strings.Contains(string(data), `"prior_formula_versions"`) {
 		t.Fatalf("rolling snapshot retained formula lineage: %s", data)
 	}
-	if err := SaveOMLXScoreSnapshot(path, OMLXScoreSnapshot{FormulaVersion: CategoryFormulaVersion, Inventory: []string{}, CategoryScores: map[string]map[string]*LlamboScore{}}); err != nil {
+	if err = SaveOMLXScoreSnapshot(path, OMLXScoreSnapshot{FormulaVersion: CategoryFormulaVersion, Inventory: []string{}, CategoryScores: map[string]map[string]*LlamboScore{}}); err != nil {
 		t.Fatal(err)
 	}
 	loaded, err = LoadOMLXScoreSnapshot(path)
@@ -66,10 +66,10 @@ func TestLoadLegacySnapshotsThenReplaceWithRollingSnapshot(t *testing.T) {
 	if err != nil || loaded.FormulaVersion != "LLAMBO-5" || loaded.PopulationFingerprint != "legacy-fp" || loaded.Scores["model"] == nil {
 		t.Fatalf("legacy snapshot not decoded: %#v %v", loaded, err)
 	}
-	if err := SaveOMLXScoreSnapshot(path, OMLXScoreSnapshot{FormulaVersion: CategoryFormulaVersion, Inventory: []string{"model"}, CategoryScores: map[string]map[string]*LlamboScore{"model": {}}}); err != nil {
+	if err = SaveOMLXScoreSnapshot(path, OMLXScoreSnapshot{FormulaVersion: CategoryFormulaVersion, Inventory: []string{"model"}, CategoryScores: map[string]map[string]*LlamboScore{"model": {}}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "llambo-scores.LLAMBO-5.json")); !os.IsNotExist(err) {
+	if _, err = os.Stat(filepath.Join(dir, "llambo-scores.LLAMBO-5.json")); !os.IsNotExist(err) {
 		t.Fatalf("legacy snapshot archive exists: %v", err)
 	}
 	loaded, err = LoadOMLXScoreSnapshot(path)
@@ -88,7 +88,7 @@ func TestLoadLegacySnapshotAcceptsRetiredFormulaLineage(t *testing.T) {
 	if err != nil || loaded == nil || loaded.FormulaVersion != "LLAMBO-6-category-v5" || loaded.CategoryScores["model"]["coding"].Score != 70 {
 		t.Fatalf("legacy category snapshot not decoded: %#v %v", loaded, err)
 	}
-	if err := SaveOMLXScoreSnapshot(path, *loaded); err != nil {
+	if err = SaveOMLXScoreSnapshot(path, *loaded); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(path)

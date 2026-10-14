@@ -48,7 +48,7 @@ func (a OMLXEmbeddingAdapter) Evaluate(ctx context.Context, model string, c Embe
 	if err != nil {
 		return EmbeddingEvaluation{}, err
 	}
-	if err := ValidateOMLXLoopbackBaseURL(a.BaseURL); err != nil {
+	if err = ValidateOMLXLoopbackBaseURL(a.BaseURL); err != nil {
 		return EmbeddingEvaluation{}, err
 	}
 	inputs := make([]string, 0, len(c.Documents)+len(c.Queries))
@@ -101,7 +101,7 @@ func (a OMLXEmbeddingAdapter) Evaluate(ctx context.Context, model string, c Embe
 			Embedding []float64 `json:"embedding"`
 		} `json:"data"`
 	}
-	if err := json.Unmarshal(responseBody, &payload); err != nil {
+	if err = json.Unmarshal(responseBody, &payload); err != nil {
 		return EmbeddingEvaluation{}, fmt.Errorf("parse embeddings response: %w", err)
 	}
 	served, err := localServedIdentity(model, "omlx", payload.Model, a.VerifiedServedModel)

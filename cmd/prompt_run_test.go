@@ -32,7 +32,7 @@ func TestPromptRunProviderAdmissionHonorsWorkersAndKeepsProvidersIndependent(t *
 	// provider can still run in parallel.
 	canceled, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := run.acquireProvider(canceled, providerA); !errors.Is(err, context.Canceled) {
+	if _, err = run.acquireProvider(canceled, providerA); !errors.Is(err, context.Canceled) {
 		t.Fatalf("acquire saturated provider-a = %v, want context canceled", err)
 	}
 
