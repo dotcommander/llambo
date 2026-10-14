@@ -20,6 +20,6 @@ func ExecuteChatRequest(ctx context.Context, client whtypes.Provider, cfg Config
 //
 //nolint:revive // Preserve the published argument and result contract; internals use bundles.
 func ExecuteChatStreamRequest(ctx context.Context, client whtypes.Provider, cfg Config, systemPrompt, userContent string, onChunk ChatStreamHandler, reqConfig ChatRequestConfig) (string, *LLMUsage, string, []ToolCall, bool, error) {
-	reply, emitted, _, err := executeChatStreamRequestWithIdentity(ctx, client, chatAttempt{cfg: cfg, systemPrompt: systemPrompt, userContent: userContent}, onChunk, reqConfig)
-	return reply.content, reply.usage, reply.finishReason, reply.toolCalls, emitted, err
+	outcome := executeChatStreamRequestWithIdentity(ctx, client, chatAttempt{cfg: cfg, systemPrompt: systemPrompt, userContent: userContent}, onChunk, reqConfig)
+	return outcome.reply.content, outcome.reply.usage, outcome.reply.finishReason, outcome.reply.toolCalls, outcome.emitted, outcome.err
 }

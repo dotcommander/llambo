@@ -258,3 +258,22 @@ func TestFilterByProvider(t *testing.T) {
 		})
 	}
 }
+
+func TestResolvePingCostCapsPrefersExplicitFlagAndAppliesConfigCap(t *testing.T) {
+	t.Parallel()
+
+	caps := resolvePingCostCaps(&invocationOptions{pingMaxOutputCost: 1.5}, &providers.GlobalConfig{MaxOutputCost: 9})
+	if caps.maxOutputCost != 1.5 || caps.includeUnknownCost {
+		t.Fatalf("explicit flag caps = %#v, want 1.5 with unknown pricing unchanged", caps)
+	}
+
+	caps = resolvePingCostCaps(&invocationOptions{pingIncludeUnknownCost: true}, &providers.GlobalConfig{MaxOutputCost: 2})
+	if caps.maxOutputCost != 2 || !caps.includeUnknownCost {
+		t.Fatalf("config cap = %#v, want 2 with unknown pricing retained", caps)
+	}
+
+	caps = resolvePingCostCaps(&invocationOptions{}, &providers.GlobalConfig{})
+	if caps.maxOutputCost != 0 || caps.includeUnknownCost {
+		t.Fatalf("uncapped defaults = %#v, want 0 with unknown pricing excluded", caps)
+	}
+}

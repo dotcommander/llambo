@@ -29,3 +29,19 @@ func resolveTextChatSelection(errOut io.Writer, catalogPath string, cfgs map[str
 	}
 	return selected, nil
 }
+
+// pingTargetsFromSelection maps resolved catalog targets into ping targets,
+// carrying cost status and per-1M pricing through to reporting.
+func pingTargetsFromSelection(selected []catalog.ModelTarget) []pingTarget {
+	targets := make([]pingTarget, 0, len(selected))
+	for _, target := range selected {
+		targets = append(targets, pingTarget{
+			Name:       target.Provider,
+			Config:     target.Config,
+			CostStatus: target.CostStatus,
+			InputCost:  target.InputPer1M,
+			OutputCost: target.OutputPer1M,
+		})
+	}
+	return targets
+}

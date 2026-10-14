@@ -7,6 +7,7 @@ import (
 	"time"
 )
 
+// RenderMarkdown formats canonical and projected scores with their evidence and diagnostics.
 func RenderMarkdown(report Report, limit int) string {
 	canonical, projected := partitionProjectionRows(report.Models)
 	if limit <= 0 || limit > len(canonical) {
@@ -48,24 +49,7 @@ func RenderMarkdown(report Report, limit int) string {
 	}
 	writeCoverageCampaignMarkdown(&b, report.CoverageCampaign)
 	b.WriteString("\n## Evidence\n\n")
-	for _, row := range append(append([]ReportModel(nil), rows...), projected...) {
-		for _, category := range sortedLlamboCategories(row.LlamboScores) {
-			score := row.LlamboScores[category]
-			if score == nil {
-				continue
-			}
-			fmt.Fprintf(&b, "- %s / %s: score %.1f; coverage %.1f%%; trusted coverage %.1f%%; confidence %s; winner %s; stale %t%s\n", row.Name, category, score.Score, 100*score.Coverage, 100*score.TrustedCoverage, score.Confidence, score.WinnerStatus, score.Stale, projectionSuffix(row))
-			for _, contribution := range scoreContributions(score) {
-				fmt.Fprintf(&b, "  - %s / %s: raw %s, percentile %s, frozen population %d, nominal/effective weight %.3f/%.3f, grade %s%s\n", contribution.Family, contribution.Benchmark, formatRaw(contribution.RawScore), formatRaw(contribution.Percentile), contribution.ReferencePopulation, contribution.NominalWeight, contribution.EffectiveWeight, contribution.EvidenceGrade, formatEvidenceProvenance(contribution))
-			}
-		}
-		for _, category := range sortedLlamboCategories(row.LlamboScores) {
-			reason := row.UnresolvedReasons[category]
-			if row.LlamboScores[category] == nil {
-				fmt.Fprintf(&b, "- %s / %s: unresolved — %s%s\n", row.Name, category, reason, projectionSuffix(row))
-			}
-		}
-	}
+	writeReportEvidenceMarkdown(&b, append(append([]ReportModel(nil), rows...), projected...))
 	if report.Validation != nil {
 		b.WriteString("\n## Local validation diagnostic\n\n")
 		b.WriteString("Read-only sealed exact-ID receipt comparison; it does not affect Llambo Scores, ordering, or filters.\n\n")

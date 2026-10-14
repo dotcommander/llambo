@@ -34,7 +34,12 @@ type sourceSnapshot struct {
 	EvidenceGrade   string    `json:"evidence_grade,omitempty"`
 }
 
+// Fetch loads evaluation sources using the requested cache and refresh policy.
 func Fetch(ctx context.Context, opts Options) (Result, error) {
+	return fetchWithOfficialCardFetchers(ctx, opts, officialCardFetchers{})
+}
+
+func fetchWithOfficialCardFetchers(ctx context.Context, opts Options, fetchers officialCardFetchers) (Result, error) {
 	opts.applyDefaults()
 	if opts.Refresh && opts.RefreshOfficialCards {
 		return Result{}, errors.New("global refresh and official-card refresh cannot be combined")
@@ -50,84 +55,9 @@ func Fetch(ctx context.Context, opts Options) (Result, error) {
 		return fetchCachedOnly(opts, ifeval)
 	}
 	if opts.RefreshOfficialCards {
-		var statuses []SourceStatus
-		statuses, err = refreshOfficialModelCards(ctx, opts)
-		if err != nil {
-			return Result{}, err
-		}
-		var result Result
-		result, err = fetchCachedOnly(opts, ifeval)
-		if err != nil {
-			return Result{}, err
-		}
-		if err = mergeRefreshedStatuses(result.Sources, statuses); err != nil {
-			return Result{}, err
-		}
-		return result, nil
+		return fetchRefreshedOfficialCards(ctx, opts, ifeval, fetchers)
 	}
-	var cards [officialCardCount]sourceSnapshot
-	var cardStatuses [officialCardCount]SourceStatus
-	for i, descriptor := range officialCardDescriptors {
-		if opts.Refresh {
-			fetcher := descriptor.resolveFetcher(opts)
-			cards[i], cardStatuses[i] = loadOptionalOfficialSource(ctx, opts, descriptor.cacheName, func(ctx context.Context) (sourceSnapshot, error) {
-				return fetcher(ctx, opts)
-			})
-		} else {
-			cards[i], cardStatuses[i] = readOptionalOfficialSnapshot(opts, descriptor.cacheName)
-		}
-	}
-	lfm, qwen, gptOSS, lfmVL, gemma, lfm8 := cards[officialLFM25Card], cards[officialQwen38Card], cards[officialGPTOSSCard], cards[officialLFMVLCard], cards[officialGemma4Card], cards[officialLFM25A1BCard]
-	lfmStatus, qwenStatus, gptOSSStatus, lfmVLStatus, gemmaStatus, lfm8Status := cardStatuses[officialLFM25Card], cardStatuses[officialQwen38Card], cardStatuses[officialGPTOSSCard], cardStatuses[officialLFMVLCard], cardStatuses[officialGemma4Card], cardStatuses[officialLFM25A1BCard]
-	llm, llmStatus, err := loadSource(ctx, opts, llmStats, func(ctx context.Context) (sourceSnapshot, error) {
-		return fetchLLMStats(ctx, opts)
-	})
-	if err != nil {
-		return Result{}, err
-	}
-	frozenErr := prepareFrozenLLMStatsCohortResults(llm.Models, opts.CacheDir)
-	aa, aaStatus, aaErr := loadArtificialAnalysis(ctx, opts)
-	if aaErr != nil && !opts.AllowPartial {
-		return Result{}, aaErr
-	}
-
-	writing, writingStatus, writingErr := loadSource(ctx, opts, writingbench1, func(ctx context.Context) (sourceSnapshot, error) { return fetchWritingBench(ctx, opts) })
-	if writingErr != nil && !opts.AllowPartial {
-		return Result{}, writingErr
-	}
-	eqBench, eqBenchStatus, eqBenchErr := loadSource(ctx, opts, eqbenchCreativeV3, func(ctx context.Context) (sourceSnapshot, error) { return fetchEQBenchCreative(ctx, opts) })
-	if eqBenchErr != nil && !opts.AllowPartial {
-		return Result{}, eqBenchErr
-	}
-	fiction, fictionStatus, fictionErr := loadSource(ctx, opts, WritingPrimaryID, func(ctx context.Context) (sourceSnapshot, error) { return fetchLechMazurWriting(ctx, opts) })
-	if fictionErr != nil && !opts.AllowPartial {
-		return Result{}, fictionErr
-	}
-	arena, arenaStatus, arenaErr := loadSource(ctx, opts, ArenaCreativeSourceID, func(ctx context.Context) (sourceSnapshot, error) { return fetchArenaCreative(ctx, opts) })
-	if arenaErr != nil && !opts.AllowPartial {
-		return Result{}, arenaErr
-	}
-	markSnapshotStale(&llm, llmStatus.Cache == stale1)
-	markSnapshotStale(&writing, writingStatus.Cache == stale1)
-	markSnapshotStale(&eqBench, eqBenchStatus.Cache == stale1)
-	markSnapshotStale(&fiction, fictionStatus.Cache == stale1)
-	markSnapshotStale(&arena, arenaStatus.Cache == stale1)
-	sourceModels := evalsSourceModels(evalsSourceSet{
-		llm: llm.Models, aa: aa.Models, writing: writing.Models, eqBench: eqBench.Models,
-		fiction: fiction.Models, arena: arena.Models, ifeval: ifeval.Models,
-		lfm: lfm.Models, qwen: qwen.Models, gptOSS: gptOSS.Models, lfmVL: lfmVL.Models,
-		gemma: gemma.Models, lfm8: lfm8.Models,
-	})
-	models := mergeWritingEvidenceModels(mergeModels(llm.Models, aa.Models), writing.Models, eqBench.Models, fiction.Models, arena.Models, ifeval.Models)
-	models = mergeOfficialCardModels(models, lfm.Models, qwen.Models, gptOSS.Models, lfmVL.Models, gemma.Models, lfm8.Models)
-	return Result{
-		GeneratedAt:     opts.Now().UTC(),
-		Models:          models,
-		SourceModels:    sourceModels,
-		ReferenceModels: sourceNativeModels(llm.Models, aa.Models, writing.Models, eqBench.Models, fiction.Models, arena.Models, ifeval.Models, lfm.Models, qwen.Models, gptOSS.Models, lfmVL.Models, gemma.Models, lfm8.Models),
-		Sources:         []SourceStatus{llmStatus, frozenLLMStatsCohortStatus(frozenErr), aaStatus, writingStatus, eqBenchStatus, fictionStatus, arenaStatus, statusFor("Official IFEval", ifeval.URL, ifeval, "frozen", nil), lfmStatus, qwenStatus, gptOSSStatus, lfmVLStatus, gemmaStatus, lfm8Status},
-		AAVersion:       aa.AAVersion,
-	}, nil
+	return fetchOnlineSources(ctx, opts, ifeval, fetchers)
 }
 
 var (
@@ -145,19 +75,13 @@ func officialCardFetcherForSpec(spec officialCardSpec) officialCardFetcher {
 	}
 }
 
-// refreshOfficialModelCards is intentionally a source-scoped network path.
-// It forces only the six reviewed card adapters to refresh, then leaves the
-// remaining result assembly to the cache-only path. A failing card never
-// strands the remaining cards: each card refreshes independently, successful
-// cards publish atomically, and every failure is aggregated into the returned
-// error with its underlying cause.
-func refreshOfficialModelCards(ctx context.Context, opts Options) ([]SourceStatus, error) {
+func refreshOfficialModelCardsWithFetchers(ctx context.Context, opts Options, fetchers officialCardFetchers) ([]SourceStatus, error) {
 	refresh := opts
 	refresh.Refresh = true
 	statuses := make([]SourceStatus, 0, len(officialCardDescriptors))
 	var cardErrs []error
-	for _, descriptor := range officialCardDescriptors {
-		fetcher := descriptor.resolveFetcher(opts)
+	for i, descriptor := range officialCardDescriptors {
+		fetcher := fetchers.resolve(opts, i)
 		snapshot, status, err := loadSource(ctx, refresh, descriptor.cacheName, func(ctx context.Context) (sourceSnapshot, error) {
 			return fetcher(ctx, refresh)
 		})
@@ -181,6 +105,10 @@ func refreshOfficialModelCards(ctx context.Context, opts Options) ([]SourceStatu
 }
 
 func fetchCachedOnly(opts Options, ifeval sourceSnapshot) (Result, error) {
+	return fetchCachedOnlyWithFrozenLoader(opts, ifeval, loadFrozenLLMStatsCachedObservationsSource)
+}
+
+func fetchCachedOnlyWithFrozenLoader(opts Options, ifeval sourceSnapshot, loader func(string) ([]Observation, error)) (Result, error) {
 	var cards [officialCardCount]sourceSnapshot
 	var cardStatuses [officialCardCount]SourceStatus
 	for i, descriptor := range officialCardDescriptors {
@@ -192,7 +120,7 @@ func fetchCachedOnly(opts Options, ifeval sourceSnapshot) (Result, error) {
 	if err != nil {
 		return Result{}, fmt.Errorf("read cached LLM Stats: %w", err)
 	}
-	frozenErr := prepareFrozenLLMStatsCohortResults(llm.Models, opts.CacheDir)
+	frozenErr := prepareFrozenLLMStatsCohortResultsWithLoader(llm.Models, opts.CacheDir, loader)
 	aa, err := readSnapshot(filepath.Join(opts.CacheDir, "artificial-analysis.json"))
 	if err != nil && !opts.AllowPartial {
 		return Result{}, fmt.Errorf("read cached Artificial Analysis: %w", err)
@@ -399,61 +327,6 @@ func (o *Options) applyDefaults() {
 	if o.Now == nil {
 		o.Now = time.Now
 	}
-	if o.LLMModelsURL == "" {
-		o.LLMModelsURL = "https://api.zeroeval.com/leaderboard/models"
-	}
-	if o.LLMFullURL == "" {
-		o.LLMFullURL = "https://api.zeroeval.com/leaderboard/models/full"
-	}
-	if o.LLMIndexURL == "" {
-		o.LLMIndexURL = "https://api.zeroeval.com/leaderboard/indexes/compact"
-	}
-	if o.LLMBenchmarksURL == "" {
-		o.LLMBenchmarksURL = "https://api.zeroeval.com/leaderboard/benchmarks"
-	}
-	if o.LLMStatsStatsV1ModelsURL == "" {
-		o.LLMStatsStatsV1ModelsURL = LLMStatsStatsV1ModelsURL
-	}
-	if o.LLMStatsStatsV1BenchmarksURL == "" {
-		o.LLMStatsStatsV1BenchmarksURL = LLMStatsStatsV1BenchmarksURL
-	}
-	if o.LLMStatsStatsV1ScoresURL == "" {
-		o.LLMStatsStatsV1ScoresURL = LLMStatsStatsV1ScoresURL
-	}
-	if o.AAURL == "" {
-		o.AAURL = "https://artificialanalysis.ai/api/v2/language/models/free"
-	}
-	if o.WritingBenchURL == "" {
-		o.WritingBenchURL = "https://huggingface.co/spaces/WritingBench/WritingBench/resolve/main/score.xlsx"
-	}
-	if o.EQBenchCreativeURL == "" {
-		o.EQBenchCreativeURL = "https://raw.githubusercontent.com/EQ-bench/EQ-bench-site/bf21868fd5dc4c48480e01ae354079eb1cec13fb/creative_writing.js"
-	}
-	if o.LechMazurWritingURL == "" {
-		o.LechMazurWritingURL = WritingPrimaryURL
-	}
-	if o.ArenaCreativeURL == "" {
-		o.ArenaCreativeURL = "https://raw.githubusercontent.com/lmarena/arena-catalog/main/data/leaderboard-text.json"
-	}
-	if o.OfficialLFMURL == "" {
-		o.OfficialLFMURL = "https://huggingface.co/LiquidAI/LFM2.5-2.6B/resolve/a334ee78cd38458bb71eda24109ac42dcec1309d/README.md"
-	}
-	if o.OfficialQwenURL == "" {
-		o.OfficialQwenURL = "https://huggingface.co/Qwen/Qwen3.8-27B/resolve/1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0/README.md"
-	}
-	if o.OfficialGPTOSSURL == "" {
-		o.OfficialGPTOSSURL = "https://arxiv.org/html/2508.10925v1"
-	}
-	if o.OfficialLFMVLURL == "" {
-		o.OfficialLFMVLURL = "https://huggingface.co/LiquidAI/LFM2.5-VL-3B/resolve/5a414ead75d45db003906d06fb62bd5b6846cec0/README.md"
-	}
-	if o.OfficialGemmaURL == "" {
-		o.OfficialGemmaURL = "https://huggingface.co/google/gemma-4-31B/resolve/5bbc2fb1c1b2c611d06e3d9f23c170ba21659d89/README.md"
-	}
-	if o.OfficialLFM8URL == "" {
-		o.OfficialLFM8URL = lfm25A1BURL
-	}
-	if o.officialLFM8Fetcher == nil {
-		o.officialLFM8Fetcher = officialCardFetcherForSpec(officialCardDescriptors[officialLFM25A1BCard].spec)
-	}
+	o.applySourceDefaults()
+	o.applyOfficialCardDefaults()
 }

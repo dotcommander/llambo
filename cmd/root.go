@@ -115,64 +115,90 @@ func executeRoot(ctx context.Context, args []string, stdout, stderr io.Writer) e
 	return err
 }
 
+// normalizeBranchPositionals maps legacy bare positionals onto canonical
+// subcommand paths (for example `llambo models x` becomes
+// `llambo models list x`) without touching flags or other commands.
 func normalizeBranchPositionals(args []string) []string {
 	root := firstPositional(args, 0, map[string]bool{config1: true})
 	if root < 0 {
 		return args
 	}
-	if args[root] == "models" {
-		branch := firstPositional(args, root+1, map[string]bool{config1: true})
-		if branch < 0 {
-			return insertArg(args, root+1, "list")
-		}
-		if args[branch] == "catalog" {
-			leaf := firstPositional(args, branch+1, map[string]bool{config1: true, "--tag": true})
-			if leaf < 0 {
-				return insertArg(args, branch+1, "list")
-			}
-			switch args[leaf] {
-			case "pin", "unpin", "avoid", "unavoid", "tag", "untag", "import-quality":
-				return args
-			default:
-				args = append([]string(nil), args...)
-				args[leaf] = "--provider-compat=" + args[leaf]
-				return insertArg(args, branch+1, "list")
-			}
-		}
-		switch args[branch] {
-		case "list", "discover-free", "sync-pricing":
-			return args
-		default:
-			return insertArg(args, root+1, "list")
-		}
+	switch args[root] {
+	case "models":
+		return normalizeModelsPositionals(args, root)
+	case "route":
+		return normalizeRoutePositionals(args, root)
+	case "providers":
+		return normalizeProvidersPositionals(args, root)
+	default:
+		return args
 	}
-	if args[root] == "route" {
-		branch := firstPositional(args, root+1, map[string]bool{config1: true})
-		if branch < 0 {
-			return insertArg(args, root+1, "query")
-		}
-		switch args[branch] {
-		case "query", "simulate", "canary":
-			return args
-		default:
-			args = append([]string(nil), args...)
-			args[branch] = "--query-compat=" + args[branch]
-			return insertArg(args, root+1, "query")
-		}
+}
+
+// normalizeModelsPositionals inserts the `list` default and delegates the
+// catalog branch to its own compat rewrite.
+func normalizeModelsPositionals(args []string, root int) []string {
+	branch := firstPositional(args, root+1, map[string]bool{config1: true})
+	if branch < 0 {
+		return insertArg(args, root+1, "list")
 	}
-	if args[root] == "providers" {
-		branch := firstPositional(args, root+1, map[string]bool{config1: true})
-		if branch < 0 {
-			return insertArg(args, root+1, "list")
-		}
-		switch args[branch] {
-		case "list", refresh1:
-			return args
-		default:
-			return insertArg(args, root+1, "list")
-		}
+	if args[branch] == "catalog" {
+		return normalizeModelsCatalogPositionals(args, branch)
 	}
-	return args
+	switch args[branch] {
+	case "list", "discover-free", "sync-pricing":
+		return args
+	default:
+		return insertArg(args, root+1, "list")
+	}
+}
+
+// normalizeModelsCatalogPositionals inserts the `list` default and rewrites a
+// bare provider positional into the --provider-compat flag.
+func normalizeModelsCatalogPositionals(args []string, branch int) []string {
+	leaf := firstPositional(args, branch+1, map[string]bool{config1: true, "--tag": true})
+	if leaf < 0 {
+		return insertArg(args, branch+1, "list")
+	}
+	switch args[leaf] {
+	case "pin", "unpin", "avoid", "unavoid", "tag", "untag", "import-quality":
+		return args
+	default:
+		args = append([]string(nil), args...)
+		args[leaf] = "--provider-compat=" + args[leaf]
+		return insertArg(args, branch+1, "list")
+	}
+}
+
+// normalizeRoutePositionals inserts the `query` default and rewrites a bare
+// query positional into the --query-compat flag.
+func normalizeRoutePositionals(args []string, root int) []string {
+	branch := firstPositional(args, root+1, map[string]bool{config1: true})
+	if branch < 0 {
+		return insertArg(args, root+1, "query")
+	}
+	switch args[branch] {
+	case "query", "simulate", "canary":
+		return args
+	default:
+		args = append([]string(nil), args...)
+		args[branch] = "--query-compat=" + args[branch]
+		return insertArg(args, root+1, "query")
+	}
+}
+
+// normalizeProvidersPositionals inserts the `list` default.
+func normalizeProvidersPositionals(args []string, root int) []string {
+	branch := firstPositional(args, root+1, map[string]bool{config1: true})
+	if branch < 0 {
+		return insertArg(args, root+1, "list")
+	}
+	switch args[branch] {
+	case "list", refresh1:
+		return args
+	default:
+		return insertArg(args, root+1, "list")
+	}
 }
 
 func firstPositional(args []string, start int, valueFlags map[string]bool) int {

@@ -36,7 +36,9 @@ func TestCatalogEntryWritersInitializePartialState(t *testing.T) {
 		{
 			name: "ping",
 			write: func(cat *Catalog) error {
-				RecordPingWithMetrics(cat, "provider", "model", true, time.Second, 0, 0, 0, 1, 2, "", now)
+				RecordPingWithMetrics(cat, "provider", "model", HealthObservation{
+					Success: true, Latency: time.Second, TokensIn: 1, TokensOut: 2, CheckedAt: now,
+				})
 				return nil
 			},
 			check: func(t *testing.T, entry *ModelEntry) {
@@ -93,7 +95,9 @@ func TestCatalogEntryWritersPreserveExistingEntry(t *testing.T) {
 		{
 			name: "ping",
 			write: func(cat *Catalog) error {
-				RecordPingWithMetrics(cat, "provider", "model", false, time.Second, 0, 0, 0, 0, 0, "timeout", now)
+				RecordPingWithMetrics(cat, "provider", "model", HealthObservation{
+					Success: false, Latency: time.Second, Error: "timeout", CheckedAt: now,
+				})
 				return nil
 			},
 		},

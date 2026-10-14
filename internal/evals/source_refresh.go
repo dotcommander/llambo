@@ -66,34 +66,9 @@ func RefreshEvaluationSourcesWithOptions(ctx context.Context, opts Options, name
 	if len(names) == 0 {
 		names = defaultWritingEvidenceSourceNames()
 	}
-	normalized := make([]string, 0, len(names))
-	for _, name := range names {
-		for _, item := range strings.Split(strings.ToLower(name), ",") {
-			item = strings.TrimSpace(item)
-			if item == "" {
-				continue
-			}
-			normalized = append(normalized, item)
-		}
-	}
+	normalized := normalizeEvaluationSourceNames(names)
 	if len(normalized) == 1 && normalized[0] == "llm-stats-stats-v1" {
-		if !refreshOpts.Force && refreshOpts.TTL > 0 {
-			path := filepath.Join(opts.CacheDir, "llm-stats.json")
-			if snapshot, err := readSnapshot(path); err == nil && strings.HasPrefix(snapshot.Method, "LLM Stats Stats v1 models") && snapshot.RegistryVersion == SourceRegistryVersion {
-				if age := opts.Now().Sub(snapshot.FetchedAt); age >= 0 && age < refreshOpts.TTL && validateWritingEvidenceSnapshot(snapshot) == nil {
-					return []SourceStatus{statusFor("LLM Stats", opts.LLMStatsStatsV1ModelsURL, snapshot, cached1, nil)}, nil, nil
-				}
-			}
-		}
-		status, backup, err := RefreshLLMStatsStatsV1Source(ctx, opts)
-		if err != nil {
-			return nil, nil, err
-		}
-		backups := []string(nil)
-		if backup != "" {
-			backups = append(backups, backup)
-		}
-		return []SourceStatus{status}, backups, nil
+		return refreshStatsV1WithCache(ctx, opts, refreshOpts)
 	}
 	for _, name := range normalized {
 		if name == "llm-stats-stats-v1" {
@@ -108,17 +83,11 @@ func RefreshEvaluationSourcesWithOptions(ctx context.Context, opts Options, name
 	var toFetch []string
 
 	for _, name := range normalized {
-		if !refreshOpts.Force && refreshOpts.TTL > 0 {
-			path := filepath.Join(opts.CacheDir, name+".json")
-			if snapshot, err := readSnapshot(path); err == nil {
-				if age := opts.Now().Sub(snapshot.FetchedAt); age >= 0 && age < refreshOpts.TTL && validateWritingEvidenceSnapshot(snapshot) == nil {
-					sourceDef, _ := writingEvidenceSourceFor(name)
-					cachedStatuses[name] = statusFor(sourceDef.name, sourceDef.url(opts), snapshot, cached1, nil)
-					continue
-				}
-			}
+		if status, ok := reusableEvaluationSource(opts, name, refreshOpts); ok {
+			cachedStatuses[name] = status
+		} else {
+			toFetch = append(toFetch, name)
 		}
-		toFetch = append(toFetch, name)
 	}
 
 	if len(toFetch) == 0 {
@@ -226,13 +195,7 @@ func validateWritingEvidenceSnapshot(snapshot sourceSnapshot) error {
 	}
 	for _, model := range snapshot.Models {
 		for benchmark, result := range model.Benchmarks {
-			if result.Score == nil || !finite(*result.Score) ||
-				strings.TrimSpace(result.SourceID) == "" ||
-				strings.TrimSpace(result.SourceClass) == "" ||
-				strings.TrimSpace(result.EvidenceGrade) == "" ||
-				strings.TrimSpace(result.Method) == "" ||
-				strings.TrimSpace(result.ContentSHA) == "" ||
-				strings.TrimSpace(result.Version) == "" {
+			if !writingEvidenceRowComplete(result) {
 				return fmt.Errorf("model %q benchmark %q has incomplete row provenance", model.Key, benchmark)
 			}
 		}
@@ -251,26 +214,13 @@ func RefreshLLMStatsStatsV1Source(ctx context.Context, opts Options) (SourceStat
 		return SourceStatus{}, "", fmt.Errorf("fetch llm-stats-stats-v1: %w", err)
 	}
 	snapshot.FetchedAt = opts.Now().UTC()
-	if err := validateWritingEvidenceSnapshot(snapshot); err != nil {
+	if err = validateWritingEvidenceSnapshot(snapshot); err != nil {
 		return SourceStatus{}, "", fmt.Errorf("validate llm-stats-stats-v1: %w", err)
 	}
 	cachePath := filepath.Join(opts.CacheDir, "llm-stats.json")
-	backup := ""
-	if _, err := os.Stat(cachePath); err == nil {
-		backup = LLMStatsStatsV1SourceBackupPath(opts.CacheDir, opts.Now())
-		if err = os.MkdirAll(filepath.Dir(backup), 0o750); err != nil { //nolint:gosec // reviewed directory mode
-			return SourceStatus{}, "", fmt.Errorf("create LLM Stats backup directory: %w", err)
-		}
-		var data []byte
-		data, err = os.ReadFile(cachePath)
-		if err != nil {
-			return SourceStatus{}, "", fmt.Errorf("read previous LLM Stats cache: %w", err)
-		}
-		if err = os.WriteFile(backup, data, 0o600); err != nil { //nolint:gosec // user-supplied local CLI path by design
-			return SourceStatus{}, "", fmt.Errorf("preserve previous LLM Stats cache: %w", err)
-		}
-	} else if !os.IsNotExist(err) {
-		return SourceStatus{}, "", fmt.Errorf("inspect previous LLM Stats cache: %w", err)
+	backup, err := preserveStatsV1EvaluationSourceCache(opts, cachePath)
+	if err != nil {
+		return SourceStatus{}, "", err
 	}
 	if err := writeSnapshot(cachePath, snapshot); err != nil {
 		return SourceStatus{}, "", fmt.Errorf("cache llm-stats-stats-v1: %w", err)

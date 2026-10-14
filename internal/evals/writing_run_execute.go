@@ -4,10 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
-	"sync"
-	"time"
 )
 
 // Repeated string literals consolidated by goconst.
@@ -23,7 +20,38 @@ type writingJudgmentJob struct {
 	criteria   []WritingCriterion
 }
 
-func RunWritingEvaluation(ctx context.Context, manifest WritingRunManifest, records []WritingPromptRecord, adapter WritingBenchmarkAdapter, executor WritingExecutor, store *WritingRunStore) error {
+// WritingEvaluation binds execution dependencies to one sealed manifest.
+type WritingEvaluation struct {
+	Manifest WritingRunManifest
+	Adapter  WritingBenchmarkAdapter
+	Executor WritingExecutor
+	Store    *WritingRunStore
+}
+
+type writingExecution struct {
+	manifest WritingRunManifest
+	adapter  WritingBenchmarkAdapter
+	executor WritingExecutor
+	store    *WritingRunStore
+	budget   *writingBudget
+}
+
+type writingGenerationJob struct {
+	record    WritingPromptRecord
+	model     WritingModelSpec
+	iteration int
+}
+
+type writingJudgmentAttempt struct {
+	key          string
+	attempt      int
+	system, user string
+	job          writingJudgmentJob
+}
+
+// RunWritingEvaluation resumes determinate generations and judgments within the sealed budget.
+func RunWritingEvaluation(ctx context.Context, records []WritingPromptRecord, input WritingEvaluation) error {
+	manifest, adapter, executor, store := input.Manifest, input.Adapter, input.Executor, input.Store
 	if executor == nil || store == nil {
 		return errors.New("writing executor and store are required")
 	}
@@ -34,24 +62,20 @@ func RunWritingEvaluation(ctx context.Context, manifest WritingRunManifest, reco
 		return err
 	}
 	budget := newWritingBudget(manifest.Identity.MaxRunCostUSD, store)
-	type generationJob struct {
-		record    WritingPromptRecord
-		model     WritingModelSpec
-		iteration int
-	}
-	jobs := make([]generationJob, 0, len(records)*len(manifest.Identity.Models)*manifest.Identity.Iterations)
+	execution := writingExecution{manifest: manifest, adapter: adapter, executor: executor, store: store, budget: budget}
+	jobs := make([]writingGenerationJob, 0, len(records)*len(manifest.Identity.Models)*manifest.Identity.Iterations)
 	for _, record := range records {
 		for _, model := range manifest.Identity.Models {
 			for iteration := 1; iteration <= manifest.Identity.Iterations; iteration++ {
 				key := writingGenerationKey(adapter.ID(), record.ID, model.ID(), iteration)
 				if _, ok := store.Generation(key); !ok && store.NextGenerationAttempt(key) <= maxWritingGenerationAttempts {
-					jobs = append(jobs, generationJob{record: record, model: model, iteration: iteration})
+					jobs = append(jobs, writingGenerationJob{record: record, model: model, iteration: iteration})
 				}
 			}
 		}
 	}
-	if err := runWritingJobs(ctx, manifest.Identity.Concurrency, jobs, func(ctx context.Context, job generationJob) error {
-		return executeWritingGeneration(ctx, manifest, adapter, executor, store, budget, job.record, job.model, job.iteration)
+	if err := runWritingJobs(ctx, manifest.Identity.Concurrency, jobs, func(ctx context.Context, job writingGenerationJob) error {
+		return executeWritingGeneration(ctx, execution, job)
 	}); err != nil {
 		return err
 	}
@@ -61,7 +85,7 @@ func RunWritingEvaluation(ctx context.Context, manifest WritingRunManifest, reco
 		return err
 	}
 	if err := runWritingJobs(ctx, manifest.Identity.JudgeConcurrency, judgmentJobs, func(ctx context.Context, job writingJudgmentJob) error {
-		return executeWritingJudgment(ctx, manifest, adapter, executor, store, budget, job.record, job.generation, job.criteria)
+		return executeWritingJudgment(ctx, execution, job)
 	}); err != nil {
 		return err
 	}
@@ -94,106 +118,6 @@ func pendingWritingJudgmentJobs(manifest WritingRunManifest, records []WritingPr
 	return jobs, nil
 }
 
-func executeWritingGeneration(ctx context.Context, manifest WritingRunManifest, adapter WritingBenchmarkAdapter, executor WritingExecutor, store *WritingRunStore, budget *writingBudget, record WritingPromptRecord, model WritingModelSpec, iteration int) error {
-	key := writingGenerationKey(adapter.ID(), record.ID, model.ID(), iteration)
-	attempt := store.NextGenerationAttempt(key)
-	call := WritingExecutionCall{Kind: generation1, Model: model, SystemPrompt: strings.TrimSpace(writingGenerationSystemPrompt), UserPrompt: record.Prompt, MaxOutputTokens: model.MaxOutputTokens, Settings: manifest.Identity.Generation}
-	estimate := estimateWritingCallCost(call.SystemPrompt+"\n"+call.UserPrompt, call.MaxOutputTokens, model)
-	if err := budget.reserve(estimate); err != nil {
-		return err
-	}
-	if err := store.AppendDispatchIntent(WritingDispatchIntent{Kind: generation1, Key: key, Attempt: attempt, CallSHA256: writingExecutionCallHash(call), DispatchedAt: time.Now().UTC()}); err != nil {
-		return err
-	}
-	started := time.Now().UTC()
-	result, callErr := executor.Execute(ctx, call)
-	completed := time.Now().UTC()
-	accountingCost := writingAccountingCost(result.Usage, estimate)
-	budget.complete(estimate, accountingCost)
-	recordOut := WritingGenerationRecord{
-		Key: key, Attempt: attempt, BenchmarkID: adapter.ID(), PromptID: record.ID,
-		Provider: model.Provider, Model: model.Model, Iteration: iteration,
-		StartedAt: started, CompletedAt: completed, LatencyMS: completed.Sub(started).Milliseconds(),
-		ActualProvider: result.Provider, ActualModel: result.Model, FinishReason: result.FinishReason, Route: result.Route, Usage: result.Usage,
-		AccountingCostUSD: accountingCost,
-	}
-	recordOut.Domain1, recordOut.Domain2 = writingPromptDomains(record)
-	if callErr == nil && writingFinishReasonTruncated(result.FinishReason) {
-		callErr = fmt.Errorf("generation returned truncating finish reason %q", result.FinishReason)
-	}
-	if callErr != nil {
-		recordOut.Status, recordOut.Error = failed1, callErr.Error()
-		recordOut.Content = result.Content
-	} else {
-		recordOut.Status, recordOut.Content = success1, result.Content
-		recordOut.ContentSHA256 = writingHash(result.Content)
-	}
-	appendErr := store.AppendGeneration(recordOut)
-	if callErr != nil {
-		return errors.Join(callErr, appendErr)
-	}
-	return appendErr
-}
-
-func executeWritingJudgment(ctx context.Context, manifest WritingRunManifest, adapter WritingBenchmarkAdapter, executor WritingExecutor, store *WritingRunStore, budget *writingBudget, record WritingPromptRecord, generation WritingGenerationRecord, criteria []WritingCriterion) error {
-	key := writingCombinedJudgmentKey(generation.Key, generation.ContentSHA256, manifest.Identity.Judge.ID(), manifest.Identity.JudgePromptVersion)
-	system, user, err := buildWritingAdapterJudgmentPrompt(adapter, record, generation.Content, criteria)
-	if err != nil {
-		return err
-	}
-	for attempt := store.NextJudgmentAttempt(key); attempt <= maxWritingJudgmentAttempts; attempt++ {
-		settings, err := writingAdapterJudgmentSettings(adapter, manifest)
-		if err != nil {
-			return err
-		}
-		call := WritingExecutionCall{Kind: judgment1, Model: manifest.Identity.Judge, SystemPrompt: system, UserPrompt: user, MaxOutputTokens: manifest.Identity.Judge.MaxOutputTokens, Settings: settings}
-		estimate := estimateWritingCallCost(system+"\n"+user, call.MaxOutputTokens, call.Model)
-		if err := budget.reserve(estimate); err != nil {
-			return err
-		}
-		if err := store.AppendDispatchIntent(WritingDispatchIntent{Kind: judgment1, Key: key, Attempt: attempt, CallSHA256: writingExecutionCallHash(call), DispatchedAt: time.Now().UTC()}); err != nil {
-			return err
-		}
-		started := time.Now().UTC()
-		result, callErr := executor.Execute(ctx, call)
-		completed := time.Now().UTC()
-		accountingCost := writingAccountingCost(result.Usage, estimate)
-		budget.complete(estimate, accountingCost)
-		judgment := WritingJudgmentRecord{
-			Key: key, Attempt: attempt, GenerationKey: generation.Key, ResponseSHA256: generation.ContentSHA256,
-			JudgeProvider: call.Model.Provider, JudgeModel: call.Model.Model,
-			StartedAt: started, CompletedAt: completed, LatencyMS: completed.Sub(started).Milliseconds(),
-			RawResponse: result.Content, ActualProvider: result.Provider, ActualModel: result.Model,
-			FinishReason: result.FinishReason, Route: result.Route, Usage: result.Usage,
-			AccountingCostUSD: accountingCost,
-		}
-		if callErr == nil && writingFinishReasonTruncated(result.FinishReason) {
-			callErr = fmt.Errorf("judgment returned truncating finish reason %q", result.FinishReason)
-		}
-		if callErr != nil {
-			judgment.Status, judgment.Error = failed1, callErr.Error()
-		} else {
-			results, err := parseWritingAdapterJudgment(adapter, result.Content, generation.Content, criteria)
-			if err != nil {
-				judgment.Status, judgment.Error = failed1, err.Error()
-			} else {
-				judgment.Status = success1
-				judgment.Results = results
-			}
-		}
-		if err := store.AppendJudgment(judgment); err != nil {
-			return err
-		}
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		if judgment.Status == success1 {
-			return nil
-		}
-	}
-	return nil
-}
-
 func writingFinishReasonTruncated(reason string) bool {
 	reason = strings.ToLower(strings.TrimSpace(reason))
 	return strings.Contains(reason, "truncat") || strings.Contains(reason, "max_token") || strings.Contains(reason, "token_limit") || reason == "length"
@@ -208,58 +132,6 @@ func writingExecutionCallHash(call WritingExecutionCall) string {
 		return writingHash("marshal-error:" + err.Error())
 	}
 	return writingHash(string(data))
-}
-
-func runWritingJobs[T any](ctx context.Context, concurrency int, jobs []T, fn func(context.Context, T) error) error {
-	if concurrency < 1 {
-		return errors.New("writing concurrency must be positive")
-	}
-	jobCh := make(chan T)
-	workerCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	errCh := make(chan error, 1)
-	var workers sync.WaitGroup
-	for i := 0; i < concurrency; i++ {
-		workers.Add(1)
-		go func() {
-			defer workers.Done()
-			for job := range jobCh {
-				if workerCtx.Err() != nil {
-					return
-				}
-				if err := fn(workerCtx, job); err != nil {
-					select {
-					case errCh <- err:
-						cancel()
-					default:
-					}
-					return
-				}
-			}
-		}()
-	}
-	for _, job := range jobs {
-		select {
-		case jobCh <- job:
-		case <-workerCtx.Done():
-			close(jobCh)
-			workers.Wait()
-			select {
-			case runErr := <-errCh:
-				return runErr
-			default:
-				return workerCtx.Err()
-			}
-		}
-	}
-	close(jobCh)
-	workers.Wait()
-	select {
-	case err := <-errCh:
-		return err
-	default:
-		return nil
-	}
 }
 
 func writingPromptDomains(record WritingPromptRecord) (primary, secondary string) {
@@ -289,60 +161,4 @@ func writingRunComplete(manifest WritingRunManifest, records []WritingPromptReco
 		}
 	}
 	return true
-}
-
-type writingBudget struct {
-	mu       sync.Mutex
-	max      float64
-	spent    float64
-	reserved float64
-}
-
-func newWritingBudget(max float64, store *WritingRunStore) *writingBudget {
-	generations, judgments := store.Records()
-	spent := 0.0
-	for _, record := range generations {
-		spent += writingPersistedAccountingCost(record.AccountingCostUSD, record.Usage)
-	}
-	for _, record := range judgments {
-		spent += writingPersistedAccountingCost(record.AccountingCostUSD, record.Usage)
-	}
-	return &writingBudget{max: max, spent: spent}
-}
-
-func (b *writingBudget) reserve(estimate float64) error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.max <= 0 {
-		return errors.New("writing run cost limit must be positive")
-	}
-	if b.spent+b.reserved+estimate > b.max+1e-12 {
-		return fmt.Errorf("writing run cost gate: estimated admission $%.6f would exceed $%.6f limit", b.spent+b.reserved+estimate, b.max)
-	}
-	b.reserved += estimate
-	return nil
-}
-
-func (b *writingBudget) complete(estimate, actual float64) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.reserved -= estimate
-	if b.reserved < 0 {
-		b.reserved = 0
-	}
-	b.spent += actual
-}
-
-func writingAccountingCost(usage WritingUsage, estimate float64) float64 {
-	if usage.Known && (usage.CostKnown || (usage.CacheReadTokens == 0 && usage.CacheWriteTokens == 0)) {
-		return usage.CostUSD
-	}
-	return estimate
-}
-
-func writingPersistedAccountingCost(accountingCost float64, usage WritingUsage) float64 {
-	if accountingCost > 0 {
-		return accountingCost
-	}
-	return usage.CostUSD
 }

@@ -34,6 +34,7 @@ func DecodeObservationsParquet(data []byte, maxBytes int64) ([]Observation, erro
 	return rows, nil
 }
 
+// RebuildObservationIndex replaces the derived SQLite index after validating its integrity.
 func RebuildObservationIndex(ctx context.Context, path string, observations []Observation) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil { //nolint:gosec // reviewed directory mode
 		return err
@@ -65,27 +66,7 @@ sample_size INTEGER NOT NULL, evidence_grade TEXT NOT NULL, fetched_at TEXT NOT 
 provenance_locator TEXT NOT NULL, source_class TEXT NOT NULL) STRICT`); err != nil {
 		return fmt.Errorf("create observation index: %w", err)
 	}
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	stmt, err := tx.PrepareContext(ctx, `INSERT INTO observations VALUES(NULL,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-	if err != nil {
-		_ = tx.Rollback()
-		return err
-	}
-	defer func() { _ = stmt.Close() }()
-	for i, observation := range observations {
-		if err := observation.Validate(); err != nil {
-			_ = tx.Rollback()
-			return fmt.Errorf("observation %d: %w", i+1, err)
-		}
-		if _, err := stmt.ExecContext(ctx, observation.SourceID, observation.SourceRevision, observation.SourceSHA256, observation.Benchmark, observation.BenchmarkVersion, observation.Cohort, observation.ModelID, observation.OrganizationID, observation.RawScore, observation.Unit, observation.Direction, observation.Methodology, observation.Judge, observation.SampleSize, observation.EvidenceGrade, observation.FetchedAt.UTC().Format("2006-01-02T15:04:05.999999999Z07:00"), observation.Locator, string(observation.SourceClass)); err != nil {
-			_ = tx.Rollback()
-			return fmt.Errorf("insert observation %d: %w", i+1, err)
-		}
-	}
-	if err := tx.Commit(); err != nil {
+	if err := insertObservationIndexRows(ctx, db, observations); err != nil {
 		return err
 	}
 	var integrity string

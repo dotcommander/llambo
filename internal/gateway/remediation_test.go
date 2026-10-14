@@ -129,6 +129,61 @@ func TestAnthropicStructuredToolHistory(t *testing.T) {
 func TestExactGatewayMessagesJobsAndEmbeddingBatches(t *testing.T) {
 	t.Parallel()
 	var chatCalls, embedCalls atomic.Int64
+	upstream := exactGatewayUpstream(t, &chatCalls, &embedCalls)
+	t.Cleanup(upstream.Close)
+	configs := map[string]providers.Config{"fixture": {Enabled: true, Model: "default", Models: []string{"Vendor/ExactCase"}, BaseURL: upstream.URL, APIKey: "test", ProviderType: "openai"}}
+	server := newWormholeHandlerTestServer(t, configs)
+	embedder, err := providers.NewOpenAIEmbeddingWithConfig(providers.EmbedConfig{Model: "embedding-default", BatchSize: 1, Dimensions: 2}, configs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.embedder = embedder
+	t.Cleanup(embedder.Close)
+	rr := makeRequest(t, server.handleAnthropicMessages, "POST", "/v1/messages", map[string]any{"model": "fixture/Vendor/ExactCase", "max_tokens": 32, "messages": []any{map[string]any{"role": "user", "content": "hi"}}})
+	if rr.Code != 200 || rr.Header().Get("X-Llambo-Model") != "Vendor/ExactCase" {
+		t.Fatalf("messages: %d %s", rr.Code, rr.Body.String())
+	}
+	rr = makeRequest(t, server.handleCreateJob, "POST", "/v1/jobs", CreateJobRequest{Model: "fixture/Vendor/ExactCase", Requests: []JobRequest{{ID: "1", Messages: []Message{{Role: "user", Content: "hi"}}}}})
+	assertExactGatewayJob(t, server, rr)
+	rr = makeRequest(t, server.handleEmbeddings, "POST", "/v1/embeddings", EmbeddingRequest{Model: "fixture/Vendor/ExactCase", Input: []string{"one", "two"}})
+	if rr.Code != 200 || embedCalls.Load() != 2 || chatCalls.Load() != 2 {
+		t.Fatalf("embedding batches: status %d chat=%d embeddings=%d %s", rr.Code, chatCalls.Load(), embedCalls.Load(), rr.Body.String())
+	}
+	if rr.Header().Get("X-Llambo-Provider") != "fixture" || rr.Header().Get("X-Llambo-Model") != "Vendor/ExactCase" {
+		t.Fatal("missing actual embedding identity")
+	}
+	assertGatewayUnknownTargets(t, server)
+	if chatCalls.Load() != 2 || embedCalls.Load() != 2 {
+		t.Fatal("unknown target made upstream call")
+	}
+}
+
+func assertExactGatewayJob(t *testing.T, server *Server, rr *httptest.ResponseRecorder) {
+	t.Helper()
+	if rr.Code != 202 {
+		t.Fatalf("job: %d %s", rr.Code, rr.Body.String())
+	}
+	var admitted JobResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &admitted); err != nil {
+		t.Fatal(err)
+	}
+	job := server.jobManager.GetJob(admitted.JobID)
+	if job == nil {
+		t.Fatal("job not retained")
+	}
+	select {
+	case <-job.done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("job did not drain")
+	}
+	result := job.ToResponse()
+	if len(result.Results) != 1 || result.Results[0].Model != "Vendor/ExactCase" {
+		t.Fatalf("queue changed model: %+v", result)
+	}
+}
+
+func exactGatewayUpstream(t *testing.T, chatCalls, embedCalls *atomic.Int64) *httptest.Server {
+	t.Helper()
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]json.RawMessage
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -154,47 +209,11 @@ func TestExactGatewayMessagesJobsAndEmbeddingBatches(t *testing.T) {
 		chatCalls.Add(1)
 		_ = json.NewEncoder(w).Encode(map[string]any{"id": "answer", "model": model, "choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": "done"}, "finish_reason": "stop"}}})
 	}))
-	t.Cleanup(upstream.Close)
-	configs := map[string]providers.Config{"fixture": {Enabled: true, Model: "default", Models: []string{"Vendor/ExactCase"}, BaseURL: upstream.URL, APIKey: "test", ProviderType: "openai"}}
-	server := newWormholeHandlerTestServer(t, configs)
-	embedder, err := providers.NewOpenAIEmbeddingWithConfig(providers.EmbedConfig{Model: "embedding-default", BatchSize: 1, Dimensions: 2}, configs)
-	if err != nil {
-		t.Fatal(err)
-	}
-	server.embedder = embedder
-	t.Cleanup(embedder.Close)
-	rr := makeRequest(t, server.handleAnthropicMessages, "POST", "/v1/messages", map[string]any{"model": "fixture/Vendor/ExactCase", "max_tokens": 32, "messages": []any{map[string]any{"role": "user", "content": "hi"}}})
-	if rr.Code != 200 || rr.Header().Get("X-Llambo-Model") != "Vendor/ExactCase" {
-		t.Fatalf("messages: %d %s", rr.Code, rr.Body.String())
-	}
-	rr = makeRequest(t, server.handleCreateJob, "POST", "/v1/jobs", CreateJobRequest{Model: "fixture/Vendor/ExactCase", Requests: []JobRequest{{ID: "1", Messages: []Message{{Role: "user", Content: "hi"}}}}})
-	if rr.Code != 202 {
-		t.Fatalf("job: %d %s", rr.Code, rr.Body.String())
-	}
-	var admitted JobResponse
-	if err := json.Unmarshal(rr.Body.Bytes(), &admitted); err != nil {
-		t.Fatal(err)
-	}
-	job := server.jobManager.GetJob(admitted.JobID)
-	if job == nil {
-		t.Fatal("job not retained")
-	}
-	select {
-	case <-job.done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("job did not drain")
-	}
-	result := job.ToResponse()
-	if len(result.Results) != 1 || result.Results[0].Model != "Vendor/ExactCase" {
-		t.Fatalf("queue changed model: %+v", result)
-	}
-	rr = makeRequest(t, server.handleEmbeddings, "POST", "/v1/embeddings", EmbeddingRequest{Model: "fixture/Vendor/ExactCase", Input: []string{"one", "two"}})
-	if rr.Code != 200 || embedCalls.Load() != 2 || chatCalls.Load() != 2 {
-		t.Fatalf("embedding batches: status %d chat=%d embeddings=%d %s", rr.Code, chatCalls.Load(), embedCalls.Load(), rr.Body.String())
-	}
-	if rr.Header().Get("X-Llambo-Provider") != "fixture" || rr.Header().Get("X-Llambo-Model") != "Vendor/ExactCase" {
-		t.Fatal("missing actual embedding identity")
-	}
+	return upstream
+}
+
+func assertGatewayUnknownTargets(t *testing.T, server *Server) {
+	t.Helper()
 	for _, path := range []string{"messages", "embeddings"} {
 		var body any = EmbeddingRequest{Model: "fixture/missing", Input: []string{"one"}}
 		handler := server.handleEmbeddings
@@ -202,13 +221,10 @@ func TestExactGatewayMessagesJobsAndEmbeddingBatches(t *testing.T) {
 			body = map[string]any{"model": "fixture/missing", "max_tokens": 32, "stream": true, "messages": []any{map[string]any{"role": "user", "content": "hi"}}}
 			handler = server.handleAnthropicMessages
 		}
-		rr = makeRequest(t, handler, "POST", "/v1/"+path, body)
+		rr := makeRequest(t, handler, "POST", "/v1/"+path, body)
 		if rr.Code != 400 {
 			t.Fatalf("unknown %s: %d", path, rr.Code)
 		}
-	}
-	if chatCalls.Load() != 2 || embedCalls.Load() != 2 {
-		t.Fatal("unknown target made upstream call")
 	}
 }
 

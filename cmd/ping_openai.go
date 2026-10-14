@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/dotcommander/llambo/providers"
 	whopenai "github.com/garyblankenship/wormhole/v3/providers/openai"
@@ -18,14 +17,10 @@ type pingOpenAIClient struct {
 	extraBodyByModel map[string]map[string]any
 }
 
+// pingOpenAIResult reports a completed OpenAI-compatible ping attempt.
 type pingOpenAIResult struct {
-	Content    string
-	Model      string
-	TokensIn   int
-	TokensOut  int
-	ID         string
-	TTFB       time.Duration
-	Generation time.Duration
+	pingStreamOutcome
+	ID string
 }
 
 func newPingOpenAIClientForConfig(name string, cfg providers.Config) (*pingOpenAIClient, error) {
@@ -64,11 +59,10 @@ func (c *pingOpenAIClient) Chat(ctx context.Context, systemPrompt, userContent s
 		return nil, fmt.Errorf("openai API: %w", err)
 	}
 
-	result := &pingOpenAIResult{
-		ID:      resp.ID,
-		Model:   resp.Model,
+	result := &pingOpenAIResult{pingStreamOutcome: pingStreamOutcome{
 		Content: strings.TrimSpace(resp.Text),
-	}
+		Model:   resp.Model,
+	}, ID: resp.ID}
 	if resp.Usage != nil {
 		result.TokensIn = resp.Usage.PromptTokens
 		result.TokensOut = resp.Usage.CompletionTokens
@@ -77,23 +71,11 @@ func (c *pingOpenAIClient) Chat(ctx context.Context, systemPrompt, userContent s
 }
 
 func (c *pingOpenAIClient) ChatStream(ctx context.Context, systemPrompt, userContent string, maxTokens int) (*pingOpenAIResult, error) {
-	started := time.Now()
-	stream, err := c.provider.Stream(ctx, c.textRequest(systemPrompt, userContent, maxTokens))
+	outcome, err := streamPingText(ctx, c.provider, c.textRequest(systemPrompt, userContent, maxTokens), c.model)
 	if err != nil {
 		return nil, err
 	}
-	stats, err := consumePingStream(stream, started)
-	if err != nil {
-		return nil, err
-	}
-	return &pingOpenAIResult{
-		Content:    stats.Content,
-		Model:      c.model,
-		TokensIn:   stats.TokensIn,
-		TokensOut:  stats.TokensOut,
-		TTFB:       stats.TTFB,
-		Generation: stats.Generation,
-	}, nil
+	return &pingOpenAIResult{pingStreamOutcome: outcome}, nil
 }
 
 func (c *pingOpenAIClient) textRequest(systemPrompt, userContent string, maxTokens int) whtypes.TextRequest {

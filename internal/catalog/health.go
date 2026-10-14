@@ -26,16 +26,19 @@ const (
 	promptObservation
 )
 
-func RecordPing(cat *Catalog, providerName, modelID string, success bool, latency time.Duration, tokensIn, tokensOut int, errText string, checkedAt time.Time) {
-	RecordPingWithMetrics(cat, providerName, modelID, success, latency, 0, 0, 0, tokensIn, tokensOut, errText, checkedAt)
+// RecordPing records a lightweight health-check observation without extended
+// latency metrics; extended timing fields on the observation are ignored.
+func RecordPing(cat *Catalog, providerName, modelID string, observation HealthObservation) {
+	observation.TTFB = 0
+	observation.Generation = 0
+	observation.SpeedTokensPerSecond = 0
+	recordHealth(cat, providerName, modelID, observation, pingObservation)
 }
 
-func RecordPingWithMetrics(cat *Catalog, providerName, modelID string, success bool, latency, ttfb, generation time.Duration, speedTokensPerSecond float64, tokensIn, tokensOut int, errText string, checkedAt time.Time) {
-	recordHealth(cat, providerName, modelID, HealthObservation{
-		Success: success, Latency: latency, TTFB: ttfb, Generation: generation,
-		SpeedTokensPerSecond: speedTokensPerSecond, TokensIn: tokensIn, TokensOut: tokensOut,
-		Error: errText, CheckedAt: checkedAt,
-	}, pingObservation)
+// RecordPingWithMetrics records a health observation with TTFB, generation, and
+// token-speed metrics.
+func RecordPingWithMetrics(cat *Catalog, providerName, modelID string, observation HealthObservation) {
+	recordHealth(cat, providerName, modelID, observation, pingObservation)
 }
 
 // RecordPrompt preserves quarantine on slow successful generations: their
@@ -80,21 +83,39 @@ func recordHealth(cat *Catalog, providerName, modelID string, observation Health
 	}
 }
 
+// ClassifyError maps an error string onto a stable category consumed by
+// quarantine policy and reporting.
 func ClassifyError(errText string) string {
 	lower := strings.ToLower(strings.TrimSpace(errText))
-	if lower == "" {
-		return ""
-	}
 	switch {
-	case strings.Contains(lower, "timeout") || strings.Contains(lower, "deadline"):
+	case lower == "":
+		return ""
+	case containsAny(lower, "timeout", "deadline"):
 		return "timeout"
-	case strings.Contains(lower, "rate limit") || strings.Contains(lower, "429"):
+	case containsAny(lower, "rate limit", "429"):
 		return "rate_limit"
-	case strings.Contains(lower, "model") && (strings.Contains(lower, "not found") || strings.Contains(lower, "invalid") || strings.Contains(lower, "unsupported") || strings.Contains(lower, "no longer available") || strings.Contains(lower, "end of life") || strings.Contains(lower, "410 gone")):
+	case isModelAvailabilityError(lower):
 		return "model_unsupported"
-	case strings.Contains(lower, "api key") || strings.Contains(lower, "unauthorized") || strings.Contains(lower, "401") || strings.Contains(lower, "403"):
+	case containsAny(lower, "api key", "unauthorized", "401", "403"):
 		return "auth"
 	default:
 		return "error"
 	}
+}
+
+// containsAny reports whether s contains any one of the substrings.
+func containsAny(s string, substrings ...string) bool {
+	for _, sub := range substrings {
+		if strings.Contains(s, sub) {
+			return true
+		}
+	}
+	return false
+}
+
+// isModelAvailabilityError matches model rejection wording: a mention of the
+// model plus an availability-failure phrase.
+func isModelAvailabilityError(lower string) bool {
+	return strings.Contains(lower, "model") && containsAny(lower,
+		"not found", "invalid", "unsupported", "no longer available", "end of life", "410 gone")
 }

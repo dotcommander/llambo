@@ -105,89 +105,57 @@ func resolveDailyLimit[T ~int64 | ~float64](limits map[string]T, provider string
 	return v, ok && v > 0
 }
 
-func scoreCandidates(configs map[string]Config, healthy []Backend, routing RoutingConfig, metrics map[string]ProviderRuntimeMetrics, intent RoutingIntent, estimatedTokens int) []CandidateScore {
-	var allowed map[string]struct{}
-	if len(routing.AllowedProviders) > 0 {
-		allowed = make(map[string]struct{}, len(routing.AllowedProviders))
-		for _, name := range routing.AllowedProviders {
-			allowed[strings.ToLower(name)] = struct{}{}
-		}
-	}
-	var denied map[string]struct{}
-	if len(routing.DeniedProviders) > 0 {
-		denied = make(map[string]struct{}, len(routing.DeniedProviders))
-		for _, name := range routing.DeniedProviders {
-			denied[strings.ToLower(name)] = struct{}{}
-		}
-	}
+// candidateScoring carries the request-wide routing inputs shared by every
+// candidate evaluated in one scoring pass.
+type candidateScoring struct {
+	metrics         map[string]ProviderRuntimeMetrics
+	mode            string
+	routing         RoutingConfig
+	estimatedTokens int
+	intent          RoutingIntent
+	allowed         map[string]struct{}
+	denied          map[string]struct{}
+}
 
-	mode := NormalizeRoutingMode(routing.Mode)
+// providerNameSet lowercases a provider allow/deny list into a set.
+func providerNameSet(names []string) map[string]struct{} {
+	if len(names) == 0 {
+		return nil
+	}
+	set := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		set[strings.ToLower(name)] = struct{}{}
+	}
+	return set
+}
+
+// newCandidateScoring assembles the request-wide routing inputs shared by
+// every candidate in one scoring pass. The metrics snapshot is referenced,
+// never copied or mutated.
+func newCandidateScoring(routing RoutingConfig, metrics map[string]ProviderRuntimeMetrics, intent RoutingIntent, estimatedTokens int) candidateScoring {
+	return candidateScoring{
+		metrics:         metrics,
+		mode:            NormalizeRoutingMode(routing.Mode),
+		routing:         routing,
+		estimatedTokens: estimatedTokens,
+		intent:          intent,
+		allowed:         providerNameSet(routing.AllowedProviders),
+		denied:          providerNameSet(routing.DeniedProviders),
+	}
+}
+
+// scoreCandidates scores every healthy backend against one request's scoring
+// inputs and returns the candidates ordered by descending score.
+func scoreCandidates(configs map[string]Config, healthy []Backend, scoring candidateScoring) []CandidateScore {
 	scored := make([]CandidateScore, 0, len(healthy))
 	for _, b := range healthy {
 		cfg, ok := configs[b.Name]
 		if !ok {
 			continue
 		}
-
-		lname := strings.ToLower(b.Name)
-		lbase := strings.ToLower(BaseProviderName(b.Name, cfg.Model))
-		if len(allowed) > 0 {
-			if _, ok := allowed[lname]; !ok {
-				if _, ok := allowed[lbase]; !ok {
-					continue
-				}
-			}
+		if candidate, ok := scoring.score(cfg, b); ok {
+			scored = append(scored, candidate)
 		}
-		if _, blocked := denied[lname]; blocked {
-			continue
-		}
-		if _, blocked := denied[lbase]; blocked {
-			continue
-		}
-
-		// Context-window precheck: drop a candidate whose KNOWN context window
-		// can't structurally hold the estimated prompt plus a completion reserve.
-		// Unknown limits (0) always pass (graceful degradation).
-		if !contextFits(cfg.ContextLength, estimatedTokens, contextHeadroomTokens) {
-			continue
-		}
-
-		cost := estimateCostUSD(cfg, estimatedTokens)
-		if routing.MaxCostUSD > 0 && cost > routing.MaxCostUSD {
-			continue
-		}
-
-		m := metrics[b.Name]
-		if exceedsDailyQuota(routing, b.Name, m, estimatedTokens, cost) {
-			continue
-		}
-
-		latencyMs := float64(cfg.ExpectedLatencyMs)
-		if latencyMs <= 0 && m.Requests > 0 {
-			latencyMs = float64(m.TotalLatencyMs) / float64(m.Requests)
-		}
-		if latencyMs <= 0 {
-			latencyMs = 1200
-		}
-
-		if routing.MaxLatencyMs > 0 && int(latencyMs) > routing.MaxLatencyMs {
-			continue
-		}
-
-		errorRate := 0.0
-		if m.Requests > 0 {
-			errorRate = float64(m.Failures) / float64(m.Requests)
-		}
-
-		fit := capabilityFit(cfg.Capabilities, intent)
-		runtimeQuality := runtimeQualityScore(m)
-		score, reason := applyModeScoreNormalized(mode, modeScoreInputs{quality: cfg.Quality, runtimeQuality: runtimeQuality, fit: fit, latencyMs: latencyMs, costUSD: cost, errorRate: errorRate})
-		scored = append(scored, CandidateScore{
-			Provider: b.Name,
-			Model:    b.Model,
-			Score:    score,
-			Reason:   reason,
-		})
 	}
 
 	sort.SliceStable(scored, func(i, j int) bool {
@@ -198,6 +166,79 @@ func scoreCandidates(configs map[string]Config, healthy []Backend, routing Routi
 	})
 
 	return scored
+}
+
+// score evaluates one healthy backend against the routing policy, reporting
+// ok=false when the candidate is excluded. The filter order — allow/deny,
+// context window, cost, daily quota, latency — is part of the routing
+// contract and the blended score math is unchanged.
+func (s candidateScoring) score(cfg Config, b Backend) (CandidateScore, bool) {
+	if !s.providerAllowed(cfg, b.Name) {
+		return CandidateScore{}, false
+	}
+
+	// Context-window precheck: drop a candidate whose KNOWN context window
+	// can't structurally hold the estimated prompt plus a completion reserve.
+	// Unknown limits (0) always pass (graceful degradation).
+	if !contextFits(cfg.ContextLength, s.estimatedTokens, contextHeadroomTokens) {
+		return CandidateScore{}, false
+	}
+
+	cost := estimateCostUSD(cfg, s.estimatedTokens)
+	if s.routing.MaxCostUSD > 0 && cost > s.routing.MaxCostUSD {
+		return CandidateScore{}, false
+	}
+
+	m := s.metrics[b.Name]
+	if exceedsDailyQuota(s.routing, b.Name, m, s.estimatedTokens, cost) {
+		return CandidateScore{}, false
+	}
+
+	latencyMs := candidateLatencyMs(cfg, m)
+	if s.routing.MaxLatencyMs > 0 && int(latencyMs) > s.routing.MaxLatencyMs {
+		return CandidateScore{}, false
+	}
+
+	errorRate := 0.0
+	if m.Requests > 0 {
+		errorRate = float64(m.Failures) / float64(m.Requests)
+	}
+
+	fit := capabilityFit(cfg.Capabilities, s.intent)
+	score, reason := applyModeScoreNormalized(s.mode, modeScoreInputs{quality: cfg.Quality, runtimeQuality: runtimeQualityScore(m), fit: fit, latencyMs: latencyMs, costUSD: cost, errorRate: errorRate})
+	return CandidateScore{Provider: b.Name, Model: b.Model, Score: score, Reason: reason}, true
+}
+
+// providerAllowed applies allow/deny membership on both the full backend name
+// and its base provider name; an empty allow list admits everything.
+func (s candidateScoring) providerAllowed(cfg Config, name string) bool {
+	lname := strings.ToLower(name)
+	lbase := strings.ToLower(BaseProviderName(name, cfg.Model))
+	if len(s.allowed) > 0 {
+		if _, ok := s.allowed[lname]; !ok {
+			if _, ok := s.allowed[lbase]; !ok {
+				return false
+			}
+		}
+	}
+	if _, blocked := s.denied[lname]; blocked {
+		return false
+	}
+	_, blocked := s.denied[lbase]
+	return !blocked
+}
+
+// candidateLatencyMs resolves a candidate's expected latency, preferring the
+// configured value, then the measured average, then a neutral default.
+func candidateLatencyMs(cfg Config, m ProviderRuntimeMetrics) float64 {
+	latencyMs := float64(cfg.ExpectedLatencyMs)
+	if latencyMs <= 0 && m.Requests > 0 {
+		latencyMs = float64(m.TotalLatencyMs) / float64(m.Requests)
+	}
+	if latencyMs <= 0 {
+		latencyMs = 1200
+	}
+	return latencyMs
 }
 
 func exceedsDailyQuota(routing RoutingConfig, provider string, m ProviderRuntimeMetrics, estimatedTokens int, estimatedCost float64) bool {

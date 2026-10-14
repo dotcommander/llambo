@@ -42,8 +42,12 @@ func loadFrozenLLMStatsCachedObservations(cacheDir string) ([]Observation, error
 // the fully validated pinned artifact. Refresh may collect newer data, but it
 // can never become a scoring fallback for this immutable cohort contract.
 func prepareFrozenLLMStatsCohortResults(models []Model, cacheDir string) error {
+	return prepareFrozenLLMStatsCohortResultsWithLoader(models, cacheDir, loadFrozenLLMStatsCachedObservationsSource)
+}
+
+func prepareFrozenLLMStatsCohortResultsWithLoader(models []Model, cacheDir string, loader func(string) ([]Observation, error)) error {
 	removeFrozenLLMStatsCohortResults(models)
-	observations, err := loadFrozenLLMStatsCachedObservationsSource(cacheDir)
+	observations, err := loader(cacheDir)
 	if err != nil {
 		return err
 	}
@@ -121,36 +125,8 @@ func validateFrozenLLMStatsObservationArtifact(observations []Observation) ([]Ob
 	targets := make([]Observation, 0, 267)
 	for benchmark, cohort := range cohorts.Benchmarks {
 		rows := byBenchmark[benchmark]
-		if len(rows) != cohort.RowCount {
-			return nil, fmt.Errorf("frozen LLM Stats cohort %s has %d rows, want %d", benchmark, len(rows), cohort.RowCount)
-		}
-		scores := make([]float64, 0, len(rows))
-		digests := make(map[string]struct{}, len(cohort.Digests))
-		modelIDs := make(map[string]struct{}, len(rows))
-		for _, observation := range rows {
-			if observation.SourceID != cohort.SourceID || string(observation.SourceClass) != cohort.SourceClass || observation.BenchmarkVersion != cohort.BenchmarkVersion || observation.Cohort != cohort.Cohort || observation.Methodology != cohort.Methodology || observation.Direction != cohort.Direction || observation.SourceRevision == "" || observation.SourceRevision != observation.SourceSHA256 {
-				return nil, fmt.Errorf("frozen LLM Stats cohort %s has an incompatible row", benchmark)
-			}
-			if _, duplicate := modelIDs[observation.ModelID]; duplicate {
-				return nil, fmt.Errorf("frozen LLM Stats cohort %s has duplicate model ID %s", benchmark, observation.ModelID)
-			}
-			modelIDs[observation.ModelID] = struct{}{}
-			digests[observation.SourceRevision] = struct{}{}
-			scores = append(scores, observation.RawScore)
-		}
-		if len(digests) != len(cohort.Digests) {
-			return nil, fmt.Errorf("frozen LLM Stats cohort %s has incompatible digest set", benchmark)
-		}
-		for _, digest := range cohort.Digests {
-			if _, ok := digests[digest]; !ok {
-				return nil, fmt.Errorf("frozen LLM Stats cohort %s is missing digest %s", benchmark, digest)
-			}
-		}
-		sort.Float64s(scores)
-		for index, score := range cohort.Scores {
-			if scores[index] != score {
-				return nil, fmt.Errorf("frozen LLM Stats cohort %s has incompatible score population", benchmark)
-			}
+		if err := validateFrozenLLMStatsCohortRows(benchmark, cohort, rows); err != nil {
+			return nil, err
 		}
 		targets = append(targets, rows...)
 	}

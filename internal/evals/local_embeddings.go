@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"strings"
 )
@@ -37,48 +36,16 @@ type EmbeddingEvaluation struct {
 	NDCGAt10    float64
 }
 
+// Evaluate executes and scores a bounded retrieval case against the verified OMLX model.
 func (a OMLXEmbeddingAdapter) Evaluate(ctx context.Context, model string, c EmbeddingCase) (EmbeddingEvaluation, error) {
-	if strings.TrimSpace(model) == "" || strings.TrimSpace(c.ID) == "" || len(c.Documents) == 0 || len(c.Queries) == 0 {
-		return EmbeddingEvaluation{}, errors.New("model, case id, documents, and queries are required")
-	}
-	endpointModel, err := localOMLXModel(model)
+	prepared, err := a.prepareRequest(model, c)
 	if err != nil {
 		return EmbeddingEvaluation{}, err
-	}
-	root, err := normalizeOMLXBaseURL(a.BaseURL)
-	if err != nil {
-		return EmbeddingEvaluation{}, err
-	}
-	if err = ValidateOMLXLoopbackBaseURL(a.BaseURL); err != nil {
-		return EmbeddingEvaluation{}, err
-	}
-	inputs := make([]string, 0, len(c.Documents)+len(c.Queries))
-	for i, d := range c.Documents {
-		if strings.TrimSpace(d.ID) == "" || strings.TrimSpace(d.Text) == "" {
-			return EmbeddingEvaluation{}, fmt.Errorf("document %d requires id and text", i+1)
-		}
-		inputs = append(inputs, d.Text)
-	}
-	for i, q := range c.Queries {
-		if strings.TrimSpace(q.ID) == "" || strings.TrimSpace(q.Text) == "" || len(q.Relevant) == 0 {
-			return EmbeddingEvaluation{}, fmt.Errorf("query %d requires id, text, and relevance", i+1)
-		}
-		inputs = append(inputs, q.Text)
-	}
-	body, err := json.Marshal(struct {
-		Model string   `json:"model"`
-		Input []string `json:"input"`
-	}{Model: endpointModel, Input: inputs})
-	if err != nil {
-		return EmbeddingEvaluation{}, err
-	}
-	if len(body) > localAdapterResponseLimit {
-		return EmbeddingEvaluation{}, fmt.Errorf("embedding request exceeds %d bytes", localAdapterResponseLimit)
 	}
 	httpResponse, err := executeLocalOMLXHTTP(ctx, localOMLXHTTPRequest{
 		method:        http.MethodPost,
-		endpoint:      root + "/v1/embeddings",
-		body:          bytes.NewReader(body),
+		endpoint:      prepared.root + "/v1/embeddings",
+		body:          bytes.NewReader(prepared.body),
 		contentType:   applicationJSON,
 		apiKey:        a.APIKey,
 		client:        a.Client,
@@ -109,108 +76,66 @@ func (a OMLXEmbeddingAdapter) Evaluate(ctx context.Context, model string, c Embe
 	if err != nil {
 		return EmbeddingEvaluation{}, err
 	}
-	vectors, err := indexedEmbeddingVectors(payload.Data, len(inputs))
+	vectors, err := indexedEmbeddingVectors(payload.Data, prepared.inputCount)
 	if err != nil {
 		return EmbeddingEvaluation{}, err
 	}
-	documents := make(map[string][]float64, len(c.Documents))
-	queries := make(map[string][]float64, len(c.Queries))
+	return scoreEmbeddingVectors(c, served, vectors)
+}
+
+type preparedEmbeddingRequest struct {
+	root       string
+	body       []byte
+	inputCount int
+}
+
+func (a OMLXEmbeddingAdapter) prepareRequest(model string, c EmbeddingCase) (preparedEmbeddingRequest, error) {
+	if strings.TrimSpace(model) == "" || strings.TrimSpace(c.ID) == "" || len(c.Documents) == 0 || len(c.Queries) == 0 {
+		return preparedEmbeddingRequest{}, errors.New("model, case id, documents, and queries are required")
+	}
+	endpointModel, err := localOMLXModel(model)
+	if err != nil {
+		return preparedEmbeddingRequest{}, err
+	}
+	root, err := normalizeOMLXBaseURL(a.BaseURL)
+	if err != nil {
+		return preparedEmbeddingRequest{}, err
+	}
+	if err = ValidateOMLXLoopbackBaseURL(a.BaseURL); err != nil {
+		return preparedEmbeddingRequest{}, err
+	}
+	inputs, err := embeddingRequestTexts(c)
+	if err != nil {
+		return preparedEmbeddingRequest{}, err
+	}
+	body, err := json.Marshal(struct {
+		Model string   `json:"model"`
+		Input []string `json:"input"`
+	}{Model: endpointModel, Input: inputs})
+	if err != nil {
+		return preparedEmbeddingRequest{}, err
+	}
+	if len(body) > localAdapterResponseLimit {
+		return preparedEmbeddingRequest{}, fmt.Errorf("embedding request exceeds %d bytes", localAdapterResponseLimit)
+	}
+	return preparedEmbeddingRequest{root: root, body: body, inputCount: len(inputs)}, nil
+}
+
+func embeddingRequestTexts(c EmbeddingCase) ([]string, error) {
+	inputs := make([]string, 0, len(c.Documents)+len(c.Queries))
 	for i, d := range c.Documents {
-		documents[d.ID] = vectors[i]
+		if strings.TrimSpace(d.ID) == "" || strings.TrimSpace(d.Text) == "" {
+			return nil, fmt.Errorf("document %d requires id and text", i+1)
+		}
+		inputs = append(inputs, d.Text)
 	}
 	for i, q := range c.Queries {
-		queries[q.ID] = vectors[len(c.Documents)+i]
-	}
-	scores, err := EmbeddingCosineScores(documents, queries)
-	if err != nil {
-		return EmbeddingEvaluation{}, err
-	}
-	retrievalQueries := make([]RetrievalQuery, len(c.Queries))
-	for i, q := range c.Queries {
-		retrievalQueries[i] = RetrievalQuery{ID: q.ID, Relevant: q.Relevant}
-	}
-	recall, mrr, ndcg, err := ScoreRetrieval(retrievalQueries, scores)
-	if err != nil {
-		return EmbeddingEvaluation{}, err
-	}
-	return EmbeddingEvaluation{ServedModel: served, Documents: documents, Queries: queries, Scores: scores, RecallAt1: recall, MRRAt10: mrr, NDCGAt10: ndcg}, nil
-}
-
-func indexedEmbeddingVectors(data []struct {
-	Index     int       `json:"index"`
-	Embedding []float64 `json:"embedding"`
-}, want int) ([][]float64, error) {
-	if len(data) != want {
-		return nil, fmt.Errorf("embedding response count %d, want %d", len(data), want)
-	}
-	vectors := make([][]float64, want)
-	dimension := 0
-	for _, item := range data {
-		if item.Index < 0 || item.Index >= want || vectors[item.Index] != nil {
-			return nil, fmt.Errorf("embedding response has invalid or duplicate index %d", item.Index)
+		if strings.TrimSpace(q.ID) == "" || strings.TrimSpace(q.Text) == "" || len(q.Relevant) == 0 {
+			return nil, fmt.Errorf("query %d requires id, text, and relevance", i+1)
 		}
-		if len(item.Embedding) == 0 {
-			return nil, fmt.Errorf("embedding %d is empty", item.Index)
-		}
-		if dimension == 0 {
-			dimension = len(item.Embedding)
-		}
-		if len(item.Embedding) != dimension {
-			return nil, fmt.Errorf("embedding %d has dimension %d, want %d", item.Index, len(item.Embedding), dimension)
-		}
-		for _, value := range item.Embedding {
-			if math.IsNaN(value) || math.IsInf(value, 0) {
-				return nil, fmt.Errorf("embedding %d contains a non-finite value", item.Index)
-			}
-		}
-		vectors[item.Index] = append([]float64(nil), item.Embedding...)
+		inputs = append(inputs, q.Text)
 	}
-	for i, vector := range vectors {
-		if vector == nil {
-			return nil, fmt.Errorf("embedding response omits index %d", i)
-		}
-	}
-	return vectors, nil
-}
-
-// EmbeddingCosineScores computes cosine similarity between query and document
-// vectors.
-func EmbeddingCosineScores(documents, queries map[string][]float64) (map[string]map[string]float64, error) {
-	if len(documents) == 0 || len(queries) == 0 {
-		return nil, errors.New("documents and queries are required")
-	}
-	scores := make(map[string]map[string]float64, len(queries))
-	for queryID, query := range queries {
-		row := make(map[string]float64, len(documents))
-		for documentID, document := range documents {
-			score, err := cosineSimilarity(query, document)
-			if err != nil {
-				return nil, fmt.Errorf("%s against %s: %w", queryID, documentID, err)
-			}
-			row[documentID] = score
-		}
-		scores[queryID] = row
-	}
-	return scores, nil
-}
-
-func cosineSimilarity(a, b []float64) (float64, error) {
-	if len(a) == 0 || len(a) != len(b) {
-		return 0, errors.New("vectors must be nonempty and have matching dimensions")
-	}
-	var dot, an, bn float64
-	for i := range a {
-		if math.IsNaN(a[i]) || math.IsNaN(b[i]) || math.IsInf(a[i], 0) || math.IsInf(b[i], 0) {
-			return 0, errors.New("vector contains a non-finite value")
-		}
-		dot += a[i] * b[i]
-		an += a[i] * a[i]
-		bn += b[i] * b[i]
-	}
-	if an == 0 || bn == 0 {
-		return 0, errors.New("zero-norm vector")
-	}
-	return dot / math.Sqrt(an*bn), nil
+	return inputs, nil
 }
 
 func readBoundedLocalBody(body io.Reader, limit int64) ([]byte, error) {

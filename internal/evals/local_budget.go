@@ -143,66 +143,6 @@ func (l *CampaignLedger) Remaining() float64 {
 	return l.Budget.MaxCostUSD - l.Budget.ObservedCostUSD - l.Budget.ReservedCostUSD
 }
 
-// Reserve atomically admits one uniquely owned attempt. Repeating the exact
-// owner is crash recovery, not a second admission. A different owner cannot
-// reserve the same run identity while an earlier reservation remains active.
-func (l *CampaignLedger) Reserve(owner CampaignReservationOwner, worstCase, maxRun float64) (CampaignAttempt, error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	unlock, err := l.lockAndReload()
-	if err != nil {
-		return CampaignAttempt{}, err
-	}
-	defer unlock()
-	if err := owner.validate(); err != nil {
-		return CampaignAttempt{}, err
-	}
-	owner.OutputDir = filepath.Clean(owner.OutputDir)
-	if !validCost(worstCase) || worstCase < 0 || !validCost(maxRun) || maxRun <= 0 {
-		return CampaignAttempt{}, errors.New("finite non-negative worst-case and positive run budget are required")
-	}
-	if worstCase > maxRun+1e-12 {
-		return CampaignAttempt{}, fmt.Errorf("worst-case run estimate $%.6f exceeds --max-run-cost $%.6f", worstCase, maxRun)
-	}
-	for _, attempt := range l.Budget.Attempts {
-		if owner.matches(attempt) {
-			if attempt.WorstCaseCostUSD != worstCase {
-				return CampaignAttempt{}, errors.New("recovered reservation worst-case differs from recorded attempt")
-			}
-			if campaignAttemptHoldsReservation(attempt) {
-				return attempt, nil
-			}
-			return CampaignAttempt{}, fmt.Errorf("attempt %q is already finalized", owner.AttemptID)
-		}
-	}
-	for _, attempt := range l.Budget.Attempts {
-		if owner.sameIdentity(attempt) && campaignAttemptHoldsReservation(attempt) {
-			return CampaignAttempt{}, fmt.Errorf("run identity already has an active reservation in %s", attempt.OutputDir)
-		}
-	}
-	count := 0
-	for _, attempt := range l.Budget.Attempts {
-		if owner.sameIdentity(attempt) {
-			count++
-		}
-	}
-	if count >= 2 {
-		return CampaignAttempt{}, fmt.Errorf("maximum two attempts already recorded for run identity %s", owner.RunIdentity)
-	}
-	remaining := l.Budget.MaxCostUSD - l.Budget.ObservedCostUSD - l.Budget.ReservedCostUSD
-	if worstCase > remaining+1e-12 {
-		return CampaignAttempt{}, fmt.Errorf("worst-case run estimate $%.6f exceeds campaign remaining $%.6f", worstCase, remaining)
-	}
-	now := time.Now().UTC()
-	attempt := CampaignAttempt{RunID: owner.RunID, RunIdentity: owner.RunIdentity, AttemptID: owner.AttemptID, OutputDir: owner.OutputDir, WorstCaseCostUSD: worstCase, Status: campaignAttemptAdmitted, At: now, UpdatedAt: now}
-	l.Budget.Attempts = append(l.Budget.Attempts, attempt)
-	l.Budget.ReservedCostUSD += worstCase
-	if err := l.save(); err != nil {
-		return CampaignAttempt{}, err
-	}
-	return attempt, nil
-}
-
 // RecordOwned durably closes an owned reservation when observed is known. A
 // nil observed cost records an unknown-cost outcome and deliberately retains
 // its worst-case reservation, so a provider accounting gap cannot free budget

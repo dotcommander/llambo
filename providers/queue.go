@@ -144,6 +144,24 @@ func (q *BackendQueue) Process(ctx context.Context, jobs []Job) []Result {
 // so would race the producer goroutines. After ProcessStream returns,
 // callers may range-loop on `started` and receive until close. Pass nil
 // when started notifications are not needed.
+// streamWorkerCount resolves the effective concurrency: maxWorkers only
+// tightens the configured backend worker total.
+func streamWorkerCount(configured, maxWorkers int) int {
+	if maxWorkers > 0 && maxWorkers < configured {
+		return maxWorkers
+	}
+	return configured
+}
+
+// ProcessStream processes jobs from channel and streams results as they complete.
+// maxWorkers limits concurrency (0 = use default WorkerCount).
+// ctx must be non-nil; callers should pass the caller's context.
+//
+// Channel ownership: ProcessStream is the sole producer-side closer of
+// `started` (when non-nil). The caller must NOT close `started` — doing
+// so would race the producer goroutines. After ProcessStream returns,
+// callers may range-loop on `started` and receive until close. Pass nil
+// when started notifications are not needed.
 func (q *BackendQueue) ProcessStream(ctx context.Context, jobs <-chan Job, results chan<- Result, maxWorkers int, started chan<- JobStarted) {
 	// Close `started` exactly once — only here, after every worker that
 	// could send on it has finished (p.Wait() returns). This is the sole
@@ -152,12 +170,7 @@ func (q *BackendQueue) ProcessStream(ctx context.Context, jobs <-chan Job, resul
 		defer close(started)
 	}
 
-	workers := q.WorkerCount()
-	if maxWorkers > 0 && maxWorkers < workers {
-		workers = maxWorkers
-	}
-	p := pool.New().WithMaxGoroutines(workers)
-
+	p := pool.New().WithMaxGoroutines(streamWorkerCount(q.WorkerCount(), maxWorkers))
 	for {
 		select {
 		case <-ctx.Done():
@@ -168,38 +181,48 @@ func (q *BackendQueue) ProcessStream(ctx context.Context, jobs <-chan Job, resul
 				p.Wait()
 				return
 			}
-
-			queuedJob := job // capture for closure
-
-			p.Go(func() {
-				if ctx.Err() != nil {
-					return
-				}
-
-				plan, err := q.planJob(queuedJob)
-				if err != nil {
-					select {
-					case results <- Result{ID: queuedJob.ID, Error: err}:
-					case <-ctx.Done():
-					}
-					return
-				}
-				// Notify when work actually starts (not when queued)
-				if started != nil {
-					select {
-					case started <- JobStarted{ID: queuedJob.ID, Backend: plan.selected.name, Model: plan.selected.cfg.Model}:
-					case <-ctx.Done():
-					default:
-					}
-				}
-
-				result := q.executeJob(ctx, queuedJob, plan)
-				select {
-				case results <- result:
-				case <-ctx.Done():
-				}
-			})
+			p.Go(func() { q.runStreamJob(ctx, job, results, started) })
 		}
+	}
+}
+
+// runStreamJob plans and executes one queued job, then publishes its start
+// notification and result. Every channel send is paired with the context
+// cancellation fence, so a cancelled caller never blocks the worker pool.
+func (q *BackendQueue) runStreamJob(ctx context.Context, job Job, results chan<- Result, started chan<- JobStarted) {
+	if ctx.Err() != nil {
+		return
+	}
+	plan, err := q.planJob(job)
+	if err != nil {
+		sendStreamResult(ctx, results, Result{ID: job.ID, Error: err})
+		return
+	}
+	// Notify when work actually starts (not when queued).
+	notifyStreamStart(ctx, started, JobStarted{ID: job.ID, Backend: plan.selected.name, Model: plan.selected.cfg.Model})
+	sendStreamResult(ctx, results, q.executeJob(ctx, job, plan))
+}
+
+// notifyStreamStart emits the started signal when the caller requested one,
+// never blocking: a full notification channel drops the signal, and a
+// cancelled context abandons the send.
+func notifyStreamStart(ctx context.Context, started chan<- JobStarted, signal JobStarted) {
+	if started == nil {
+		return
+	}
+	select {
+	case started <- signal:
+	case <-ctx.Done():
+	default:
+	}
+}
+
+// sendStreamResult publishes one job result, abandoning the send when the
+// caller's context is cancelled.
+func sendStreamResult(ctx context.Context, results chan<- Result, result Result) {
+	select {
+	case results <- result:
+	case <-ctx.Done():
 	}
 }
 

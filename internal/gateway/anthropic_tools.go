@@ -44,18 +44,25 @@ func parseAnthropicTooling(tools []AnthropicTool, rawChoice json.RawMessage) ([]
 	if err != nil {
 		return nil, nil, err
 	}
-	if choice != nil && len(parsedTools) == 0 {
-		return nil, nil, errors.New("tool_choice requires tools to be defined")
-	}
-	if choice != nil && choice.Type == tool2 {
-		for _, tool := range parsedTools {
-			if tool.Name == choice.Name {
-				return parsedTools, choice, nil
-			}
-		}
-		return nil, nil, fmt.Errorf("tool_choice.name %q is not present in tools", choice.Name)
+	if err := validateAnthropicToolSelection(parsedTools, choice); err != nil {
+		return nil, nil, err
 	}
 	return parsedTools, choice, nil
+}
+
+func validateAnthropicToolSelection(tools []providers.ToolDefinition, choice *providers.ToolChoice) error {
+	if choice != nil && len(tools) == 0 {
+		return errors.New("tool_choice requires tools to be defined")
+	}
+	if choice != nil && choice.Type == tool2 {
+		for _, tool := range tools {
+			if tool.Name == choice.Name {
+				return nil
+			}
+		}
+		return fmt.Errorf("tool_choice.name %q is not present in tools", choice.Name)
+	}
+	return nil
 }
 
 func parseAnthropicToolChoice(raw json.RawMessage) (*providers.ToolChoice, error) {

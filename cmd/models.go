@@ -44,39 +44,68 @@ type modelRow struct {
 	OutputCost       string
 }
 
-func (cliOpts *invocationOptions) runModels(cmd *commandIO, args []string) error {
+// modelsMetricInputs bundles the optional metrics sources behind --metrics.
+type modelsMetricInputs struct {
+	catalog  *catalog.Catalog
+	costMap  map[string]costs.ModelCost
+	snapshot *evals.OMLXScoreSnapshot
+}
+
+// loadModelsMetricInputs reads catalog, pricing, and score snapshot sources
+// when metrics rendering is requested; otherwise the inputs stay empty.
+func loadModelsMetricInputs(metrics bool) (modelsMetricInputs, error) {
+	if !metrics {
+		return modelsMetricInputs{}, nil
+	}
+	catPath, err := catalog.Path()
+	if err != nil {
+		return modelsMetricInputs{}, err
+	}
+	metricsCatalog, err := catalog.Load(catPath)
+	if err != nil {
+		return modelsMetricInputs{}, err
+	}
+	costMap, err := costs.LoadAll()
+	if err != nil {
+		return modelsMetricInputs{}, err
+	}
+	snapshotPath, err := evals.OMLXScoreSnapshotPath()
+	if err != nil {
+		return modelsMetricInputs{}, err
+	}
+	snapshot, err := evals.LoadOMLXScoreSnapshot(snapshotPath)
+	if err != nil {
+		return modelsMetricInputs{}, err
+	}
+	return modelsMetricInputs{catalog: metricsCatalog, costMap: costMap, snapshot: snapshot}, nil
+}
+
+func (cliOpts *invocationOptions) runModels(cmd *commandIO, _ []string) error {
 	out, errOut := cmd.OutOrStdout(), cmd.ErrOrStderr()
 	cfg, err := providers.LoadGlobalConfig()
 	if err != nil {
 		return err
 	}
-
-	var metricsCatalog *catalog.Catalog
-	var costMap map[string]costs.ModelCost
-	var scoreSnapshot *evals.OMLXScoreSnapshot
-	if cliOpts.modelsMetrics {
-		catPath, err := catalog.Path()
-		if err != nil {
-			return err
-		}
-		metricsCatalog, err = catalog.Load(catPath)
-		if err != nil {
-			return err
-		}
-		costMap, err = costs.LoadAll()
-		if err != nil {
-			return err
-		}
-		snapshotPath, err := evals.OMLXScoreSnapshotPath()
-		if err != nil {
-			return err
-		}
-		scoreSnapshot, err = evals.LoadOMLXScoreSnapshot(snapshotPath)
-		if err != nil {
-			return err
-		}
+	inputs, err := loadModelsMetricInputs(cliOpts.modelsMetrics)
+	if err != nil {
+		return err
 	}
+	rows := cliOpts.buildModelRows(cmd.Context(), cfg, inputs)
 
+	switch {
+	case cliOpts.modelsCSV && cliOpts.modelsGrouped && !cliOpts.modelsMetrics:
+		return writeModelsGroupedCSV(out, errOut, rows, cliOpts.modelsAll)
+	case cliOpts.modelsCSV:
+		return writeModelsFlatCSV(out, errOut, rows, cliOpts.modelsMetrics, cliOpts.modelsAll)
+	}
+	renderModelsTables(out, cliOpts, rows)
+	printModelsEmptyNotice(out, rows, cliOpts.modelsAll)
+	return nil
+}
+
+// buildModelRows assembles one row per displayed model, applying provider and
+// enabled filters plus optional availability or metrics enrichment.
+func (cliOpts *invocationOptions) buildModelRows(ctx context.Context, cfg *providers.GlobalConfig, inputs modelsMetricInputs) []modelRow {
 	rows := make([]modelRow, 0)
 	for _, name := range sortedProviderNames(cfg.Providers) {
 		if !cliOpts.modelProviderAllowed(name) {
@@ -86,79 +115,105 @@ func (cliOpts *invocationOptions) runModels(cmd *commandIO, args []string) error
 		if !cliOpts.modelsAll && !pcfg.Enabled {
 			continue
 		}
+		rows = append(rows, cliOpts.providerModelRows(ctx, name, pcfg, inputs)...)
+	}
+	return rows
+}
 
-		models := modelVariants(pcfg)
-		if cliOpts.modelsAvailable {
-			if avail := fetchAvailableModelsContext(cmd.Context(), name, pcfg, cliOpts.modelsTimeoutSec); len(avail) > 0 {
-				models = avail
-			}
-		} else {
-			models = appendCatalogMetricModels(metricsCatalog, scoreSnapshot, name, models)
+// providerModelRows renders the rows for one provider, preferring the live
+// model inventory under --available and appending scored catalog-only models
+// otherwise.
+func (cliOpts *invocationOptions) providerModelRows(ctx context.Context, name string, pcfg providers.Config, inputs modelsMetricInputs) []modelRow {
+	models := modelVariants(pcfg)
+	if cliOpts.modelsAvailable {
+		if avail := fetchAvailableModelsContext(ctx, name, pcfg, cliOpts.modelsTimeoutSec); len(avail) > 0 {
+			models = avail
 		}
-
-		for i, model := range models {
-			row := modelRow{
-				Provider: name,
-				Enabled:  pcfg.Enabled,
-				Model:    model,
-				Primary:  i == 0 && !cliOpts.modelsAvailable,
-			}
-			if cliOpts.modelsMetrics {
-				row.LlamboScore, row.LlamboProvenance, row.TaskScore, row.Speed, row.Latency = modelMetricLabels(metricsCatalog, scoreSnapshot, name, model)
-				row.OutputCost = modelOutputCostLabel(costMap, metricsCatalog, name, model)
-			}
-			rows = append(rows, row)
-		}
+	} else {
+		models = appendCatalogMetricModels(inputs.catalog, inputs.snapshot, name, models)
 	}
 
-	if cliOpts.modelsCSV && cliOpts.modelsGrouped && !cliOpts.modelsMetrics {
-		w := csv.NewWriter(out)
-		if err := w.Write([]string{"provider", "enabled", "models"}); err != nil {
-			return err
+	rows := make([]modelRow, 0, len(models))
+	for i, model := range models {
+		row := modelRow{
+			Provider: name,
+			Enabled:  pcfg.Enabled,
+			Model:    model,
+			Primary:  i == 0 && !cliOpts.modelsAvailable,
 		}
-		for _, grouped := range groupRows(rows) {
-			if err := w.Write([]string{grouped.Provider, strconv.FormatBool(grouped.Enabled), strings.Join(grouped.Models, ", ")}); err != nil {
-				return err
-			}
-		}
-		w.Flush()
-		if err := w.Error(); err != nil {
-			return err
-		}
-		if len(rows) == 0 && !cliOpts.modelsAll {
-			fmt.Fprintln(errOut, "No enabled providers found. Use --all to list disabled providers.")
-		}
-		return nil
-	}
-
-	if cliOpts.modelsCSV {
-		header := []string{"provider", "enabled", "model", "primary"}
 		if cliOpts.modelsMetrics {
-			header = append(header, "llambo_score", "llambo_provenance", "task_score", "speed", "latency", "output_cost_per_1m_usd")
+			labels := buildModelMetricLabels(inputs.catalog, inputs.snapshot, name, model)
+			row.LlamboScore = labels.llamboScore
+			row.LlamboProvenance = labels.llamboProvenance
+			row.TaskScore = labels.taskScore
+			row.Speed = labels.speed
+			row.Latency = labels.latency
+			row.OutputCost = modelOutputCostLabel(inputs.costMap, inputs.catalog, name, model)
 		}
-		w := csv.NewWriter(out)
-		if err := w.Write(header); err != nil {
-			return err
-		}
-		for _, row := range rows {
-			values := []string{row.Provider, strconv.FormatBool(row.Enabled), row.Model, strconv.FormatBool(row.Primary)}
-			if cliOpts.modelsMetrics {
-				values = append(values, row.LlamboScore, row.LlamboProvenance, row.TaskScore, row.Speed, row.Latency, row.OutputCost)
-			}
-			if err := w.Write(values); err != nil {
-				return err
-			}
-		}
-		w.Flush()
-		if err := w.Error(); err != nil {
-			return err
-		}
-		if len(rows) == 0 && !cliOpts.modelsAll {
-			fmt.Fprintln(errOut, "No enabled providers found. Use --all to list disabled providers.")
-		}
-		return nil
+		rows = append(rows, row)
 	}
+	return rows
+}
 
+// writeModelsGroupedCSV renders provider-grouped CSV output and reports empty
+// results on stderr.
+func writeModelsGroupedCSV(out, errOut io.Writer, rows []modelRow, includeAll bool) error {
+	w := csv.NewWriter(out)
+	if err := w.Write([]string{"provider", "enabled", "models"}); err != nil {
+		return err
+	}
+	for _, grouped := range groupRows(rows) {
+		if err := w.Write([]string{grouped.Provider, strconv.FormatBool(grouped.Enabled), strings.Join(grouped.Models, ", ")}); err != nil {
+			return err
+		}
+	}
+	w.Flush()
+	if err := w.Error(); err != nil {
+		return err
+	}
+	printModelsEmptyCSVNotice(errOut, rows, includeAll)
+	return nil
+}
+
+// writeModelsFlatCSV renders one row per model and reports empty results on
+// stderr.
+func writeModelsFlatCSV(out, errOut io.Writer, rows []modelRow, metrics, includeAll bool) error {
+	header := []string{"provider", "enabled", "model", "primary"}
+	if metrics {
+		header = append(header, "llambo_score", "llambo_provenance", "task_score", "speed", "latency", "output_cost_per_1m_usd")
+	}
+	w := csv.NewWriter(out)
+	if err := w.Write(header); err != nil {
+		return err
+	}
+	for _, row := range rows {
+		values := []string{row.Provider, strconv.FormatBool(row.Enabled), row.Model, strconv.FormatBool(row.Primary)}
+		if metrics {
+			values = append(values, row.LlamboScore, row.LlamboProvenance, row.TaskScore, row.Speed, row.Latency, row.OutputCost)
+		}
+		if err := w.Write(values); err != nil {
+			return err
+		}
+	}
+	w.Flush()
+	if err := w.Error(); err != nil {
+		return err
+	}
+	printModelsEmptyCSVNotice(errOut, rows, includeAll)
+	return nil
+}
+
+// printModelsEmptyCSVNotice keeps the CSV paths silent on empty results unless
+// disabled providers were hidden.
+func printModelsEmptyCSVNotice(errOut io.Writer, rows []modelRow, includeAll bool) {
+	if len(rows) > 0 || includeAll {
+		return
+	}
+	fmt.Fprintln(errOut, "No enabled providers found. Use --all to list disabled providers.")
+}
+
+// renderModelsTables renders the grouped, metrics, or default table layout.
+func renderModelsTables(out io.Writer, cliOpts *invocationOptions, rows []modelRow) {
 	switch {
 	case cliOpts.modelsGrouped && !cliOpts.modelsMetrics:
 		fmt.Fprintf(out, "%-12s %-8s %s\n", "PROVIDER", "ENABLED", "MODELS")
@@ -179,16 +234,18 @@ func (cliOpts *invocationOptions) runModels(cmd *commandIO, args []string) error
 			fmt.Fprintf(out, "%-12s %-8t %-8t %s\n", row.Provider, row.Enabled, row.Primary, row.Model)
 		}
 	}
+}
 
-	if len(rows) == 0 {
-		if cliOpts.modelsAll {
-			fmt.Fprintln(out, "No providers found in config.")
-		} else {
-			fmt.Fprintln(out, "No enabled providers found. Use --all to list disabled providers.")
-		}
+// printModelsEmptyNotice explains empty table results on stdout.
+func printModelsEmptyNotice(out io.Writer, rows []modelRow, includeAll bool) {
+	if len(rows) > 0 {
+		return
 	}
-
-	return nil
+	if includeAll {
+		fmt.Fprintln(out, "No providers found in config.")
+		return
+	}
+	fmt.Fprintln(out, "No enabled providers found. Use --all to list disabled providers.")
 }
 
 func modelOutputCostLabel(costMap map[string]costs.ModelCost, cat *catalog.Catalog, provider, model string) string {
@@ -225,62 +282,110 @@ func (cliOpts *invocationOptions) modelProviderAllowed(name string) bool {
 	return false
 }
 
-func modelMetricLabels(cat *catalog.Catalog, snapshot *evals.OMLXScoreSnapshot, provider, model string) (llamboScore, llamboProvenance, taskScore, speed, latency string) {
-	llamboScore, llamboProvenance, taskScore, speed, latency = "—", "—", "—", "—", "—"
+// modelMetricLabels holds the rendered metrics-table labels for one model.
+type modelMetricLabels struct {
+	llamboScore      string
+	llamboProvenance string
+	taskScore        string
+	speed            string
+	latency          string
+}
+
+// buildModelMetricLabels renders the snapshot and catalog labels for one
+// model row of the metrics table.
+func buildModelMetricLabels(cat *catalog.Catalog, snapshot *evals.OMLXScoreSnapshot, provider, model string) modelMetricLabels {
+	labels := modelMetricLabels{llamboScore: "—", llamboProvenance: "—", taskScore: "—", speed: "—", latency: "—"}
 	if provider == omlx1 && snapshot != nil && snapshot.Contains(model) {
 		scores := snapshot.CategoryScores[model]
-		llamboProvenance = formatLlamboProvenance(scores, snapshot)
-		llamboScore = formatLlamboCategories(scores)
+		labels.llamboProvenance = formatLlamboProvenance(scores, snapshot)
+		labels.llamboScore = formatLlamboCategories(scores)
 	}
+	entry := catalogMetricEntry(cat, provider, model)
+	if entry == nil {
+		return labels
+	}
+	if task, evidence, ok := catalog.BestQualityEvidence(entry); ok {
+		// This stays task-labelled by contract and is never an overall input.
+		labels.taskScore = fmt.Sprintf("%s %.1f/100", task, evidence.Score*100)
+	}
+	labels.speed, labels.latency = metricSpeedLatency(entry, provider, model)
+	return labels
+}
+
+// catalogMetricEntry performs the nil-safe catalog lookup for metrics labels.
+func catalogMetricEntry(cat *catalog.Catalog, provider, model string) *catalog.ModelEntry {
 	if cat == nil {
-		return llamboScore, llamboProvenance, taskScore, speed, latency
+		return nil
 	}
 	pc := cat.Providers[provider]
 	if pc == nil {
-		return llamboScore, llamboProvenance, taskScore, speed, latency
+		return nil
 	}
-	entry := pc.Models[model]
-	if entry == nil {
-		return llamboScore, llamboProvenance, taskScore, speed, latency
-	}
+	return pc.Models[model]
+}
+
+// metricSpeedLatency labels speed and latency, preferring newer live ping
+// timing over saved benchmark evidence and never inferring tok/s from total
+// latency.
+func metricSpeedLatency(entry *catalog.ModelEntry, provider, model string) (speed, latency string) {
+	speed, latency = "—", "—"
 	benchmarkName, benchmark, hasBenchmark := catalog.BestBenchmarkEvidence(entry)
 	_ = benchmarkName // benchmark metrics remain operational evidence only.
-	if task, evidence, ok := catalog.BestQualityEvidence(entry); ok {
-		// This stays task-labelled by contract and is never an overall input.
-		taskScore = fmt.Sprintf("%s %.1f/100", task, evidence.Score*100)
-	}
 	if hasBenchmark {
-		if benchmark.LatencyMS > 0 {
-			latency = fmt.Sprintf("%dms", benchmark.LatencyMS)
-		}
-		if benchmark.SpeedTokensPerSecond > 0 {
-			speed = fmt.Sprintf("%.1f tok/s", benchmark.SpeedTokensPerSecond)
-		}
+		speed, latency = benchmarkSpeedLatency(benchmark)
 	}
-	lastPingIsNewer := entry.LastPing.Success && !entry.LastPing.CheckedAt.IsZero() &&
-		(!hasBenchmark || entry.LastPing.CheckedAt.After(benchmark.UpdatedAt))
-	if lastPingIsNewer {
-		if entry.LastPing.LatencyMS > 0 {
-			latency = fmt.Sprintf("%dms", entry.LastPing.LatencyMS)
-		}
-		if entry.LastPing.SpeedTokensPerSecond > 0 {
-			speed = fmt.Sprintf("%.1f tok/s", entry.LastPing.SpeedTokensPerSecond)
-		}
-	}
-	if entry.LastPing.LatencyMS > 0 {
-		if latency == "—" {
-			latency = fmt.Sprintf("%dms", entry.LastPing.LatencyMS)
-		}
-		if speed == "—" && entry.LastPing.SpeedTokensPerSecond > 0 {
-			speed = fmt.Sprintf("%.1f tok/s", entry.LastPing.SpeedTokensPerSecond)
-		}
-	}
+	speed, latency = liveSpeedLatency(speed, latency, entry, benchmark.UpdatedAt, hasBenchmark)
+	speed, latency = fallbackSpeedLatency(speed, latency, entry)
 	if provider == omlx1 {
 		if estimate, ok := catalog.EstimateOMLXSpeedTokensPerSecond(model); ok {
 			speed = fmt.Sprintf("~%.1f tok/s", estimate)
 		}
 	}
-	return llamboScore, llamboProvenance, taskScore, speed, latency
+	return speed, latency
+}
+
+// benchmarkSpeedLatency labels saved benchmark timing when present.
+func benchmarkSpeedLatency(benchmark catalog.BenchmarkEvidence) (speed, latency string) {
+	speed, latency = "—", "—"
+	if benchmark.LatencyMS > 0 {
+		latency = fmt.Sprintf("%dms", benchmark.LatencyMS)
+	}
+	if benchmark.SpeedTokensPerSecond > 0 {
+		speed = fmt.Sprintf("%.1f tok/s", benchmark.SpeedTokensPerSecond)
+	}
+	return speed, latency
+}
+
+// liveSpeedLatency overrides labels when a successful ping is fresher than the
+// saved benchmark.
+func liveSpeedLatency(speed, latency string, entry *catalog.ModelEntry, benchmarkUpdated time.Time, hasBenchmark bool) (freshSpeed, freshLatency string) {
+	lastPingIsNewer := entry.LastPing.Success && !entry.LastPing.CheckedAt.IsZero() &&
+		(!hasBenchmark || entry.LastPing.CheckedAt.After(benchmarkUpdated))
+	if !lastPingIsNewer {
+		return speed, latency
+	}
+	if entry.LastPing.LatencyMS > 0 {
+		latency = fmt.Sprintf("%dms", entry.LastPing.LatencyMS)
+	}
+	if entry.LastPing.SpeedTokensPerSecond > 0 {
+		speed = fmt.Sprintf("%.1f tok/s", entry.LastPing.SpeedTokensPerSecond)
+	}
+	return speed, latency
+}
+
+// fallbackSpeedLatency fills still-missing labels from any recorded ping
+// latency without inventing a throughput value.
+func fallbackSpeedLatency(speed, latency string, entry *catalog.ModelEntry) (filledSpeed, filledLatency string) {
+	if entry.LastPing.LatencyMS <= 0 {
+		return speed, latency
+	}
+	if latency == "—" {
+		latency = fmt.Sprintf("%dms", entry.LastPing.LatencyMS)
+	}
+	if speed == "—" && entry.LastPing.SpeedTokensPerSecond > 0 {
+		speed = fmt.Sprintf("%.1f tok/s", entry.LastPing.SpeedTokensPerSecond)
+	}
+	return speed, latency
 }
 
 func formatLlamboCategories(scores map[string]*evals.LlamboScore) string {
@@ -326,24 +431,35 @@ func formatLlamboProvenance(scores map[string]*evals.LlamboScore, snapshot *eval
 // unmeasured models, while saved metrics are not hidden just because a model is
 // no longer in the provider's preferred config model list.
 func appendCatalogMetricModels(cat *catalog.Catalog, snapshot *evals.OMLXScoreSnapshot, provider string, models []string) []string {
-
 	seen := make(map[string]struct{}, len(models))
 	for _, model := range models {
 		seen[model] = struct{}{}
 	}
-	additional := make([]string, 0)
 	if provider == omlx1 {
-		if snapshot == nil {
-			return models
-		}
-		for _, model := range snapshot.Inventory {
-			if _, exists := seen[model]; !exists {
-				additional = append(additional, model)
-			}
-		}
-		sort.Strings(additional)
-		return append(models, additional...)
+		return appendOMLXInventoryModels(snapshot, models, seen)
 	}
+	return appendCatalogEvidenceModels(cat, provider, models, seen)
+}
+
+// appendOMLXInventoryModels appends scored snapshot inventory that the
+// provider's config model list no longer names.
+func appendOMLXInventoryModels(snapshot *evals.OMLXScoreSnapshot, models []string, seen map[string]struct{}) []string {
+	if snapshot == nil {
+		return models
+	}
+	additional := make([]string, 0)
+	for _, model := range snapshot.Inventory {
+		if _, exists := seen[model]; !exists {
+			additional = append(additional, model)
+		}
+	}
+	sort.Strings(additional)
+	return append(models, additional...)
+}
+
+// appendCatalogEvidenceModels appends catalog models with saved benchmark or
+// quality evidence, keeping config-driven ordering first.
+func appendCatalogEvidenceModels(cat *catalog.Catalog, provider string, models []string, seen map[string]struct{}) []string {
 	if cat == nil {
 		return models
 	}
@@ -351,6 +467,7 @@ func appendCatalogMetricModels(cat *catalog.Catalog, snapshot *evals.OMLXScoreSn
 	if pc == nil || len(pc.Models) == 0 {
 		return models
 	}
+	additional := make([]string, 0)
 	for model, entry := range pc.Models {
 		if model == "" {
 			continue
@@ -358,16 +475,23 @@ func appendCatalogMetricModels(cat *catalog.Catalog, snapshot *evals.OMLXScoreSn
 		if _, ok := seen[model]; ok {
 			continue
 		}
-		if benchmarkName, benchmark, ok := catalog.BestBenchmarkEvidence(entry); ok && benchmarkName != "" && (benchmark.Score > 0 || benchmark.LatencyMS > 0 || benchmark.SpeedTokensPerSecond > 0) {
-			additional = append(additional, model)
-			continue
-		}
-		if _, quality, ok := catalog.BestQualityEvidence(entry); ok && quality.Score > 0 {
+		if hasSavedModelEvidence(entry) {
 			additional = append(additional, model)
 		}
 	}
 	sort.Strings(additional)
 	return append(models, additional...)
+}
+
+// hasSavedModelEvidence reports whether usable benchmark or quality metrics
+// were persisted for the entry.
+func hasSavedModelEvidence(entry *catalog.ModelEntry) bool {
+	if benchmarkName, benchmark, ok := catalog.BestBenchmarkEvidence(entry); ok && benchmarkName != "" &&
+		(benchmark.Score > 0 || benchmark.LatencyMS > 0 || benchmark.SpeedTokensPerSecond > 0) {
+		return true
+	}
+	_, quality, ok := catalog.BestQualityEvidence(entry)
+	return ok && quality.Score > 0
 }
 
 type groupedModelRow struct {

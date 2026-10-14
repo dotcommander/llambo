@@ -2,7 +2,6 @@ package catalog
 
 import (
 	"context"
-	"reflect"
 	"time"
 
 	"github.com/dotcommander/llambo/providers"
@@ -46,40 +45,70 @@ func RefreshWithOptions(ctx context.Context, names []string, cfgs map[string]pro
 	targets := buildTargetList(names, cfgs)
 	now := time.Now().UTC()
 
-	var toFetch []providers.ProviderEntry
 	resultsMap := make(map[string]RefreshResult, len(targets))
+	toFetch := pendingRefreshTargets(cat, targets, opts, now, resultsMap)
+	if len(toFetch) == 0 {
+		return assembleResults(targets, resultsMap), nil
+	}
 
+	fetched := fetchProviders(ctx, toFetch)
+	for _, f := range fetched {
+		resultsMap[f.result.Provider] = f.result
+	}
+
+	if hasFetchSuccess(fetched) {
+		if err := mergeFetchedRefreshes(ctx, catalogPath, fetched, resultsMap, now); err != nil {
+			return assembleResults(targets, resultsMap), err
+		}
+	}
+
+	return assembleResults(targets, resultsMap), nil
+}
+
+// pendingRefreshTargets records TTL-cache hits into resultsMap and returns the
+// entries that still need an upstream fetch.
+func pendingRefreshTargets(cat *Catalog, targets []providers.ProviderEntry, opts RefreshOptions, now time.Time, resultsMap map[string]RefreshResult) []providers.ProviderEntry {
+	var toFetch []providers.ProviderEntry
 	for _, entry := range targets {
-		if !opts.Force && opts.TTL > 0 {
-			if pc := cat.Providers[entry.Name]; pc != nil && !pc.LastRefresh.IsZero() && !pc.LastRefresh.After(now) && now.Sub(pc.LastRefresh) < opts.TTL {
-				current := 0
-				for _, model := range pc.Models {
-					if model != nil && !model.LastSeen.Before(pc.LastRefresh) {
-						current++
-					}
-				}
-				resultsMap[entry.Name] = RefreshResult{
-					Provider:    entry.Name,
-					Endpoint:    pc.EndpointUsed,
-					Total:       current,
-					UnchangedN:  current,
-					Cached:      true,
-					LastRefresh: pc.LastRefresh,
-				}
-				continue
-			}
+		if result, cached := cachedRefreshResult(cat, entry.Name, opts, now); cached {
+			resultsMap[entry.Name] = result
+			continue
 		}
 		toFetch = append(toFetch, entry)
 	}
+	return toFetch
+}
 
-	if len(toFetch) == 0 {
-		results := make([]RefreshResult, len(targets))
-		for i, entry := range targets {
-			results[i] = resultsMap[entry.Name]
-		}
-		return results, nil
+// cachedRefreshResult serves a provider refreshed within opts.TTL, unless
+// opts.Force bypasses the cache. The served result counts models seen since
+// that refresh as current.
+func cachedRefreshResult(cat *Catalog, name string, opts RefreshOptions, now time.Time) (RefreshResult, bool) {
+	if opts.Force || opts.TTL <= 0 {
+		return RefreshResult{}, false
 	}
+	pc := cat.Providers[name]
+	if pc == nil || pc.LastRefresh.IsZero() || pc.LastRefresh.After(now) || now.Sub(pc.LastRefresh) >= opts.TTL {
+		return RefreshResult{}, false
+	}
+	current := 0
+	for _, model := range pc.Models {
+		if model != nil && !model.LastSeen.Before(pc.LastRefresh) {
+			current++
+		}
+	}
+	return RefreshResult{
+		Provider:    name,
+		Endpoint:    pc.EndpointUsed,
+		Total:       current,
+		UnchangedN:  current,
+		Cached:      true,
+		LastRefresh: pc.LastRefresh,
+	}, true
+}
 
+// fetchProviders fetches the pending providers concurrently, preserving every
+// per-provider result including errors.
+func fetchProviders(ctx context.Context, toFetch []providers.ProviderEntry) []refreshFetch {
 	p := pool.NewWithResults[refreshFetch]().WithMaxGoroutines(8).WithContext(ctx)
 	for _, entry := range toFetch {
 		name := entry.Name
@@ -88,44 +117,41 @@ func RefreshWithOptions(ctx context.Context, names []string, cfgs map[string]pro
 			return fetchRefresh(ctx, name, cfg), nil
 		})
 	}
-
 	fetched, _ := p.Wait()
-	for _, f := range fetched {
-		resultsMap[f.result.Provider] = f.result
-	}
+	return fetched
+}
 
-	hasSuccess := false
+// hasFetchSuccess reports whether any provider fetched without error.
+func hasFetchSuccess(fetched []refreshFetch) bool {
 	for _, f := range fetched {
 		if f.result.Err == nil {
-			hasSuccess = true
-			break
+			return true
 		}
 	}
+	return false
+}
 
-	if hasSuccess {
-		if err := Update(ctx, catalogPath, func(cat *Catalog) error {
-			for i := range fetched {
-				if fetched[i].result.Err != nil {
-					continue
-				}
-				res := mergeRefresh(cat, fetched[i], now)
-				resultsMap[fetched[i].result.Provider] = res
+// mergeFetchedRefreshes persists successful fetches and mirrors the merged
+// results into resultsMap; per-provider failures keep their fetch-time result.
+func mergeFetchedRefreshes(ctx context.Context, catalogPath string, fetched []refreshFetch, resultsMap map[string]RefreshResult, now time.Time) error {
+	return Update(ctx, catalogPath, func(cat *Catalog) error {
+		for i := range fetched {
+			if fetched[i].result.Err != nil {
+				continue
 			}
-			return nil
-		}); err != nil {
-			results := make([]RefreshResult, len(targets))
-			for i, entry := range targets {
-				results[i] = resultsMap[entry.Name]
-			}
-			return results, err
+			resultsMap[fetched[i].result.Provider] = mergeRefresh(cat, fetched[i], now)
 		}
-	}
+		return nil
+	})
+}
 
+// assembleResults orders results to match the target list.
+func assembleResults(targets []providers.ProviderEntry, resultsMap map[string]RefreshResult) []RefreshResult {
 	results := make([]RefreshResult, len(targets))
 	for i, entry := range targets {
 		results[i] = resultsMap[entry.Name]
 	}
-	return results, nil
+	return results
 }
 
 type refreshFetch struct {
@@ -144,133 +170,6 @@ func fetchRefresh(ctx context.Context, name string, cfg providers.Config) refres
 	fetched.upstream = upstream
 	fetched.result.Total = len(upstream)
 	return fetched
-}
-
-func mergeRefresh(cat *Catalog, fetched refreshFetch, now time.Time) RefreshResult {
-	result := fetched.result
-	upstream := fetched.upstream
-	upstreamIDs := make(map[string]struct{}, len(upstream))
-	for _, m := range upstream {
-		upstreamIDs[m.ID] = struct{}{}
-	}
-
-	pc := ensureProviderCatalog(cat, result.Provider)
-
-	for _, m := range upstream {
-		entry, exists := pc.Models[m.ID]
-		if !exists {
-			entry = ensureModelEntry(pc, m.ID, now)
-			entry.UpstreamCreated = m.UpstreamCreated
-			entry.OwnedBy = m.OwnedBy
-			entry.Metadata = m.Metadata
-			result.NewIDs = append(result.NewIDs, m.ID)
-		} else {
-			entry.LastSeen = now
-			updated := false
-			if !m.UpstreamCreated.IsZero() && !m.UpstreamCreated.Equal(entry.UpstreamCreated) {
-				entry.UpstreamCreated = m.UpstreamCreated
-				updated = true
-			}
-			if m.OwnedBy != "" && m.OwnedBy != entry.OwnedBy {
-				entry.OwnedBy = m.OwnedBy
-				updated = true
-			}
-			if hasModelMetadata(m.Metadata) {
-				if updateModelMetadata(&entry.Metadata, m.Metadata) {
-					updated = true
-				}
-			}
-			if updated {
-				result.UpdatedN++
-			} else {
-				result.UnchangedN++
-			}
-		}
-	}
-
-	// Stale: in catalog but not seen this refresh.
-	for id := range pc.Models {
-		if _, seen := upstreamIDs[id]; !seen {
-			result.StaleIDs = append(result.StaleIDs, id)
-		}
-	}
-
-	pc.LastRefresh = now
-	pc.EndpointUsed = result.Endpoint
-
-	return result
-}
-
-func hasModelMetadata(m ModelMetadata) bool {
-	return m.Name != "" ||
-		m.CanonicalSlug != "" ||
-		m.Description != "" ||
-		m.ContextLength > 0 ||
-		m.InputTokenLimit > 0 ||
-		m.OutputTokenLimit > 0 ||
-		len(m.SupportedGenerationMethods) > 0 ||
-		len(m.SupportedParameters) > 0 ||
-		len(m.DefaultParameters) > 0 ||
-		m.Pricing != (ModelPricing{}) ||
-		hasModelArchitecture(m.Architecture) ||
-		m.TopProvider != (ModelTopProvider{}) ||
-		len(m.Reasoning) > 0 ||
-		len(m.Benchmarks) > 0
-}
-
-func hasModelArchitecture(a ModelArchitecture) bool {
-	return a.Modality != "" ||
-		len(a.InputModalities) > 0 ||
-		len(a.OutputModalities) > 0 ||
-		a.Tokenizer != "" ||
-		a.InstructType != ""
-}
-
-func updateModelMetadata(dst *ModelMetadata, src ModelMetadata) bool {
-	before := *dst
-	if src.Name != "" && src.Name != dst.Name {
-		dst.Name = src.Name
-	}
-	if src.CanonicalSlug != "" && src.CanonicalSlug != dst.CanonicalSlug {
-		dst.CanonicalSlug = src.CanonicalSlug
-	}
-	if src.Description != "" && src.Description != dst.Description {
-		dst.Description = src.Description
-	}
-	if src.ContextLength > 0 && src.ContextLength != dst.ContextLength {
-		dst.ContextLength = src.ContextLength
-	}
-	if src.InputTokenLimit > 0 && src.InputTokenLimit != dst.InputTokenLimit {
-		dst.InputTokenLimit = src.InputTokenLimit
-	}
-	if src.OutputTokenLimit > 0 && src.OutputTokenLimit != dst.OutputTokenLimit {
-		dst.OutputTokenLimit = src.OutputTokenLimit
-	}
-	if len(src.SupportedParameters) > 0 {
-		dst.SupportedParameters = src.SupportedParameters
-	}
-	if len(src.SupportedGenerationMethods) > 0 {
-		dst.SupportedGenerationMethods = src.SupportedGenerationMethods
-	}
-	if len(src.DefaultParameters) > 0 {
-		dst.DefaultParameters = src.DefaultParameters
-	}
-	if src.Pricing != (ModelPricing{}) && src.Pricing != dst.Pricing {
-		dst.Pricing = src.Pricing
-	}
-	if hasModelArchitecture(src.Architecture) {
-		dst.Architecture = src.Architecture
-	}
-	if src.TopProvider != (ModelTopProvider{}) && src.TopProvider != dst.TopProvider {
-		dst.TopProvider = src.TopProvider
-	}
-	if len(src.Reasoning) > 0 {
-		dst.Reasoning = src.Reasoning
-	}
-	if len(src.Benchmarks) > 0 {
-		dst.Benchmarks = src.Benchmarks
-	}
-	return !reflect.DeepEqual(before, *dst)
 }
 
 // buildTargetList returns the providers to refresh.

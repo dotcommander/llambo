@@ -2,17 +2,12 @@ package cmd
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
-	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/dotcommander/llambo/internal/catalog"
-	"github.com/dotcommander/llambo/internal/costs"
 	"github.com/dotcommander/llambo/internal/evals"
-	"github.com/dotcommander/llambo/providers"
 )
 
 type evalsWritingRunCommand struct {
@@ -50,129 +45,20 @@ func (c *evalsWritingRunCommand) Run(parent *evalsCommand, io *commandIO) error 
 }
 
 func runWritingEvaluationCommand(cmd *commandIO, options *evalsWritingRunCommand, limit int) error {
-	for _, selector := range []string{options.Model, options.JudgeModel} {
-		if isGPTProModel(selector) {
-			return fmt.Errorf("local evaluation of GPT Pro models is prohibited by user policy: %s", selector)
-		}
-	}
-	if limit < 1 || limit > 100 {
-		return errors.New("--limit must be between 1 and 100")
-	}
-	if options.Concurrency < 1 || options.Concurrency > 8 {
-		return errors.New("--concurrency must be between 1 and 8")
-	}
-	if options.Timeout <= 0 {
-		return errors.New("--timeout must be positive")
-	}
-	if options.JudgeTokens < 1 || options.JudgeTokens > 65536 {
-		return errors.New("--judge-max-output-tokens must be between 1 and 65536")
-	}
-	if options.GenerationTokens < 0 || options.GenerationTokens > 65536 || (options.GenerationTokens == 0 && cmd.FlagChanged("generation-max-output-tokens")) {
-		return errors.New("--generation-max-output-tokens must be between 1 and 65536")
-	}
-	if options.ThinkingBudget < 0 || options.ThinkingBudget > 65536 || (options.ThinkingBudget == 0 && cmd.FlagChanged("thinking-budget-tokens")) {
-		return errors.New("--thinking-budget-tokens must be between 1 and 65536")
-	}
-	if options.ThinkingBudget > 0 && options.ReasoningEffort == off1 {
-		return errors.New("--thinking-budget-tokens cannot be combined with --reasoning-effort off")
-	}
-	cleanOutputDir := filepath.Clean(options.OutputDir)
-	if cleanOutputDir == "." || strings.TrimSpace(options.OutputDir) == "" || filepath.Dir(cleanOutputDir) == cleanOutputDir {
-		return errors.New("--output-dir must be an explicit directory")
-	}
-	adapter, err := evals.WritingAdapter(options.Benchmark)
-	if err != nil {
+	if err := validateWritingRunOptions(cmd, options, limit); err != nil {
 		return err
 	}
-	judgeTokens := writingJudgeTokenCap(adapter, options.JudgeTokens, cmd.FlagChanged("judge-max-output-tokens"))
-	iterations, err := adapter.Iterations(options.Iterations)
-	if err != nil {
-		return err
-	}
-	records, inputHash, err := evals.LoadWritingPromptFile(options.Input)
-	if err != nil {
-		return err
-	}
-	if len(records) > limit {
-		records = records[:limit]
-	}
-	if err = evals.ValidateWritingPromptRecords(records, adapter); err != nil {
-		return err
-	}
-	models, judge, configs, err := resolveWritingModels([]string{options.Model}, options.JudgeModel, judgeTokens, options.PricingFile)
-	if err != nil {
-		return err
-	}
-	if options.GenerationTokens > 0 {
-		for i := range models {
-			models[i].MaxOutputTokens = options.GenerationTokens
-			cfg := configs[models[i].ID()]
-			cfg.MaxTokens = options.GenerationTokens
-			configs[models[i].ID()] = cfg
-		}
-	}
-	manifest := evals.NewWritingRunManifest(options.Input, inputHash, records, adapter, models, judge, iterations, options.Concurrency, options.Timeout, options.MaxRunCost, time.Now())
-	applyWritingReasoningSettings(&manifest.Identity.Generation, strings.TrimSpace(options.ReasoningEffort), options.ThinkingBudget)
-	manifest.Identity.LocalUseCase = strings.TrimSpace(options.LocalUseCase)
-	manifest.RunID = writingManifestRunID(manifest)
-	plan, err := evals.PlanWritingRun(manifest, records, adapter)
+	prepared, err := prepareWritingCommand(cmd, options, limit)
 	if err != nil {
 		return err
 	}
 	if !options.Execute {
-		return writeWritingDryRun(cmd.OutOrStdout(), manifest, plan)
+		return writeWritingDryRun(cmd.OutOrStdout(), prepared.manifest, prepared.plan)
 	}
-	if options.MaxRunCost <= 0 {
-		return errors.New("--execute requires a positive --max-run-cost")
-	}
-	if options.MaxCampaignCost <= 0 {
-		return errors.New("--execute requires a positive --max-campaign-cost")
-	}
-	if (strings.HasPrefix(options.Model, "omlx/") || strings.HasPrefix(options.JudgeModel, "omlx/")) && strings.TrimSpace(options.LocalUseCase) == "" {
-		return errors.New("local execution requires a specific --local-use-case")
-	}
-	if plan.WorstCaseCostUSD > options.MaxRunCost+1e-12 {
-		return fmt.Errorf("worst-case run estimate $%.6f exceeds --max-run-cost $%.6f", plan.WorstCaseCostUSD, options.MaxRunCost)
-	}
-	if err = verifyWritingOMLXModels(cmd.Context(), manifest, configs); err != nil {
+	if err := validateWritingExecution(options, prepared.plan); err != nil {
 		return err
 	}
-	ledger, err := evals.OpenCampaignLedger(options.CampaignLedger, options.MaxCampaignCost)
-	if err != nil {
-		return err
-	}
-	store, err := evals.OpenWritingRunStore(options.OutputDir, manifest)
-	if err != nil {
-		return err
-	}
-	owner, err := evals.NewCampaignReservationOwner(manifest.RunID, evals.WritingRunIdentityHash(manifest), options.OutputDir)
-	if err != nil {
-		return errors.Join(err, store.Close())
-	}
-	if _, err = ledger.Reserve(owner, plan.WorstCaseCostUSD, options.MaxRunCost); err != nil {
-		return errors.Join(err, store.Close())
-	}
-	executor, err := newCommandWritingExecutor(cmd.ErrOrStderr(), configs, options.Timeout)
-	if err != nil {
-		return errors.Join(err, store.Close(), ledger.RecordOwned(owner, nil, partial1))
-	}
-	defer executor.Close()
-	runErr := evals.RunWritingEvaluation(cmd.Context(), manifest, records, adapter, executor, store)
-	generations, judgments := store.Records()
-	closeErr := store.Close()
-	complete := runErr == nil && closeErr == nil
-	receipt, artifactErr := evals.WriteWritingRunArtifacts(options.OutputDir, manifest, adapter, generations, judgments, complete, time.Now())
-	status := receipt.Status
-	if runErr != nil || closeErr != nil || artifactErr != nil {
-		status = partial1
-	}
-	observedPtr := writingObservedCost(manifest, generations, judgments)
-	ledgerErr := ledger.RecordOwned(owner, observedPtr, status)
-	if err := errors.Join(runErr, closeErr, artifactErr, ledgerErr); err != nil {
-		return err
-	}
-	fmt.Fprintf(cmd.OutOrStdout(), "Writing evaluation %s: %s\nJudge execution: %s\nReport: %s\nObserved cost: $%.6f\n", receipt.RunID, receipt.Status, plan.JudgeExecution, filepath.Join(options.OutputDir, "report.md"), receipt.Report.ObservedCostUSD)
-	return runErr
+	return executeWritingCommand(cmd, options, prepared)
 }
 
 func writingJudgeTokenCap(adapter evals.WritingBenchmarkAdapter, requested int, explicit bool) int {
@@ -234,134 +120,4 @@ func writeWritingDryRun(out io.Writer, manifest evals.WritingRunManifest, plan e
 	encoder := json.NewEncoder(out)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(value)
-}
-
-func resolveWritingModels(modelSelectors []string, judgeSelector string, judgeMaxOutputTokens int, pricingFile string) ([]evals.WritingModelSpec, evals.WritingModelSpec, map[string]providers.Config, error) {
-	if len(modelSelectors) == 0 {
-		return nil, evals.WritingModelSpec{}, nil, errors.New("at least one exact --model is required")
-	}
-	globalCfg, err := providers.LoadGlobalConfig()
-	if err != nil {
-		return nil, evals.WritingModelSpec{}, nil, err
-	}
-	costMap, err := costs.LoadAll()
-	if err != nil {
-		return nil, evals.WritingModelSpec{}, nil, fmt.Errorf("load model costs: %w", err)
-	}
-	if strings.TrimSpace(pricingFile) != "" {
-		var overlay map[string]costs.ModelCost
-		overlay, err = costs.Load(pricingFile)
-		if err != nil {
-			return nil, evals.WritingModelSpec{}, nil, fmt.Errorf("load run pricing overlay: %w", err)
-		}
-		if costMap == nil {
-			costMap = make(map[string]costs.ModelCost)
-		}
-		for key, value := range overlay {
-			costMap[key] = value
-		}
-	}
-	catPath, err := catalog.Path()
-	if err != nil {
-		return nil, evals.WritingModelSpec{}, nil, err
-	}
-	cat, err := catalog.Load(catPath)
-	if err != nil {
-		return nil, evals.WritingModelSpec{}, nil, fmt.Errorf("load catalog: %w", err)
-	}
-	resolve := func(selector string, judge bool) (evals.WritingModelSpec, providers.Config, error) {
-		if !exactWritingModelSelector(selector) {
-			return evals.WritingModelSpec{}, providers.Config{}, fmt.Errorf("model selector %q must be exact provider/model", selector)
-		}
-		var targets []catalog.ModelTarget
-		targets, err = catalog.ResolveModels(cat, globalCfg.Providers, costMap, catalog.SelectorOptions{
-			Selector:           selector,
-			IncludeUnknownCost: true,
-			Blocklist:          providers.NewBlocklist(globalCfg.Blocklist),
-		})
-		if err != nil {
-			return evals.WritingModelSpec{}, providers.Config{}, err
-		}
-		if len(targets) != 1 {
-			return evals.WritingModelSpec{}, providers.Config{}, fmt.Errorf("model selector %q resolved to %d targets, want 1", selector, len(targets))
-		}
-		target := targets[0]
-		if target.CostStatus == catalog.CostUnknown {
-			return evals.WritingModelSpec{}, providers.Config{}, fmt.Errorf("model %s/%s has unknown input or output pricing", target.Provider, target.Model)
-		}
-		if ok, reason := catalog.TextChatCapability(target.Provider, target.Model, modelEntryForTarget(cat, target.Provider, target.Model)); !ok {
-			return evals.WritingModelSpec{}, providers.Config{}, fmt.Errorf("model %s/%s is not text-chat capable: %s", target.Provider, target.Model, reason)
-		}
-		maxTokens := target.Config.MaxTokens
-		if judge {
-			maxTokens = judgeMaxOutputTokens
-		} else if maxTokens <= 0 {
-			maxTokens = 4096
-		}
-		var evidenceClass, evidenceSource, evidenceNote string
-		evidenceClass, evidenceSource, evidenceNote, err = writingExternalEvidence(cat, target.Provider, target.Model)
-		if err != nil {
-			return evals.WritingModelSpec{}, providers.Config{}, err
-		}
-		spec := evals.WritingModelSpec{Provider: target.Provider, Model: target.Model, InputPer1M: target.InputPer1M, OutputPer1M: target.OutputPer1M, MaxOutputTokens: maxTokens, Workers: target.Config.GetWorkers(), EvidenceClass: evidenceClass, EvidenceSource: evidenceSource, EvidenceNote: evidenceNote}
-		cfg := writingRuntimeConfig(target.Config, spec)
-		cfg.MaxTokens = maxTokens
-		return spec, cfg, nil
-	}
-	models := make([]evals.WritingModelSpec, 0, len(modelSelectors))
-	configs := make(map[string]providers.Config)
-	seen := make(map[string]struct{})
-	for _, selector := range modelSelectors {
-		var spec evals.WritingModelSpec
-		var cfg providers.Config
-		spec, cfg, err = resolve(selector, false)
-		if err != nil {
-			return nil, evals.WritingModelSpec{}, nil, err
-		}
-		if _, ok := seen[spec.ID()]; ok {
-			return nil, evals.WritingModelSpec{}, nil, fmt.Errorf("duplicate generation model %q", spec.ID())
-		}
-		seen[spec.ID()] = struct{}{}
-		models = append(models, spec)
-		configs[spec.ID()] = cfg
-	}
-	judge, judgeConfig, err := resolve(judgeSelector, true)
-	if err != nil {
-		return nil, evals.WritingModelSpec{}, nil, err
-	}
-	configs[judge.ID()] = judgeConfig
-	return models, judge, configs, nil
-}
-
-func writingRuntimeConfig(cfg providers.Config, model evals.WritingModelSpec) providers.Config {
-	cfg.InputCostPM = model.InputPer1M
-	cfg.OutputCostPM = model.OutputPer1M
-	return cfg
-}
-
-func writingExternalEvidence(cat *catalog.Catalog, provider, model string) (string, string, string, error) {
-	entry := modelEntryForTarget(cat, provider, model)
-	if task, evidence, ok := catalog.BestQualityEvidence(entry); ok {
-		if writingExternalQualitySource(evidence.Source) {
-			return "exact", evidence.Source, task, nil
-		}
-	}
-	projection, ok, err := evals.ReviewedProjectionForArtifact(model)
-	if err != nil {
-		return "", "", "", fmt.Errorf("load external projection evidence: %w", err)
-	}
-	if ok {
-		return "projection", projection.SourceKey, projection.Confidence + ": " + projection.Basis, nil
-	}
-	return "missing", "", "no reviewed exact or projected evidence", nil
-}
-
-func writingExternalQualitySource(source string) bool {
-	source = strings.ToLower(strings.TrimSpace(source))
-	return strings.Contains(source, "llm_stats") || strings.Contains(source, "artificial_analysis")
-}
-
-func exactWritingModelSelector(selector string) bool {
-	provider, model, ok := strings.Cut(strings.TrimSpace(selector), "/")
-	return ok && strings.TrimSpace(provider) != "" && strings.TrimSpace(model) != ""
 }

@@ -13,7 +13,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 )
 
 // Repeated string literals consolidated by goconst.
@@ -55,38 +54,12 @@ func fetchLLMStatsBenchmarkLeads(ctx context.Context, opts Options) ([]Observati
 		return nil, err
 	}
 
-	type result struct {
-		benchmark    string
-		observations []Observation
-		err          error
-	}
-	jobs := make(chan llmStatsBenchmark)
-	results := make(chan result, len(catalog))
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	workers := min(8, max(1, len(catalog)))
-	var wg sync.WaitGroup
-	for range workers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for benchmark := range jobs {
-				observations, err := fetchLLMStatsBenchmarkPages(ctx, opts, root, benchmark) //nolint:govet // worker goroutine must not race the outer err
-				results <- result{benchmark: benchmark.ID, observations: observations, err: err}
-			}
-		}()
-	}
-	go func() {
-		defer close(jobs)
-		for _, benchmark := range catalog {
-			select {
-			case jobs <- benchmark:
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
-	go func() { wg.Wait(); close(results) }()
+	results := startLLMStatsBenchmarkJobs(ctx, catalog, func(benchmark llmStatsBenchmark) llmStatsBenchmarkJobResult {
+		observations, fetchErr := fetchLLMStatsBenchmarkPages(ctx, opts, root, benchmark)
+		return llmStatsBenchmarkJobResult{benchmark: benchmark.ID, observations: observations, err: fetchErr}
+	})
 
 	all := make([]Observation, 0)
 	blocked := make([]map[string]string, 0)
@@ -107,16 +80,8 @@ func fetchLLMStatsBenchmarkLeads(ctx context.Context, opts Options) ([]Observati
 	if firstErr != nil {
 		return nil, firstErr
 	}
-	sort.Slice(blocked, func(i, j int) bool { return blocked[i][benchmark1] < blocked[j][benchmark1] })
-	if len(blocked) > 0 {
-		var receipts []byte
-		receipts, err = encodeJSONLMaps(blocked)
-		if err != nil {
-			return nil, err
-		}
-		if err = writeSealed(sealedRevisionPath(root, blocked1, receipts, ".jsonl"), receipts); err != nil {
-			return nil, err
-		}
+	if err = sealLLMStatsBlockedReceipts(root, blocked); err != nil {
+		return nil, err
 	}
 	normalized, err := EncodeObservationsJSONL(all)
 	if err != nil {
@@ -154,25 +119,9 @@ func decodeLLMStatsBenchmarkCatalog(data []byte) ([]llmStatsBenchmark, error) {
 	result := make([]llmStatsBenchmark, 0, len(raw))
 	seen := make(map[string]struct{}, len(raw))
 	for index, row := range raw {
-		var benchmark llmStatsBenchmark
-		if err := requiredJSONField(row, "benchmark_id", &benchmark.ID); err != nil {
-			return nil, fmt.Errorf("catalog row %d: %w", index+1, err)
-		}
-		if err := requiredJSONField(row, "name", &benchmark.Name); err != nil {
-			return nil, fmt.Errorf("catalog row %d: %w", index+1, err)
-		}
-		if value := row["max_score"]; len(value) > 0 && string(value) != "null" {
-			if err := json.Unmarshal(value, &benchmark.MaxScore); err != nil {
-				return nil, fmt.Errorf("catalog row %d max_score: %w", index+1, err)
-			}
-		}
-		if value := row["model_count"]; len(value) > 0 {
-			if err := json.Unmarshal(value, &benchmark.ModelCount); err != nil {
-				return nil, fmt.Errorf("catalog row %d model_count: %w", index+1, err)
-			}
-		}
-		if strings.TrimSpace(benchmark.ID) == "" || strings.Contains(benchmark.ID, "/") {
-			return nil, fmt.Errorf("catalog row %d has invalid benchmark_id", index+1)
+		benchmark, err := decodeLLMStatsBenchmarkCatalogRow(row, index)
+		if err != nil {
+			return nil, err
 		}
 		if _, ok := seen[benchmark.ID]; ok {
 			return nil, fmt.Errorf("duplicate benchmark_id %q", benchmark.ID)
@@ -205,7 +154,7 @@ func fetchLLMStatsBenchmarkPages(ctx context.Context, opts Options, root string,
 			return nil, fmt.Errorf("fetch benchmark %s offset %d: %w", benchmark.ID, offset, err)
 		}
 		var page llmStatsBenchmarkPage
-		if err := json.Unmarshal(data, &page); err != nil {
+		if err = json.Unmarshal(data, &page); err != nil {
 			return nil, fmt.Errorf("decode benchmark %s offset %d: %w", benchmark.ID, offset, err)
 		}
 		if page.BenchmarkID != benchmark.ID || page.TotalModels < 0 {
@@ -216,25 +165,14 @@ func fetchLLMStatsBenchmarkPages(ctx context.Context, opts Options, root string,
 		}
 		digest := SealBytes(data)
 		pagePath := filepath.Join(root, SealBytes([]byte(benchmark.ID))[:16], fmt.Sprintf("%08d-%s.json", offset, digest))
-		if err := writeSealed(pagePath, data); err != nil {
+		if err = writeSealed(pagePath, data); err != nil {
 			return nil, err
 		}
-		for index, entry := range page.Entries {
-			if strings.TrimSpace(entry.ModelID) == "" || entry.Score == nil {
-				return nil, fmt.Errorf("benchmark %s offset %d row %d is malformed", benchmark.ID, offset, index+1)
-			}
-			if _, ok := seen[entry.ModelID]; ok {
-				return nil, fmt.Errorf("benchmark %s has duplicate model %q", benchmark.ID, entry.ModelID)
-			}
-			seen[entry.ModelID] = struct{}{}
-			grade := aggregatorUnspecified
-			if entry.Verified {
-				grade = aggregatorVerified
-			} else if entry.SelfReported {
-				grade = aggregatorSelfReported
-			}
-			observations = append(observations, Observation{SourceID: llmStatsBenchmarkResults, SourceRevision: digest, SourceSHA256: digest, Benchmark: benchmark.ID, BenchmarkVersion: publicLeaderboard, Cohort: "public", ModelID: entry.ModelID, OrganizationID: entry.OrganizationID, RawScore: *entry.Score, Unit: "source_native", Direction: higher1, Methodology: "LLM Stats public leaderboard aggregation; verification status supplied per row", EvidenceGrade: grade, FetchedAt: opts.Now().UTC(), Locator: fmt.Sprintf("%s#entries[%d]", endpoint, index), SourceClass: SourceAggregatorResult})
+		rows, err := admitLLMStatsBenchmarkPage(opts, page, llmStatsBenchmarkPageEvidence{benchmark: benchmark.ID, offset: offset, digest: digest, endpoint: endpoint}, seen)
+		if err != nil {
+			return nil, err
 		}
+		observations = append(observations, rows...)
 		if len(observations) >= page.TotalModels {
 			if len(observations) != page.TotalModels {
 				return nil, fmt.Errorf("benchmark %s returned %d rows, expected %d", benchmark.ID, len(observations), page.TotalModels)

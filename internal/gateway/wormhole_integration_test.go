@@ -82,6 +82,11 @@ func TestWormholeGateway_ChatCompletionShapeHeadersAndCost(t *testing.T) {
 		t.Fatalf("expected X-Llambo-Model gpt-test, got %q", got)
 	}
 
+	assertWormholeCompletionAndCost(t, server, rr)
+}
+
+func assertWormholeCompletionAndCost(t *testing.T, server *Server, rr *httptest.ResponseRecorder) {
+	t.Helper()
 	resp := decodeResponse[ChatCompletionResponse](t, rr)
 	if resp.Object != "chat.completion" || resp.Model != "gpt-test" || len(resp.Choices) != 1 {
 		t.Fatalf("unexpected response shape: %+v", resp)
@@ -93,6 +98,11 @@ func TestWormholeGateway_ChatCompletionShapeHeadersAndCost(t *testing.T) {
 		t.Fatalf("unexpected x_llambo metadata: %+v", resp.XLlambo)
 	}
 
+	assertWormholeCost(t, server)
+}
+
+func assertWormholeCost(t *testing.T, server *Server) {
+	t.Helper()
 	stats := server.provider.GetOpenAIClients().CostTracker.GetStats()["openai"]
 	if stats.Requests != 1 || stats.PromptTokens != 3 || stats.CompletionTokens != 4 || stats.TotalTokens != 7 || stats.TotalCostUSD <= 0 {
 		t.Fatalf("unexpected cost tracker stats: %+v", stats)

@@ -7,6 +7,7 @@ import (
 	"time"
 )
 
+// RenderHTML formats the score matrix and evidence with escaped model identities.
 func RenderHTML(report Report, limit int) string {
 	canonical, projected := partitionProjectionRows(report.Models)
 	if limit <= 0 || limit > len(canonical) {
@@ -35,25 +36,7 @@ func RenderHTML(report Report, limit int) string {
 	}
 	writeCoverageCampaignHTML(&b, report.CoverageCampaign)
 	b.WriteString("<h2>Evidence</h2><ul>")
-	for _, row := range append(append([]ReportModel(nil), rows...), projected...) {
-		for _, category := range sortedLlamboCategories(row.LlamboScores) {
-			score := row.LlamboScores[category]
-			if score == nil {
-				continue
-			}
-			fmt.Fprintf(&b, "<li>%s / %s: score %.1f; coverage %.1f%%; trusted coverage %.1f%%; confidence %s; winner %s; stale %t%s<ul>", template.HTMLEscapeString(row.Name), template.HTMLEscapeString(category), score.Score, 100*score.Coverage, 100*score.TrustedCoverage, template.HTMLEscapeString(score.Confidence), template.HTMLEscapeString(score.WinnerStatus), score.Stale, projectionSuffix(row))
-			for _, contribution := range scoreContributions(score) {
-				fmt.Fprintf(&b, "<li>%s / %s: raw %s; percentile %s; frozen population %d; nominal/effective weight %.3f/%.3f; grade %s%s</li>", template.HTMLEscapeString(contribution.Family), template.HTMLEscapeString(contribution.Benchmark), formatRaw(contribution.RawScore), formatRaw(contribution.Percentile), contribution.ReferencePopulation, contribution.NominalWeight, contribution.EffectiveWeight, template.HTMLEscapeString(contribution.EvidenceGrade), template.HTMLEscapeString(formatEvidenceProvenance(contribution)))
-			}
-			b.WriteString("</ul></li>")
-		}
-		for _, category := range sortedLlamboCategories(row.LlamboScores) {
-			reason := row.UnresolvedReasons[category]
-			if row.LlamboScores[category] == nil {
-				fmt.Fprintf(&b, "<li>%s / %s: unresolved — %s%s</li>", template.HTMLEscapeString(row.Name), template.HTMLEscapeString(category), template.HTMLEscapeString(reason), projectionSuffix(row))
-			}
-		}
-	}
+	writeReportEvidenceHTML(&b, append(append([]ReportModel(nil), rows...), projected...))
 	if report.Validation != nil {
 		b.WriteString("</ul><h2>Local validation diagnostic</h2><p>Read-only sealed exact-ID receipt comparison; it does not affect Llambo Scores, ordering, or filters.</p><table><thead><tr><th>Category</th><th>Exact pairs</th><th>Spearman</th><th>Status</th></tr></thead><tbody>")
 		for _, category := range report.Validation.Categories {

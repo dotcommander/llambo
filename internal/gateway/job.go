@@ -80,64 +80,69 @@ func (m *JobManager) collectResults(job *Job, results <-chan providers.Result) {
 	for {
 		select {
 		case <-job.ctx.Done():
-			// Job was cancelled
 			return
-
 		case result, ok := <-results:
 			if !ok {
-				// All results received - determine final status. The
-				// admission slot is released by processJob, not here, so
-				// cancelled and completed jobs follow one decrement path.
-				job.mu.Lock()
-				if job.Status == JobStatusCancelled {
-					job.mu.Unlock()
-					return
-				}
-				switch {
-				case job.Failed == job.Total:
-					job.Status = JobStatusFailed
-				case job.Failed > 0:
-					job.Status = JobStatusPartialFailure
-				default:
-					job.Status = JobStatusCompleted
-				}
-				job.UpdatedAt = time.Now()
-				job.mu.Unlock()
+				job.finishCollectedResults()
 				return
 			}
-
-			// Process result
-			jobResult := JobResult{
-				ID:         result.ID,
-				Status:     string(ResultStatusCompleted),
-				Content:    result.Content,
-				Backend:    result.Backend,
-				Model:      result.Model,
-				DurationMs: result.Duration.Milliseconds(),
-				ToolCalls:  openAIResultToolCalls(result.ToolCalls), FinishReason: normalizeOpenAIFinishReason(result.FinishReason),
-			}
-
-			if result.Error != nil {
-				jobResult.Status = string(ResultStatusFailed)
-				jobResult.Error = upstreamErrorDetail(result.Error).Message
-				jobResult.Content = ""
-			}
-
-			job.mu.Lock()
-			if job.Status == JobStatusCancelled {
-				job.mu.Unlock()
+			if !job.recordCollectedResult(result) {
 				return
 			}
-			job.Results = append(job.Results, jobResult)
-			if result.Error != nil {
-				job.Failed++
-			} else {
-				job.Completed++
-			}
-			job.UpdatedAt = time.Now()
-			job.mu.Unlock()
 		}
 	}
+}
+
+func (job *Job) finishCollectedResults() {
+	job.mu.Lock()
+	if job.Status == JobStatusCancelled {
+		job.mu.Unlock()
+		return
+	}
+	switch {
+	case job.Failed == job.Total:
+		job.Status = JobStatusFailed
+	case job.Failed > 0:
+		job.Status = JobStatusPartialFailure
+	default:
+		job.Status = JobStatusCompleted
+	}
+	job.UpdatedAt = time.Now()
+	job.mu.Unlock()
+}
+
+func (job *Job) recordCollectedResult(result providers.Result) bool {
+	// Process result
+	jobResult := JobResult{
+		ID:         result.ID,
+		Status:     string(ResultStatusCompleted),
+		Content:    result.Content,
+		Backend:    result.Backend,
+		Model:      result.Model,
+		DurationMs: result.Duration.Milliseconds(),
+		ToolCalls:  openAIResultToolCalls(result.ToolCalls), FinishReason: normalizeOpenAIFinishReason(result.FinishReason),
+	}
+
+	if result.Error != nil {
+		jobResult.Status = string(ResultStatusFailed)
+		jobResult.Error = upstreamErrorDetail(result.Error).Message
+		jobResult.Content = ""
+	}
+
+	job.mu.Lock()
+	if job.Status == JobStatusCancelled {
+		job.mu.Unlock()
+		return false
+	}
+	job.Results = append(job.Results, jobResult)
+	if result.Error != nil {
+		job.Failed++
+	} else {
+		job.Completed++
+	}
+	job.UpdatedAt = time.Now()
+	job.mu.Unlock()
+	return true
 }
 
 // processJob processes a job using the BackendQueue.

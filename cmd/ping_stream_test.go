@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -108,5 +109,57 @@ func TestPingResultJSONUsesMillisecondTimingUnits(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("JSON %s missing %q", got, want)
 		}
+	}
+}
+
+// fakeStreamPingProvider stands in for a wormhole provider in shared stream
+// adapter tests.
+type fakeStreamPingProvider struct {
+	whtypes.BaseProvider
+	err    error
+	chunks []whtypes.TextChunk
+}
+
+func (f *fakeStreamPingProvider) Close() error { return nil }
+
+func (f *fakeStreamPingProvider) Stream(_ context.Context, _ whtypes.TextRequest) (<-chan whtypes.TextChunk, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	stream := make(chan whtypes.TextChunk, len(f.chunks)+1)
+	for _, chunk := range f.chunks {
+		stream <- chunk
+	}
+	close(stream)
+	return stream, nil
+}
+
+func TestStreamPingTextPropagatesStreamOpenFailure(t *testing.T) {
+	t.Parallel()
+	openErr := errors.New("stream open refused")
+	_, err := streamPingText(context.Background(), &fakeStreamPingProvider{err: openErr}, whtypes.TextRequest{}, "model-x")
+	if !errors.Is(err, openErr) {
+		t.Fatalf("stream open error = %v, want %v", err, openErr)
+	}
+}
+
+func TestStreamPingTextFoldsStreamIntoSharedOutcome(t *testing.T) {
+	t.Parallel()
+	provider := &fakeStreamPingProvider{chunks: []whtypes.TextChunk{
+		{Text: "Hello "},
+		{Text: "world", Usage: &whtypes.Usage{PromptTokens: 5, CompletionTokens: 7}},
+	}}
+	outcome, err := streamPingText(context.Background(), provider, whtypes.TextRequest{}, "model-x")
+	if err != nil {
+		t.Fatalf("streamPingText: %v", err)
+	}
+	if outcome.Content != "Hello world" || outcome.Model != "model-x" {
+		t.Fatalf("outcome = %#v, want content %q model %q", outcome, "Hello world", "model-x")
+	}
+	if outcome.TokensIn != 5 || outcome.TokensOut != 7 {
+		t.Fatalf("usage = %d/%d, want 5/7", outcome.TokensIn, outcome.TokensOut)
+	}
+	if outcome.TTFB < 0 || outcome.Generation < 0 {
+		t.Fatalf("timing must stay non-negative: %#v", outcome)
 	}
 }

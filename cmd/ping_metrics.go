@@ -58,13 +58,27 @@ func recordPingCatalogHealth(ctx context.Context, results []PingResult) error {
 	now := time.Now().UTC()
 	if err := catalog.Update(ctx, catPath, func(cat *catalog.Catalog) error {
 		for _, result := range results {
-			catalog.RecordPingWithMetrics(cat, result.Provider, result.Model, result.Success, result.Latency, result.TTFB, result.Generation, result.SpeedTokensPS, result.TokensIn, result.TokensOut, result.Error, now)
+			catalog.RecordPingWithMetrics(cat, result.Provider, result.Model, pingHealthObservation(result, now))
 		}
 		return nil
 	}); err != nil {
 		return fmt.Errorf("save catalog health: %w", err)
 	}
 	return nil
+}
+
+func pingHealthObservation(result PingResult, checkedAt time.Time) catalog.HealthObservation {
+	return catalog.HealthObservation{
+		Success:              result.Success,
+		Latency:              result.Latency,
+		TTFB:                 result.TTFB,
+		Generation:           result.Generation,
+		SpeedTokensPerSecond: result.SpeedTokensPS,
+		TokensIn:             result.TokensIn,
+		TokensOut:            result.TokensOut,
+		Error:                result.Error,
+		CheckedAt:            checkedAt,
+	}
 }
 
 func recordPingResultMetric(store *providers.RoutingMetricsStore, provider string, result PingResult) {

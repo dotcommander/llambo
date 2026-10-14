@@ -63,7 +63,26 @@ func LoadWritingPromptFile(path string) ([]WritingPromptRecord, string, error) {
 	return records, hex.EncodeToString(hash[:]), nil
 }
 
-func NewWritingRunManifest(inputPath, inputHash string, records []WritingPromptRecord, adapter WritingBenchmarkAdapter, models []WritingModelSpec, judge WritingModelSpec, iterations, concurrency int, timeout time.Duration, maxRunCost float64, now time.Time) WritingRunManifest {
+// WritingRunManifestOptions binds sealed input, exact models and execution bounds.
+type WritingRunManifestOptions struct {
+	InputPath   string
+	InputHash   string
+	Records     []WritingPromptRecord
+	Adapter     WritingBenchmarkAdapter
+	Models      []WritingModelSpec
+	Judge       WritingModelSpec
+	Iterations  int
+	Concurrency int
+	Timeout     time.Duration
+	MaxRunCost  float64
+	Now         time.Time
+}
+
+// NewWritingRunManifest seals the prompt, model, judge, and execution identity.
+func NewWritingRunManifest(options WritingRunManifestOptions) WritingRunManifest {
+	inputPath, inputHash, records, adapter := options.InputPath, options.InputHash, options.Records, options.Adapter
+	models, judge := options.Models, options.Judge
+	iterations, concurrency, timeout, maxRunCost, now := options.Iterations, options.Concurrency, options.Timeout, options.MaxRunCost, options.Now
 	promptIDs := make([]string, len(records))
 	for i := range records {
 		promptIDs[i] = records[i].ID
@@ -114,6 +133,7 @@ func normalizedWritingRunIdentity(identity WritingRunIdentity) WritingRunIdentit
 	return identity
 }
 
+// PlanWritingRun validates sealed inputs and computes the provider-free call budget.
 func PlanWritingRun(manifest WritingRunManifest, records []WritingPromptRecord, adapter WritingBenchmarkAdapter) (WritingRunPlan, error) {
 	if err := ValidateWritingPromptRecords(records, adapter); err != nil {
 		return WritingRunPlan{}, err
@@ -134,13 +154,8 @@ func PlanWritingRun(manifest WritingRunManifest, records []WritingPromptRecord, 
 	if judgeExecution != "sync" {
 		return WritingRunPlan{}, fmt.Errorf("unsupported writing judge execution %q", judgeExecution)
 	}
-	for _, model := range append(append([]WritingModelSpec(nil), manifest.Identity.Models...), manifest.Identity.Judge) {
-		if model.Provider == "" || model.Model == "" || model.MaxOutputTokens < 1 {
-			return WritingRunPlan{}, errors.New("writing model identity and max output tokens are required")
-		}
-		if model.InputPer1M < 0 || model.OutputPer1M < 0 {
-			return WritingRunPlan{}, errors.New("writing model prices cannot be negative")
-		}
+	if err := validateWritingPlanModels(manifest.Identity); err != nil {
+		return WritingRunPlan{}, err
 	}
 	plan := WritingRunPlan{
 		BenchmarkID:         adapter.ID(),
@@ -150,25 +165,44 @@ func PlanWritingRun(manifest WritingRunManifest, records []WritingPromptRecord, 
 		MaxJudgmentAttempts: maxWritingJudgmentAttempts,
 	}
 	for _, record := range records {
-		criteria, err := adapter.Criteria(record)
-		if err != nil {
-			return WritingRunPlan{}, fmt.Errorf("prompt %q criteria: %w", record.ID, err)
-		}
-		for _, model := range manifest.Identity.Models {
-			for iteration := 1; iteration <= manifest.Identity.Iterations; iteration++ {
-				plan.GenerationCalls++
-				plan.WorstCaseCostUSD += estimateWritingCallCost(record.Prompt, model.MaxOutputTokens, model)
-				system, user, err := buildWritingAdapterJudgmentPrompt(adapter, record, strings.Repeat("x", model.MaxOutputTokens*4), criteria)
-				if err != nil {
-					return WritingRunPlan{}, err
-				}
-				plan.JudgmentCalls++
-				plan.WorstCaseCostUSD += estimateWritingCallCost(system+"\n"+user, manifest.Identity.Judge.MaxOutputTokens, manifest.Identity.Judge)
-			}
+		if err := addWritingPromptPlan(&plan, manifest, record, adapter); err != nil {
+			return WritingRunPlan{}, err
 		}
 	}
 	plan.WorstCaseProviderCalls = plan.GenerationCalls + plan.JudgmentCalls*maxWritingJudgmentAttempts
 	return plan, nil
+}
+
+func validateWritingPlanModels(identity WritingRunIdentity) error {
+	for _, model := range append(append([]WritingModelSpec(nil), identity.Models...), identity.Judge) {
+		if model.Provider == "" || model.Model == "" || model.MaxOutputTokens < 1 {
+			return errors.New("writing model identity and max output tokens are required")
+		}
+		if model.InputPer1M < 0 || model.OutputPer1M < 0 {
+			return errors.New("writing model prices cannot be negative")
+		}
+	}
+	return nil
+}
+
+func addWritingPromptPlan(plan *WritingRunPlan, manifest WritingRunManifest, record WritingPromptRecord, adapter WritingBenchmarkAdapter) error {
+	criteria, err := adapter.Criteria(record)
+	if err != nil {
+		return fmt.Errorf("prompt %q criteria: %w", record.ID, err)
+	}
+	for _, model := range manifest.Identity.Models {
+		for iteration := 1; iteration <= manifest.Identity.Iterations; iteration++ {
+			plan.GenerationCalls++
+			plan.WorstCaseCostUSD += estimateWritingCallCost(record.Prompt, model.MaxOutputTokens, model)
+			system, user, err := buildWritingAdapterJudgmentPrompt(adapter, record, strings.Repeat("x", model.MaxOutputTokens*4), criteria)
+			if err != nil {
+				return err
+			}
+			plan.JudgmentCalls++
+			plan.WorstCaseCostUSD += estimateWritingCallCost(system+"\n"+user, manifest.Identity.Judge.MaxOutputTokens, manifest.Identity.Judge)
+		}
+	}
+	return nil
 }
 
 func writingGenerationKey(benchmark, promptID, model string, iteration int) string {

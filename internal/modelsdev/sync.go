@@ -3,11 +3,11 @@ package modelsdev
 import (
 	"context"
 	"encoding/json"
-	"github.com/dotcommander/llambo/internal/filetxn"
 	"os"
 	"strings"
 
 	"github.com/dotcommander/llambo/internal/costs"
+	"github.com/dotcommander/llambo/internal/filetxn"
 )
 
 // SyncOptions configures a pricing sync run.
@@ -57,26 +57,7 @@ func RunSync(ctx context.Context, opts SyncOptions) (*SyncResult, costs.ModelsDe
 			next = mergeUnfilteredPrior(next, prior, filter)
 		}
 
-		res = &SyncResult{Models: len(next)}
-		provSet := map[string]bool{}
-		for k, p := range next {
-			if i := indexColon(k); i >= 0 {
-				provSet[k[:i]] = true
-			}
-			old, ok := prior[k]
-			switch {
-			case !ok:
-				res.Added++
-			case old.InputPer1M != p.InputPer1M || old.OutputPer1M != p.OutputPer1M:
-				res.Changed++
-			}
-		}
-		for k := range prior {
-			if _, ok := next[k]; !ok {
-				res.Removed++
-			}
-		}
-		res.Providers = len(provSet)
+		res = pricingChanges(next, prior)
 
 		if opts.DryRun {
 			return nil
@@ -95,6 +76,30 @@ func RunSync(ctx context.Context, opts SyncOptions) (*SyncResult, costs.ModelsDe
 		return nil, nil, err
 	}
 	return res, next, nil
+}
+
+func pricingChanges(next, prior costs.ModelsDevFile) *SyncResult {
+	result := &SyncResult{Models: len(next)}
+	providers := map[string]bool{}
+	for key, price := range next {
+		if i := indexColon(key); i >= 0 {
+			providers[key[:i]] = true
+		}
+		previous, exists := prior[key]
+		switch {
+		case !exists:
+			result.Added++
+		case previous.InputPer1M != price.InputPer1M || previous.OutputPer1M != price.OutputPer1M:
+			result.Changed++
+		}
+	}
+	for key := range prior {
+		if _, exists := next[key]; !exists {
+			result.Removed++
+		}
+	}
+	result.Providers = len(providers)
+	return result
 }
 
 func mergeUnfilteredPrior(next, prior costs.ModelsDevFile, filter []string) costs.ModelsDevFile {

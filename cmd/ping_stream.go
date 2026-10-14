@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"time"
@@ -15,6 +16,39 @@ type pingStreamStats struct {
 	TTFB         time.Duration
 	Generation   time.Duration
 	OutputChunks int
+}
+
+// pingStreamOutcome carries the response fields shared by streamed ping runs.
+type pingStreamOutcome struct {
+	Content    string
+	Model      string
+	TokensIn   int
+	TokensOut  int
+	TTFB       time.Duration
+	Generation time.Duration
+}
+
+// streamPingText opens a wormhole text stream and folds it into a ping
+// outcome. Gemini and OpenAI-compatible ping clients share stream consumption;
+// they differ only in request construction and non-streaming decoding.
+func streamPingText(ctx context.Context, provider whtypes.Provider, req whtypes.TextRequest, model string) (pingStreamOutcome, error) {
+	started := time.Now()
+	stream, err := provider.Stream(ctx, req)
+	if err != nil {
+		return pingStreamOutcome{}, err
+	}
+	stats, err := consumePingStream(stream, started)
+	if err != nil {
+		return pingStreamOutcome{}, err
+	}
+	return pingStreamOutcome{
+		Content:    stats.Content,
+		Model:      model,
+		TokensIn:   stats.TokensIn,
+		TokensOut:  stats.TokensOut,
+		TTFB:       stats.TTFB,
+		Generation: stats.Generation,
+	}, nil
 }
 
 func consumePingStream(stream <-chan whtypes.TextChunk, started time.Time) (pingStreamStats, error) {

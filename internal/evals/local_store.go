@@ -3,7 +3,6 @@ package evals
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,7 +11,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
-	"strings"
 	"syscall"
 	"time"
 )
@@ -150,6 +148,7 @@ func (s *LocalRunStore) loadIntents() error {
 	return scanner.Err()
 }
 
+// AppendIntent durably records dispatch ownership before admitting it in memory.
 func (s *LocalRunStore) AppendIntent(intent LocalDispatchIntent) error {
 	if s.intents == nil {
 		return errors.New("local run store is closed")
@@ -160,18 +159,22 @@ func (s *LocalRunStore) AppendIntent(intent LocalDispatchIntent) error {
 	if _, exists := s.intentByCase[intent.CaseID]; exists {
 		return fmt.Errorf("dispatch intent already recorded for case %s", intent.CaseID)
 	}
-	b, err := json.Marshal(intent)
-	if err != nil {
-		return err
-	}
-	if _, err := s.intents.Write(append(b, '\n')); err != nil {
-		return err
-	}
-	if err := s.intents.Sync(); err != nil {
+	if err := appendLocalLedgerRecord(s.intents, intent); err != nil {
 		return err
 	}
 	s.intentByCase[intent.CaseID] = intent
 	return nil
+}
+
+func appendLocalLedgerRecord(file *os.File, record any) error {
+	data, err := json.Marshal(record)
+	if err != nil {
+		return err
+	}
+	if _, err := file.Write(append(data, '\n')); err != nil {
+		return err
+	}
+	return file.Sync()
 }
 
 func sameLocalRunIdentity(existing, requested LocalRunManifest) error {
@@ -220,6 +223,7 @@ func (s *LocalRunStore) loadCalls() error {
 	return nil
 }
 
+// AppendCall syncs a completed call before updating the in-memory case index.
 func (s *LocalRunStore) AppendCall(call LocalCall) error {
 	if s.calls == nil {
 		return errors.New("local run store is closed")
@@ -230,14 +234,7 @@ func (s *LocalRunStore) AppendCall(call LocalCall) error {
 	if _, exists := s.byCase[call.CaseID]; exists {
 		return fmt.Errorf("local call already recorded for case %q", call.CaseID)
 	}
-	b, err := json.Marshal(call)
-	if err != nil {
-		return err
-	}
-	if _, err := s.calls.Write(append(b, '\n')); err != nil {
-		return err
-	}
-	if err := s.calls.Sync(); err != nil {
+	if err := appendLocalLedgerRecord(s.calls, call); err != nil {
 		return err
 	}
 	s.byCase[call.CaseID] = call
@@ -264,173 +261,6 @@ func (s *LocalRunStore) validateCaseID(caseID string) error {
 		return fmt.Errorf("invalid case id %q for this run", caseID)
 	}
 	return nil
-}
-
-// RunStoredLocalEvaluation resumes a matching output directory. A persisted
-// failed call is still a completed case: it is preserved in the receipt and is
-// never silently retried from the same attempt.
-func RunStoredLocalEvaluation(ctx context.Context, manifest LocalRunManifest, in LocalInputManifest, exec LocalExecutor, store *LocalRunStore) ([]LocalCall, error) {
-	if exec == nil || store == nil {
-		return nil, errors.New("local executor and run store are required")
-	}
-	if LocalRunIdentityHash(manifest) != LocalRunIdentityHash(store.manifest) {
-		return nil, errors.New("run store does not belong to manifest identity")
-	}
-	if _, err := PlanLocalRun(manifest, in); err != nil {
-		return nil, err
-	}
-	tracker := NewIdentityTracker(manifest.Identity.RequestedModel)
-	for _, call := range store.Calls() {
-		caseIndex, _ := strconv.Atoi(call.CaseID)
-		if call.RequestedModel != manifest.Identity.RequestedModel {
-			return store.Calls(), fmt.Errorf("stored case %s has a different requested model", call.CaseID)
-		}
-		if !bytes.Equal(call.Input, in.Cases[caseIndex-1]) {
-			return store.Calls(), fmt.Errorf("stored case %s does not match sealed input", call.CaseID)
-		}
-		if call.Error == "" {
-			if err := tracker.Record(call.ServedModel); err != nil {
-				return store.Calls(), err
-			}
-		}
-	}
-	for i := 0; i < manifest.Identity.Limit; i++ {
-		caseID := strconv.Itoa(i + 1)
-		if _, exists := store.byCase[caseID]; exists {
-			continue
-		}
-		if _, inDoubt := store.intentByCase[caseID]; inDoubt {
-			if store.intentByCase[caseID].InputSHA256 != localSHA(in.Cases[i]) {
-				return store.Calls(), fmt.Errorf("case %s dispatch intent does not match sealed input", caseID)
-			}
-			return store.Calls(), fmt.Errorf("case %s has a dispatch intent without a durable result; attempt is in doubt and will not be retried", caseID)
-		}
-		if err := store.AppendIntent(LocalDispatchIntent{CaseID: caseID, InputSHA256: localSHA(in.Cases[i]), At: time.Now().UTC()}); err != nil {
-			return store.Calls(), err
-		}
-		call, err := exec.ExecuteLocal(ctx, manifest, in.Cases[i])
-		call.CaseID = caseID
-		call.RequestedModel = manifest.Identity.RequestedModel
-		call.Input = append(json.RawMessage(nil), in.Cases[i]...)
-		call.At = time.Now().UTC()
-		if priceErr := ApplyLocalCallPricing(manifest.Identity.Pricing, &call); priceErr != nil {
-			return store.Calls(), priceErr
-		}
-		if err != nil {
-			call.Error = err.Error()
-			if appendErr := store.AppendCall(call); appendErr != nil {
-				return store.Calls(), errors.Join(err, appendErr)
-			}
-			return store.Calls(), err
-		}
-		if call.Error == "" {
-			if err := tracker.Record(call.ServedModel); err != nil {
-				call.Error = err.Error()
-				if appendErr := store.AppendCall(call); appendErr != nil {
-					return store.Calls(), errors.Join(err, appendErr)
-				}
-				return store.Calls(), err
-			}
-		}
-		if err := store.AppendCall(call); err != nil {
-			return store.Calls(), err
-		}
-	}
-	return store.Calls(), nil
-}
-
-// Finalize writes all derived artifacts only once. It refuses an existing
-// receipt unless that receipt verifies, in which case callers must use a new
-// output directory rather than overwrite completed evidence.
-func (s *LocalRunStore) Finalize(report LocalReport, finished time.Time) (LocalReceipt, error) {
-	if s.calls == nil {
-		return LocalReceipt{}, errors.New("local run store is closed")
-	}
-	if err := s.calls.Sync(); err != nil {
-		return LocalReceipt{}, err
-	}
-	if _, err := os.Stat(filepath.Join(s.dir, "receipt.json")); err == nil {
-		if err = VerifyLocalReceipt(s.dir); err != nil {
-			return LocalReceipt{}, fmt.Errorf("completed output receipt is invalid: %w", err)
-		}
-		return LocalReceipt{}, errors.New("completed output directory is immutable; use a new --output-dir")
-	} else if !os.IsNotExist(err) {
-		return LocalReceipt{}, err
-	}
-	if _, err := os.Stat(filepath.Join(s.dir, reportJSON1)); err == nil {
-		return LocalReceipt{}, errors.New("output directory already has a report without a receipt; preserve it and use a new --output-dir")
-	} else if !os.IsNotExist(err) {
-		return LocalReceipt{}, err
-	}
-	calls := s.Calls()
-	if report.RunID == "" {
-		report.RunID = s.manifest.RunID
-	}
-	if report.Suite == "" {
-		report.Suite = s.manifest.Identity.Suite
-	}
-	report.CaseCount = len(calls)
-	served := NewIdentityTracker(s.manifest.Identity.RequestedModel)
-	for _, call := range calls {
-		if call.Error == "" {
-			if err := served.Record(call.ServedModel); err != nil {
-				return LocalReceipt{}, err
-			}
-		}
-		if call.ObservedCostKnown {
-			report.ObservedCostUSD += call.ObservedCostUSD
-		}
-	}
-	report.ServedModels = served.Served()
-	if len(calls) != s.manifest.Identity.Limit || len(report.Errors) > 0 || hasLocalCallError(calls) {
-		report.Status = partial1
-	} else if report.Status == "" {
-		report.Status = completeQuality
-	}
-	if err := writeDurableLocalJSON(filepath.Join(s.dir, reportJSON1), report); err != nil {
-		return LocalReceipt{}, err
-	}
-	var md strings.Builder
-	fmt.Fprintf(&md, "# Local evaluation %s\n\nStatus: %s\n\nScore (%s): %.6f\n", s.manifest.RunID, report.Status, report.ScoreIdentity, report.Score)
-	metricKeys := make([]string, 0, len(report.Metrics))
-	for key := range report.Metrics {
-		metricKeys = append(metricKeys, key)
-	}
-	sort.Strings(metricKeys)
-	if len(metricKeys) > 0 {
-		md.WriteString("\n## Metrics\n")
-	}
-	for _, key := range metricKeys {
-		fmt.Fprintf(&md, "\n- %s: %.6f", key, report.Metrics[key])
-	}
-	if len(metricKeys) > 0 {
-		md.WriteByte('\n')
-	}
-	if err := writeDurableLocalFile(filepath.Join(s.dir, reportMd), []byte(md.String()), 0o644); err != nil {
-		return LocalReceipt{}, err
-	}
-	hashes := make(map[string]string, 5)
-	for _, name := range []string{manifestJSON, intentsJsonl, callsJsonl, reportJSON1, reportMd} {
-		data, err := os.ReadFile(filepath.Join(s.dir, name))
-		if err != nil {
-			return LocalReceipt{}, err
-		}
-		hashes[name] = localSHA(data)
-	}
-	receipt := LocalReceipt{SchemaVersion: localEvalSchemaVersion, RunID: s.manifest.RunID, Status: report.Status, RequestedModel: s.manifest.Identity.RequestedModel, ServedModels: report.ServedModels, IdentitySHA256: LocalRunIdentityHash(s.manifest), InputSHA256: s.manifest.Identity.InputSHA256, Suite: s.manifest.Identity.Suite, SuiteVersion: s.manifest.Identity.SuiteVersion, CaseCount: len(calls), ObservedCostUSD: report.ObservedCostUSD, CreatedAt: s.manifest.CreatedAt, FinishedAt: finished.UTC(), ArtifactSHA256: hashes, Errors: report.Errors}
-	if err := writeDurableLocalJSON(filepath.Join(s.dir, "receipt.json"), receipt); err != nil {
-		return LocalReceipt{}, err
-	}
-	return receipt, nil
-}
-
-func hasLocalCallError(calls []LocalCall) bool {
-	for _, call := range calls {
-		if call.Error != "" {
-			return true
-		}
-	}
-	return false
 }
 
 // Close flushes and closes the run ledger.

@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -20,21 +19,22 @@ const (
 	yes1 = "yes"
 )
 
-func runWritingCatalog(cmd *commandIO, format, output string, refresh bool, exportPrompts, promptSource string, promptLimit int, discoverModels bool, discoverLimit int) error {
-	if exportPrompts != "" && !refresh {
-		return errors.New("--export-prompts requires --refresh so the public prompt artifact is fetched")
-	}
-	if discoverModels && !refresh {
-		return errors.New("--discover-open-models requires --refresh so the public model listing is fetched")
-	}
-	if promptLimit < 0 {
-		return errors.New("--prompt-limit cannot be negative")
-	}
-	if discoverLimit < 0 {
-		return errors.New("--discover-limit cannot be negative")
-	}
-	if exportPrompts != "" && output != "" && filepath.Clean(exportPrompts) == filepath.Clean(output) {
-		return errors.New("--export-prompts and --output must name different files")
+type writingCatalogOptions struct {
+	format, output              string
+	refresh                     bool
+	exportPrompts, promptSource string
+	promptLimit                 int
+	discoverModels              bool
+	discoverLimit               int
+}
+
+func runWritingCatalog(cmd *commandIO, options writingCatalogOptions) error {
+	format, output, refresh := options.format, options.output, options.refresh
+	exportPrompts, promptSource, promptLimit := options.exportPrompts, options.promptSource, options.promptLimit
+	discoverModels, discoverLimit := options.discoverModels, options.discoverLimit
+
+	if err := validateWritingCatalogOptions(options); err != nil {
+		return err
 	}
 	catalog := evals.DefaultWritingCatalog(time.Now().UTC())
 	if refresh {
@@ -124,241 +124,34 @@ func encodeWritingCatalog(catalog evals.WritingCatalog, format string) ([]byte, 
 	}
 }
 
-func renderWritingCatalogMarkdown(catalog evals.WritingCatalog) string {
-	var out strings.Builder
-	fmt.Fprintf(&out, "# Writing Benchmark Catalog\n\n")
-	fmt.Fprintf(&out, "Generated: `%s`  \n", writingCatalogTime(catalog.GeneratedAt))
-	fmt.Fprintf(&out, "Registry version: `%d`\n\n", catalog.RegistryVersion)
-	out.WriteString("This catalog keeps writing benchmark scores source-native. It does not mix local run results into LLAMBO-2 scores.\n\n")
-
-	out.WriteString("## Benchmarks\n\n")
-	out.WriteString("| Benchmark | Focus | Scoring | Scrape surface | Update cadence |\n")
-	out.WriteString("| --- | --- | --- | --- | --- |\n")
-	for _, benchmark := range catalog.Benchmarks {
-		name := writingCatalogLink(benchmark.Name, benchmark.URL)
-		dataURL := benchmark.DataURL
-		if dataURL == "" {
-			dataURL = benchmark.URL
-		}
-		surface := writingCatalogLink(benchmark.ScrapeMethod, dataURL)
-		fmt.Fprintf(&out, "| %s | %s | %s | %s | %s |\n",
-			name,
-			writingCatalogCell(benchmark.Focus),
-			writingCatalogCell(benchmark.Scoring),
-			surface,
-			writingCatalogCell(benchmark.UpdateCadence),
-		)
-	}
-
-	out.WriteString("\n## Run plan\n\n")
-	out.WriteString("Each row identifies a public prompt surface and the safest way to rerun that benchmark. A blank count means the source is live, multi-stage, or not a fixed corpus.\n\n")
-	out.WriteString("| Benchmark | Prompt artifact | Format | Prompts | Run mode | Run notes |\n")
-	out.WriteString("| --- | --- | --- | ---: | --- | --- |\n")
-	for _, benchmark := range catalog.Benchmarks {
-		promptURL := benchmark.PromptURL
-		if promptURL == "" {
-			promptURL = benchmark.DataURL
-		}
-		if promptURL == "" {
-			promptURL = benchmark.URL
-		}
-		fmt.Fprintf(&out, "| %s | %s | %s | %s | %s | %s |\n",
-			writingCatalogCell(benchmark.Name),
-			writingCatalogLink(benchmark.PromptFormat, promptURL),
-			writingCatalogCell(benchmark.PromptFormat),
-			writingCatalogCount(benchmark.PromptCount),
-			writingCatalogCell(benchmark.RunMode),
-			writingCatalogCell(benchmark.RunNotes),
-		)
-	}
-
-	out.WriteString("\n## Public source checks\n\n")
-	if len(catalog.SourceChecks) == 0 {
-		out.WriteString("No live source checks were run. Use `llambo evals writing --refresh` to fetch the registered artifacts.\n")
-	} else {
-		out.WriteString("Refresh checks the primary leaderboard plus each registered public artifact. An `available` check confirms the endpoint was fetched; parsed record counts are shown where the source format is known.\n\n")
-		out.WriteString("| Benchmark | Status | HTTP | Records | Bytes | Fetched | Error |\n")
-		out.WriteString("| --- | --- | ---: | ---: | ---: | --- | --- |\n")
-		for _, check := range catalog.SourceChecks {
-			fmt.Fprintf(&out, "| %s | %s | %d | %s | %d | `%s` | %s |\n",
-				writingCatalogLink(check.BenchmarkID, check.SourceURL),
-				writingCatalogCell(check.Status),
-				check.HTTPStatus,
-				writingCatalogCount(check.Records),
-				check.Bytes,
-				writingCatalogTime(check.FetchedAt),
-				writingCatalogCell(check.Error),
-			)
-		}
-	}
-
-	out.WriteString("\n## Latest open-weight model queue\n\n")
-	out.WriteString("Coverage labels distinguish models already measured by a public leaderboard from candidates that still need a writing rerun. License labels are copied from the reviewed model registry and should be checked before redistribution.\n\n")
-	out.WriteString("| Model | Provider | License | Coverage | Priority | Hugging Face | Notes |\n")
-	out.WriteString("| --- | --- | --- | --- | --- | --- | --- |\n")
-	for _, model := range catalog.OpenModels {
-		fmt.Fprintf(&out, "| %s | %s | %s | %s | %s | %s | %s |\n",
-			writingCatalogCell(model.Name),
-			writingCatalogCell(model.Provider),
-			writingCatalogCell(model.License),
-			writingCatalogCell(model.Coverage),
-			writingCatalogCell(model.Priority),
-			writingCatalogLink(model.ID, model.HuggingFaceURL),
-			writingCatalogCell(model.Notes),
-		)
-	}
-
-	out.WriteString("\n## Open-weight metadata checks\n\n")
-	if len(catalog.OpenModelChecks) == 0 {
-		out.WriteString("No live model metadata checks were run. Use `llambo evals writing --refresh` to verify the queue against Hugging Face.\n")
-	} else {
-		out.WriteString("These checks verify that the reviewed model IDs are public and expose current creation, modification, license, and download metadata. They do not discover every new model on Hugging Face.\n\n")
-		out.WriteString("| Model | Status | Remote license | Match | Created | Last modified | Downloads | Gated | Error |\n")
-		out.WriteString("| --- | --- | --- | --- | --- | --- | ---: | --- | --- |\n")
-		for _, check := range catalog.OpenModelChecks {
-			fmt.Fprintf(&out, "| %s | %s | %s | %s | %s | %s | %d | %t | %s |\n",
-				writingCatalogLink(check.ModelName, check.MetadataURL),
-				writingCatalogCell(check.Status),
-				writingCatalogCell(check.RemoteLicense),
-				writingCatalogLicenseMatch(check),
-				writingCatalogCell(check.CreatedAt),
-				writingCatalogCell(check.LastModified),
-				check.Downloads,
-				check.Gated,
-				writingCatalogCell(check.Error),
-			)
-		}
-	}
-
-	out.WriteString("\n## Fresh public model discovery\n\n")
-	if catalog.OpenModelDiscovery == nil {
-		out.WriteString("No fresh model discovery was run. Use `llambo evals writing --refresh --discover-open-models` to list recent public text-generation candidates.\n")
-	} else {
-		discovery := catalog.OpenModelDiscovery
-		fmt.Fprintf(&out, "Discovery status: `%s`  \nSource: %s  \nFetched: `%s`  \nCandidates: `%d`\n\n", writingCatalogCell(discovery.Status), writingCatalogLink(discovery.SourceURL, discovery.SourceURL), writingCatalogTime(discovery.FetchedAt), discovery.Candidates)
-		if discovery.Error != "" {
-			fmt.Fprintf(&out, "Discovery error: `%s`\n\n", writingCatalogCell(discovery.Error))
-		}
-		if len(catalog.DiscoveredOpenModels) > 0 {
-			out.WriteString("These are fresh candidates, not reviewed models. No benchmark score or leaderboard coverage is inferred.\n\n")
-			out.WriteString("| Candidate | License | Last modified | Downloads | Likes | Review status | Tags | Notes |\n")
-			out.WriteString("| --- | --- | --- | ---: | ---: | --- | --- | --- |\n")
-			for _, model := range catalog.DiscoveredOpenModels {
-				fmt.Fprintf(&out, "| %s | %s | %s | %d | %d | %s | %s | %s |\n",
-					writingCatalogLink(model.Name, model.HuggingFaceURL),
-					writingCatalogCell(model.License),
-					writingCatalogCell(model.LastModified),
-					model.Downloads,
-					model.Likes,
-					writingCatalogCell(model.ReviewStatus),
-					writingCatalogCell(strings.Join(model.Tags, ", ")),
-					writingCatalogCell(model.Notes),
-				)
-			}
-		}
-	}
-
-	out.WriteString("\n## Open-weight leaderboard coverage\n\n")
-	if len(catalog.OpenModelCoverage) == 0 {
-		out.WriteString("No live coverage match was run. Use `llambo evals writing --refresh` to compare the reviewed queue with the current primary leaderboard.\n")
-	} else {
-		out.WriteString("Measured rows use explicit reviewed aliases. `variant` matches may differ by serving mode or size. `needs-run` means no comparable public row was found, not that the model is weak. No score is inferred for missing rows.\n\n")
-		out.WriteString("| Model | Status | Match type | Matched row | Rank | Comparison score | Win chance | Notes |\n")
-		out.WriteString("| --- | --- | --- | --- | ---: | ---: | ---: | --- |\n")
-		for _, item := range catalog.OpenModelCoverage {
-			fmt.Fprintf(&out, "| %s | %s | %s | %s | %s | %s | %s | %s |\n",
-				writingCatalogCell(item.ModelName),
-				writingCatalogCell(item.Status),
-				writingCatalogCell(item.MatchType),
-				writingCatalogCell(item.MatchedLeaderboardModel),
-				writingCatalogNumber(item.Rank),
-				writingCatalogFloat(item.ComparisonScore),
-				writingCatalogPercent(item.WinChancePercent),
-				writingCatalogCell(item.Notes),
-			)
-		}
-	}
-
-	out.WriteString("\n## Live leaderboard snapshot\n\n")
-	if len(catalog.Leaderboards) == 0 {
-		out.WriteString("No live snapshot was fetched. Run `llambo evals writing --refresh` to scrape the primary public leaderboard.\n")
-		return out.String()
-	}
-	for _, leaderboard := range catalog.Leaderboards {
-		fmt.Fprintf(&out, "### `%s`\n\n", writingCatalogCell(leaderboard.BenchmarkID))
-		fmt.Fprintf(&out, "Source: %s  \nFetched: `%s`\n\n", writingCatalogLink(leaderboard.SourceURL, leaderboard.SourceURL), writingCatalogTime(leaderboard.FetchedAt))
-		if leaderboard.Error != "" {
-			fmt.Fprintf(&out, "Fetch error: `%s`\n\n", writingCatalogCell(leaderboard.Error))
-			continue
-		}
-		out.WriteString("| Rank | Model | Comparison score | Win chance | Uncertainty |\n")
-		out.WriteString("| ---: | --- | ---: | ---: | --- |\n")
-		for _, row := range leaderboard.Rows {
-			fmt.Fprintf(&out, "| %d | %s | %.1f | %.0f%% | %.1f to %.1f |\n", row.Rank, writingCatalogCell(row.Model), row.Score, row.WinChance, row.Lower, row.Upper)
-		}
-		out.WriteString("\n")
-	}
-	return out.String()
-}
-
-func writingCatalogLink(label, url string) string {
-	return fmt.Sprintf("[%s](%s)", writingCatalogCell(label), url)
-}
-
-func writingCatalogCell(value string) string {
-	value = strings.ReplaceAll(value, "\n", " ")
-	return strings.ReplaceAll(value, "|", "\\|")
-}
-
-func writingCatalogCount(value int) string {
-	if value == 0 {
-		return "—"
-	}
-	return strconv.Itoa(value)
-}
-
-func writingCatalogNumber(value int) string {
-	if value == 0 {
-		return "—"
-	}
-	return strconv.Itoa(value)
-}
-
-func writingCatalogFloat(value *float64) string {
-	if value == nil {
-		return "—"
-	}
-	return fmt.Sprintf("%.1f", *value)
-}
-
-func writingCatalogPercent(value *float64) string {
-	if value == nil {
-		return "—"
-	}
-	return fmt.Sprintf("%.0f%%", *value)
-}
-
-func writingCatalogLicenseMatch(check evals.WritingModelStatus) string {
-	if check.RemoteLicense == "" {
-		return "—"
-	}
-	if check.LicenseMatch {
-		return yes1
-	}
-	return no1
-}
-
-func writingCatalogTime(value time.Time) string {
-	if value.IsZero() {
-		return "unknown"
-	}
-	return value.UTC().Format(time.RFC3339)
-}
-
 func writeWritingCatalogTo(errOut io.Writer, path string, data []byte) error {
 	if err := writeAtomicOutput(path, data); err != nil {
 		return err
 	}
 	_, err := fmt.Fprintf(errOut, "Writing benchmark catalog written to %s\n", path)
 	return err
+}
+
+func validateWritingCatalogOptions(options writingCatalogOptions) error {
+	format, output, refresh := options.format, options.output, options.refresh
+	exportPrompts, promptSource, promptLimit := options.exportPrompts, options.promptSource, options.promptLimit
+	discoverModels, discoverLimit := options.discoverModels, options.discoverLimit
+	if exportPrompts != "" && !refresh {
+		return errors.New("--export-prompts requires --refresh so the public prompt artifact is fetched")
+	}
+	if discoverModels && !refresh {
+		return errors.New("--discover-open-models requires --refresh so the public model listing is fetched")
+	}
+	if promptLimit < 0 {
+		return errors.New("--prompt-limit cannot be negative")
+	}
+	if discoverLimit < 0 {
+		return errors.New("--discover-limit cannot be negative")
+	}
+	if exportPrompts != "" && output != "" && filepath.Clean(exportPrompts) == filepath.Clean(output) {
+		return errors.New("--export-prompts and --output must name different files")
+	}
+	_ = format
+	_ = promptSource
+	return nil
 }

@@ -56,10 +56,19 @@ func Load(path string) (map[string]ModelCost, error) {
 	}
 	defer func() { _ = f.Close() }()
 
+	return readCosts(newCostCSV(f), path)
+}
+
+// newCostCSV configures the model-costs CSV reader with comment and trimming.
+func newCostCSV(f io.Reader) *csv.Reader {
 	r := csv.NewReader(f)
 	r.Comment = '#'
 	r.TrimLeadingSpace = true
+	return r
+}
 
+// readCosts consumes the header row, then every priced row.
+func readCosts(r *csv.Reader, path string) (map[string]ModelCost, error) {
 	// Skip header row.
 	if _, err := r.Read(); err != nil {
 		if errors.Is(err, io.EOF) {
@@ -69,38 +78,35 @@ func Load(path string) (map[string]ModelCost, error) {
 	}
 
 	result := make(map[string]ModelCost)
-
 	for {
 		rec, err := r.Read()
 		if errors.Is(err, io.EOF) {
-			break
+			return result, nil
 		}
 		if err != nil {
 			return nil, fmt.Errorf("read CSV row %q: %w", path, err)
 		}
-
-		// Require at least provider and model columns.
-		if len(rec) < 2 {
-			continue
+		if mc, ok := parseCostRow(rec); ok {
+			result[Key(rec[0], rec[1])] = mc
 		}
-		provider := rec[0]
-		model := rec[1]
-		if provider == "" || model == "" {
-			continue
-		}
-
-		var mc ModelCost
-		if len(rec) > 2 && rec[2] != "" {
-			mc.InputPer1M, mc.InputExplicit = parsePrice(rec[2])
-		}
-		if len(rec) > 3 && rec[3] != "" {
-			mc.OutputPer1M, mc.OutputExplicit = parsePrice(rec[3])
-		}
-
-		result[Key(provider, model)] = mc
 	}
+}
 
-	return result, nil
+// parseCostRow converts one CSV record, reporting false for rows without a
+// provider and model name.
+func parseCostRow(rec []string) (ModelCost, bool) {
+	// Require at least provider and model columns.
+	if len(rec) < 2 || rec[0] == "" || rec[1] == "" {
+		return ModelCost{}, false
+	}
+	var mc ModelCost
+	if len(rec) > 2 && rec[2] != "" {
+		mc.InputPer1M, mc.InputExplicit = parsePrice(rec[2])
+	}
+	if len(rec) > 3 && rec[3] != "" {
+		mc.OutputPer1M, mc.OutputExplicit = parsePrice(rec[3])
+	}
+	return mc, true
 }
 
 func parsePrice(raw string) (float64, bool) {

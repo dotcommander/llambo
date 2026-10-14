@@ -50,9 +50,9 @@ func TestTranscriptMetricsAndWAV(t *testing.T) {
 }
 func TestRetrievalAndPairedScoring(t *testing.T) {
 	t.Parallel()
-	r, m, n, err := ScoreRetrieval([]RetrievalQuery{{ID: "q", Relevant: []string{"b"}}}, map[string]map[string]float64{"q": {"a": .9, "b": .8}})
-	if err != nil || r != 0 || math.Abs(m-.5) > 1e-9 || math.Abs(n-1/math.Log2(3)) > 1e-9 {
-		t.Fatalf("retrieval %.2f %.2f %.2f %v", r, m, n, err)
+	metrics, err := ScoreRetrieval([]RetrievalQuery{{ID: "q", Relevant: []string{"b"}}}, map[string]map[string]float64{"q": {"a": .9, "b": .8}})
+	if err != nil || metrics.RecallAt1 != 0 || math.Abs(metrics.MRRAt10-.5) > 1e-9 || math.Abs(metrics.NDCGAt10-1/math.Log2(3)) > 1e-9 {
+		t.Fatalf("retrieval %.2f %.2f %.2f %v", metrics.RecallAt1, metrics.MRRAt10, metrics.NDCGAt10, err)
 	}
 	p, err := ScorePaired([]PairedResult{{true, 10, 10}}, []PairedResult{{true, 5, 20}})
 	if err != nil || p.LatencyRatio != 2 || p.TokensPerSecondRatio != 2 {
@@ -63,7 +63,7 @@ func TestLocalArtifactsAndReceiptHash(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	in := LocalInputManifest{Suite: LocalSuiteTools, Version: "v1", Cases: []json.RawMessage{json.RawMessage(`{"id":"case-1"}`)}}
-	m, err := NewLocalRunManifest("input", "abc", in, "groq/model", "", "", 1, time.Minute, LocalPricing{Known: true}, time.Unix(1, 0))
+	m, err := NewLocalRunManifest(LocalManifestInput{InputPath: "input", InputSHA256: "abc", Input: in, Model: "groq/model", Reference: "", Feature: "", Limit: 1, Timeout: time.Minute, Pricing: LocalPricing{Known: true}, CreatedAt: time.Unix(1, 0)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +131,7 @@ func TestLocalRunBindsRecordedInputAndCanaryIsPartial(t *testing.T) {
 		}
 		in.Cases = append(in.Cases, json.RawMessage(fmt.Sprintf(`{"id":"case-%d","prompt":"Use weather.","tools":[{"name":"weather","parameters":{"type":"object"}}],"expected":%s}`, i, expected)))
 	}
-	m, err := NewLocalRunManifest("input", "hash", in, "groq/model", "", "", 1, time.Minute, LocalPricing{Known: true}, time.Unix(1, 0))
+	m, err := NewLocalRunManifest(LocalManifestInput{InputPath: "input", InputSHA256: "hash", Input: in, Model: "groq/model", Reference: "", Feature: "", Limit: 1, Timeout: time.Minute, Pricing: LocalPricing{Known: true}, CreatedAt: time.Unix(1, 0)})
 	if err != nil {
 		t.Fatal(err)
 	}

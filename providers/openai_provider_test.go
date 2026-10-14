@@ -218,31 +218,32 @@ func TestOpenAIProvider_CollectEnabledProviders(t *testing.T) {
 				provider.oc.CircuitBreaker.RecordFailure(unhealthy, errors.New("rate limit"))
 			}
 
-			enabled, totalWeight := provider.collectEnabledProviders()
-
-			// Verify count
-			if len(enabled) != len(tt.wantEnabled) {
-				t.Errorf("got %d enabled providers, want %d", len(enabled), len(tt.wantEnabled))
-			}
-
-			// Verify names
-			enabledNames := make(map[string]bool)
-			for _, e := range enabled {
-				enabledNames[e.name] = true
-			}
-
-			for _, want := range tt.wantEnabled {
-				if !enabledNames[want] {
-					t.Errorf("expected %s to be enabled", want)
-				}
-			}
-
-			// Verify total weight
-			expectedWeight := len(tt.wantEnabled) * 2 // workers = 2
-			if totalWeight != expectedWeight {
-				t.Errorf("got totalWeight %d, want %d", totalWeight, expectedWeight)
-			}
+			assertCollectEnabledProviders(t, provider, tt.wantEnabled)
 		})
+	}
+}
+
+// assertCollectEnabledProviders verifies the collected provider names and the
+// summed worker weights for the two-worker test configs.
+func assertCollectEnabledProviders(t *testing.T, provider *OpenAIProvider, wantEnabled []string) {
+	t.Helper()
+	enabled, totalWeight := provider.collectEnabledProviders()
+
+	if len(enabled) != len(wantEnabled) {
+		t.Errorf("got %d enabled providers, want %d", len(enabled), len(wantEnabled))
+	}
+	enabledNames := make(map[string]bool, len(enabled))
+	for _, e := range enabled {
+		enabledNames[e.name] = true
+	}
+	for _, want := range wantEnabled {
+		if !enabledNames[want] {
+			t.Errorf("expected %s to be enabled", want)
+		}
+	}
+	expectedWeight := len(wantEnabled) * 2 // workers = 2
+	if totalWeight != expectedWeight {
+		t.Errorf("got totalWeight %d, want %d", totalWeight, expectedWeight)
 	}
 }
 

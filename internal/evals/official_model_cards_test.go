@@ -8,14 +8,24 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"slices"
-	"sort"
 	"strings"
 	"testing"
 	"time"
 )
 
 func TestOfficialCardParsersUseOnlyPublishedTableRows(t *testing.T) {
+	t.Parallel()
+	t.Run("lfm8", assertLFM8PublishedRows)
+	t.Run("lfm", assertLFMPublishedRows)
+	t.Run("qwen", assertQwenPublishedRows)
+	t.Run("gpt", assertGPTPublishedRows)
+	t.Run("lfmVL", assertLFMVLPublishedRows)
+	t.Run("gemma", assertGemmaPublishedRows)
+}
+
+func assertLFM8PublishedRows(t *testing.T) {
+	t.Helper()
+	t.Parallel()
 	lfm8, err := parseLFM25A1BCard([]byte(`
 | Model | IFEval | IFBench | Multi-IF |
 | LFM2.5-8B-A1B | 91.84 | 56.47 | 79.93 |
@@ -41,6 +51,11 @@ func TestOfficialCardParsersUseOnlyPublishedTableRows(t *testing.T) {
 		t.Fatal("conflicting BFCLv4 value was admitted")
 	}
 
+}
+
+func assertLFMPublishedRows(t *testing.T) {
+	t.Helper()
+	t.Parallel()
 	lfm, err := parseLFM25Card([]byte(`
 | Benchmark | LFM | A | B | C | D |
 | AIME25 | 51.87 | 26.33 | 34.27 | 49.33 | 56.07 |
@@ -54,6 +69,11 @@ func TestOfficialCardParsersUseOnlyPublishedTableRows(t *testing.T) {
 	if err != nil || lfm["bfcl-v4"][0] != 56.88 || len(lfm["ifstruct"]) != 5 {
 		t.Fatalf("LFM table parsing lost published rows: rows=%#v err=%v", lfm, err)
 	}
+}
+
+func assertQwenPublishedRows(t *testing.T) {
+	t.Helper()
+	t.Parallel()
 	qwen, err := parseQwen38Card([]byte(`
 <table><tr><td>SWE-bench Pro</td><td>61.7</td><td>53.5</td><td>57.6</td><td>51.2</td><td>53.4</td></tr>
 <tr><td>IFBench</td><td>79.5</td><td>69.1</td><td>79.1</td><td>77.0</td><td>62.5</td></tr>
@@ -62,6 +82,11 @@ func TestOfficialCardParsersUseOnlyPublishedTableRows(t *testing.T) {
 	if err != nil || qwen["gpqa"][0] != 89.2 || len(qwen["livecodebench-v6"]) != 4 {
 		t.Fatalf("Qwen table parsing changed source values: rows=%#v err=%v", qwen, err)
 	}
+}
+
+func assertGPTPublishedRows(t *testing.T) {
+	t.Helper()
+	t.Parallel()
 	gpt, err := parseGPTOSSCard([]byte(`
 <table><tr><td>AIME 2025 (no tools)</td><td>50.4</td><td>80.0</td><td>92.5</td><td>37.1</td><td>72.1</td><td>91.7</td></tr>
 <tr><td>GPQA Diamond (no tools)</td><td>67.1</td><td>73.1</td><td>80.1</td><td>56.8</td><td>66.0</td><td>71.5</td></tr>
@@ -71,6 +96,11 @@ func TestOfficialCardParsersUseOnlyPublishedTableRows(t *testing.T) {
 	if err != nil || gpt["aime"][5] != 91.7 || len(gpt["aider"]) != 6 {
 		t.Fatalf("gpt-oss Table 3 parsing changed configuration arms: rows=%#v err=%v", gpt, err)
 	}
+}
+
+func assertLFMVLPublishedRows(t *testing.T) {
+	t.Helper()
+	t.Parallel()
 	lfmVL, err := parseLFM25VLCard([]byte(`
 | ToolSandBox | 59.5 | 26.4<br>(<span>-33.1</span>) | 56.5 | <ins>61.6</ins> | *n/a*<sup>1</sup> | 47.7 | **65.0** |
 | BFCLv4 | 32.5 | 20.5<br>(<span>-12.0</span>) | 33.2 | <ins>40.0</ins> | *n/a*<sup>1</sup> | 33.9 | **53.6** |
@@ -78,6 +108,11 @@ func TestOfficialCardParsersUseOnlyPublishedTableRows(t *testing.T) {
 	if err != nil || strings.Join(floatSliceStrings(lfmVL["toolsandbox"]), ",") != "59.5,26.4,56.5,61.6,47.7,65" || len(lfmVL["bfcl-v4"]) != 6 {
 		t.Fatalf("LFM VL table parsing changed source values: rows=%#v err=%v", lfmVL, err)
 	}
+}
+
+func assertGemmaPublishedRows(t *testing.T) {
+	t.Helper()
+	t.Parallel()
 	gemma, err := parseGemma4Card([]byte(`
 | MMLU Pro | 85.2% | 82.6% | 77.2% | 69.4% | 60.0% | 67.6% |
 | AIME 2026 no tools | 89.2% | 88.3% | 77.5% | 42.5% | 37.5% | 20.8% |
@@ -91,6 +126,7 @@ func TestOfficialCardParsersUseOnlyPublishedTableRows(t *testing.T) {
 }
 
 func TestOfficialCardFetchSealsBytesAndRecordsProvenance(t *testing.T) {
+	t.Parallel()
 	body := []byte("published source fixture")
 	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(string(body)))}, nil
@@ -110,9 +146,10 @@ func TestOfficialCardFetchSealsBytesAndRecordsProvenance(t *testing.T) {
 }
 
 func TestOfficialCardCohortsAreImmutableAndTargetCategoriesResolve(t *testing.T) {
-	lfm := cardModel(t, "lfm-2.5-2.6b", "LFM", "Liquid AI", "liquidai-lfm25-2.6b-card", lfm25Revision, lfm25ContentSHA, map[string]float64{"bfcl-v4": 56.88, "livecodebench-v6": 59.41, "ifbench": 59.17, "multi-if": 80.07, "aime": 51.87})
-	qwen := cardModel(t, "qwen3.8-27b", "Qwen", "Qwen", "qwen3.8-27b-card", qwen38Revision, qwen38ContentSHA, map[string]float64{"swe-bench-pro": 61.7, "ifbench": 79.5, "gpqa": 89.2})
-	gpt := cardModel(t, "gpt-oss-20b-high", "gpt-oss", "OpenAI", "openai-gpt-oss-model-card", gptOSSRevision, gptOSSContentSHA, map[string]float64{"aime": 91.7, "gpqa": 71.5, "swe-bench-verified": 60.7, "tau-bench-retail": 54.8, "aider": 34.2})
+	t.Parallel()
+	lfm := cardModel(t, cardModelFixtureIdentity{key: "lfm-2.5-2.6b", name: "LFM", organization: "Liquid AI", sourceID: "liquidai-lfm25-2.6b-card", revision: lfm25Revision, sha: lfm25ContentSHA}, map[string]float64{"bfcl-v4": 56.88, "livecodebench-v6": 59.41, "ifbench": 59.17, "multi-if": 80.07, "aime": 51.87})
+	qwen := cardModel(t, cardModelFixtureIdentity{key: "qwen3.8-27b", name: "Qwen", organization: "Qwen", sourceID: "qwen3.8-27b-card", revision: qwen38Revision, sha: qwen38ContentSHA}, map[string]float64{"swe-bench-pro": 61.7, "ifbench": 79.5, "gpqa": 89.2})
+	gpt := cardModel(t, cardModelFixtureIdentity{key: "gpt-oss-20b-high", name: "gpt-oss", organization: "OpenAI", sourceID: "openai-gpt-oss-model-card", revision: gptOSSRevision, sha: gptOSSContentSHA}, map[string]float64{"aime": 91.7, "gpqa": 71.5, "swe-bench-verified": 60.7, "tau-bench-retail": 54.8, "aider": 34.2})
 	for _, test := range []struct {
 		name       string
 		model      Model
@@ -123,6 +160,7 @@ func TestOfficialCardCohortsAreImmutableAndTargetCategoriesResolve(t *testing.T)
 		{"gpt-oss", gpt, []string{"agents", "coding", "reasoning"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			for _, category := range test.categories {
 				if score := scoreCategoryV3(test.model, categorySpecNamed(t, category), []Model{test.model}); score == nil {
 					t.Fatalf("%s did not resolve %s", test.name, category)
@@ -131,7 +169,7 @@ func TestOfficialCardCohortsAreImmutableAndTargetCategoriesResolve(t *testing.T)
 		})
 	}
 	before := scoreCategoryV3(lfm, categorySpecNamed(t, "reasoning"), []Model{lfm})
-	extra := cardModel(t, "extra", "extra", "Lab", "liquidai-lfm25-2.6b-card", lfm25Revision, lfm25ContentSHA, map[string]float64{"aime": 100})
+	extra := cardModel(t, cardModelFixtureIdentity{key: "extra", name: "extra", organization: "Lab", sourceID: "liquidai-lfm25-2.6b-card", revision: lfm25Revision, sha: lfm25ContentSHA}, map[string]float64{"aime": 100})
 	after := scoreCategoryV3(lfm, categorySpecNamed(t, "reasoning"), []Model{lfm, extra})
 	if before == nil || after == nil || before.Score != after.Score {
 		t.Fatalf("extra cache evidence changed frozen source cohort: before=%#v after=%#v", before, after)
@@ -139,12 +177,8 @@ func TestOfficialCardCohortsAreImmutableAndTargetCategoriesResolve(t *testing.T)
 }
 
 func TestV3OfficialCardTargetRowsAndSixColumnCohortsAreSealed(t *testing.T) {
-	for _, test := range []struct {
-		cache      string
-		cohorts    map[string][]float64
-		revision   string
-		targetKeys []string
-	}{
+	t.Parallel()
+	for _, test := range []officialCardCohortFixture{
 		{
 			cache: "official-lfm25-vl-3b", revision: lfm25VLRevision, targetKeys: []string{"lfm-2.5-vl-3b"},
 			cohorts: map[string][]float64{"toolsandbox": {59.5, 26.4, 56.5, 61.6, 47.7, 65.0}, "bfcl-v4": {32.5, 20.5, 33.2, 40.0, 33.9, 53.6}},
@@ -159,48 +193,19 @@ func TestV3OfficialCardTargetRowsAndSixColumnCohortsAreSealed(t *testing.T) {
 		},
 	} {
 		t.Run(test.cache, func(t *testing.T) {
+			t.Parallel()
 			snapshot := validOfficialSnapshot(t, test.cache)
 			if err := validateOfficialCardSnapshot(test.cache, snapshot); err != nil {
 				t.Fatalf("pinned target row rejected: %v", err)
 			}
-			keys := make(map[string]bool, len(snapshot.Models))
-			for _, model := range snapshot.Models {
-				keys[model.Key] = true
-			}
-			for _, key := range test.targetKeys {
-				if !keys[key] {
-					t.Fatalf("missing canonical target row %q: %#v", key, snapshot.Models)
-				}
-			}
-			for _, model := range snapshot.Models {
-				categories := []string{"agents", "coding", "reasoning"}
-				switch model.Key {
-				case "lfm-2.5-vl-3b":
-					categories = []string{"agents"}
-				case "lfm-2.5-8b-a1b":
-					categories = []string{"instruction-following", "reasoning"}
-				}
-				for _, category := range categories {
-					if score := scoreCategoryV3(model, categorySpecNamed(t, category), []Model{model}); score == nil {
-						t.Fatalf("%s did not resolve %s", model.Key, category)
-					}
-				}
-			}
-			for benchmark, want := range test.cohorts {
-				got := frozenBenchmarkCohort(benchmark, test.revision)
-				if len(got) != len(want) {
-					t.Fatalf("%s cohort size = %d, want %d: %#v", benchmark, len(got), len(want), got)
-				}
-				sort.Float64s(want)
-				if !slices.Equal(got, want) {
-					t.Fatalf("%s cohort = %#v, want %#v", benchmark, got, want)
-				}
-			}
+			assertOfficialCardTargetRows(t, snapshot, test.targetKeys)
+			assertOfficialCardFrozenCohorts(t, test)
 		})
 	}
 }
 
 func TestOfficialCardCachedSnapshotFailsClosedOnEveryPinnedField(t *testing.T) {
+	t.Parallel()
 	for _, mutation := range []struct {
 		name  string
 		apply func(*sourceSnapshot)
@@ -248,6 +253,7 @@ func TestOfficialCardCachedSnapshotFailsClosedOnEveryPinnedField(t *testing.T) {
 		}},
 	} {
 		t.Run(mutation.name, func(t *testing.T) {
+			t.Parallel()
 			dir := t.TempDir()
 			snapshot := validOfficialSnapshot(t, "official-lfm25-2.6b")
 			mutation.apply(&snapshot)
@@ -275,6 +281,7 @@ func TestOfficialCardCachedSnapshotFailsClosedOnEveryPinnedField(t *testing.T) {
 }
 
 func TestOfficialCardExactKeyMergeKeepsOneCanonicalRowAndMirror(t *testing.T) {
+	t.Parallel()
 	aggregate := 10.0
 	official := 80.0
 	models := []Model{{Key: "lfm-2.5-2.6b", Name: "canonical", Benchmarks: map[string]BenchmarkResult{"bfcl-v4": {Score: &aggregate, SourceID: "llm-stats-benchmark-results", SourceClass: string(SourceAggregatorResult), Version: lfm25Revision}}}}
@@ -290,6 +297,7 @@ func TestOfficialCardExactKeyMergeKeepsOneCanonicalRowAndMirror(t *testing.T) {
 }
 
 func TestOfficialCardAliasesAreExactAndSourceSpecific(t *testing.T) {
+	t.Parallel()
 	writing := 44.0
 	models := []Model{
 		{Key: "gemma-4-31b-it"},
@@ -307,6 +315,7 @@ func TestOfficialCardAliasesAreExactAndSourceSpecific(t *testing.T) {
 }
 
 func TestLLAMBO8DefensibleGapScoresAndMatrixContract(t *testing.T) {
+	t.Parallel()
 	lfm := validOfficialSnapshot(t, "official-lfm25-8b-a1b").Models[0]
 	reasoning := scoreCategoryV3(lfm, categorySpecNamed(t, "reasoning"), []Model{lfm})
 	instruction := scoreCategoryV3(lfm, categorySpecNamed(t, "instruction-following"), []Model{lfm})
@@ -347,6 +356,7 @@ func TestLLAMBO8DefensibleGapScoresAndMatrixContract(t *testing.T) {
 }
 
 func TestOfficialCardCacheAcceptsUnchangedV3Registry(t *testing.T) {
+	t.Parallel()
 	snapshot := validOfficialSnapshot(t, "official-lfm25-2.6b")
 	snapshot.RegistryVersion = "LLAMBO-6-sources-v3"
 	if err := validateOfficialCardSnapshot("official-lfm25-2.6b", snapshot); err != nil {
@@ -384,11 +394,15 @@ func mutateResult(result BenchmarkResult, apply func(*BenchmarkResult)) Benchmar
 	return result
 }
 
-func cardModel(t *testing.T, key, name, organization, sourceID, revision, sha string, values map[string]float64) Model {
+type cardModelFixtureIdentity struct {
+	key, name, organization, sourceID, revision, sha string
+}
+
+func cardModel(t *testing.T, identity cardModelFixtureIdentity, values map[string]float64) Model {
 	t.Helper()
 	benchmarks := make(map[string]BenchmarkResult, len(values))
 	for benchmark, value := range values {
-		benchmarks[benchmark] = BenchmarkResult{Score: &value, Identity: IdentityMatchExact, Version: revision, ContentSHA: sha, Method: modelCardSourceType, EvidenceGrade: modelCardEvidence, Direction: modelCardDirection, SourceID: sourceID, SourceRevision: revision, SourceClass: string(SourceFirstPartyResult), FetchedAt: time.Unix(1, 0).UTC()}
+		benchmarks[benchmark] = BenchmarkResult{Score: &value, Identity: IdentityMatchExact, Version: identity.revision, ContentSHA: identity.sha, Method: modelCardSourceType, EvidenceGrade: modelCardEvidence, Direction: modelCardDirection, SourceID: identity.sourceID, SourceRevision: identity.revision, SourceClass: string(SourceFirstPartyResult), FetchedAt: time.Unix(1, 0).UTC()}
 	}
-	return Model{Key: key, Name: name, Organization: organization, IdentityMatch: IdentityMatchExact, Benchmarks: benchmarks}
+	return Model{Key: identity.key, Name: identity.name, Organization: identity.organization, IdentityMatch: IdentityMatchExact, Benchmarks: benchmarks}
 }

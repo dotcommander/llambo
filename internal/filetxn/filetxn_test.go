@@ -91,6 +91,11 @@ func TestAliasesAndFailureCleanup(t *testing.T) {
 	if data, err := os.ReadFile(target); err != nil || string(data) != "new" {
 		t.Fatal("target unchanged", err)
 	}
+	assertTransactionFailures(t, dir, target)
+}
+
+func assertTransactionFailures(t *testing.T, dir, target string) {
+	t.Helper()
 	dangling := filepath.Join(dir, "dangling")
 	if err := os.Symlink(filepath.Join(dir, "missing"), dangling); err != nil {
 		t.Fatal(err)

@@ -38,13 +38,7 @@ func Parse(data []byte) (map[string]ProviderModels, error) {
 // is non-empty only those llambo providers are included. Models without a cost block
 // are skipped (priced-only).
 func Normalize(api map[string]ProviderModels, providerToKey map[string]string, filter []string) costs.ModelsDevFile {
-	var allow map[string]bool
-	if len(filter) > 0 {
-		allow = make(map[string]bool, len(filter))
-		for _, f := range filter {
-			allow[strings.ToLower(strings.TrimSpace(f))] = true
-		}
-	}
+	allow := allowedProviders(filter)
 	out := costs.ModelsDevFile{}
 	for llamboName, devKey := range providerToKey {
 		if allow != nil && !allow[strings.ToLower(llamboName)] {
@@ -54,15 +48,39 @@ func Normalize(api map[string]ProviderModels, providerToKey map[string]string, f
 		if !ok {
 			continue
 		}
-		for id, m := range pm.Models {
-			if m.Cost == nil || m.Cost.invalid || m.Cost.Input < 0 || m.Cost.Output < 0 || math.IsNaN(m.Cost.Input) || math.IsNaN(m.Cost.Output) || math.IsInf(m.Cost.Input, 0) || math.IsInf(m.Cost.Output, 0) {
-				continue
-			}
-			out[costs.Key(llamboName, id)] = costs.ModelsDevPrice{InputPer1M: m.Cost.Input, OutputPer1M: m.Cost.Output}
-		}
+		mergeProviderPrices(out, llamboName, pm.Models)
 	}
 	applyOfficialPriceBackfills(out, providerToKey, allow)
 	return out
+}
+
+func allowedProviders(filter []string) map[string]bool {
+	if len(filter) == 0 {
+		return nil
+	}
+	allow := make(map[string]bool, len(filter))
+	for _, provider := range filter {
+		allow[strings.ToLower(strings.TrimSpace(provider))] = true
+	}
+	return allow
+}
+
+func mergeProviderPrices(out costs.ModelsDevFile, provider string, models map[string]model) {
+	for id, entry := range models {
+		if !eligibleModelPrice(entry.Cost) {
+			continue
+		}
+		out[costs.Key(provider, id)] = costs.ModelsDevPrice{InputPer1M: entry.Cost.Input, OutputPer1M: entry.Cost.Output}
+	}
+}
+
+func eligibleModelPrice(price *modelCost) bool {
+	if price == nil || price.invalid {
+		return false
+	}
+	return price.Input >= 0 && price.Output >= 0 &&
+		!math.IsNaN(price.Input) && !math.IsNaN(price.Output) &&
+		!math.IsInf(price.Input, 0) && !math.IsInf(price.Output, 0)
 }
 
 func applyOfficialPriceBackfills(out costs.ModelsDevFile, providerToKey map[string]string, allow map[string]bool) {

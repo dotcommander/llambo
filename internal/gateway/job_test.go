@@ -137,24 +137,7 @@ func TestJobManager_ProcessJob_WithFailures(t *testing.T) {
 
 	job := manager.CreateJob(t.Context(), requests, "System")
 
-	// Wait for job to complete
-	timeout := time.After(2 * time.Second)
-	for {
-		job.mu.RLock()
-		status := job.Status
-		job.mu.RUnlock()
-
-		if status.IsTerminal() {
-			break
-		}
-
-		select {
-		case <-timeout:
-			t.Fatal("timed out waiting for job to complete")
-		default:
-			time.Sleep(10 * time.Millisecond)
-		}
-	}
+	awaitGatewayJobDrain(t, job)
 
 	job.mu.RLock()
 	defer job.mu.RUnlock()
@@ -170,9 +153,23 @@ func TestJobManager_ProcessJob_WithFailures(t *testing.T) {
 		t.Errorf("expected Failed=1, got %d", job.Failed)
 	}
 
+	assertFailedJobResult(t, job.Results)
+}
+
+func awaitGatewayJobDrain(t *testing.T, job *Job) {
+	t.Helper()
+	select {
+	case <-job.done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for job to complete")
+	}
+}
+
+func assertFailedJobResult(t *testing.T, results []JobResult) {
+	t.Helper()
 	// Check individual result statuses
 	failedCount := 0
-	for _, r := range job.Results {
+	for _, r := range results {
 		if r.Status == string(ResultStatusFailed) {
 			failedCount++
 			if r.Error == "" {

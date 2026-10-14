@@ -180,20 +180,23 @@ func TestRecordPingFailureAndSlowQuarantine(t *testing.T) {
 	now := time.Date(2026, 6, 22, 12, 0, 0, 0, time.UTC)
 	cat := testSelectorCatalog()
 
-	RecordPing(cat, "openai", "free", false, time.Second, 0, 0, "timeout", now)
-	RecordPing(cat, "openai", "free", false, time.Second, 0, 0, "timeout", now.Add(time.Minute))
+	freeTimeout := func(checkedAt time.Time) HealthObservation {
+		return HealthObservation{Success: false, Latency: time.Second, Error: "timeout", CheckedAt: checkedAt}
+	}
+	RecordPing(cat, "openai", "free", freeTimeout(now))
+	RecordPing(cat, "openai", "free", freeTimeout(now.Add(time.Minute)))
 	require.True(t, cat.Providers["openai"].Models["free"].QuarantineUntil.IsZero())
 
-	RecordPing(cat, "openai", "free", false, time.Second, 0, 0, "timeout", now.Add(2*time.Minute))
+	RecordPing(cat, "openai", "free", freeTimeout(now.Add(2*time.Minute)))
 	entry := cat.Providers["openai"].Models["free"]
 	require.Equal(t, 3, entry.FailureCount)
 	require.Equal(t, now.Add(2*time.Minute).Add(QuarantineDuration), entry.QuarantineUntil)
 	require.Equal(t, "timeout", entry.LastPing.ErrorCategory)
 
-	RecordPing(cat, "openai", "smart", true, 6*time.Second, 1, 1, "", now)
+	RecordPing(cat, "openai", "smart", HealthObservation{Success: true, Latency: 6 * time.Second, TokensIn: 1, TokensOut: 1, CheckedAt: now})
 	require.Equal(t, now.Add(QuarantineDuration), cat.Providers["openai"].Models["smart"].QuarantineUntil)
 
-	RecordPing(cat, "openai", "free", true, time.Second, 1, 1, "", now.Add(3*time.Minute))
+	RecordPing(cat, "openai", "free", HealthObservation{Success: true, Latency: time.Second, TokensIn: 1, TokensOut: 1, CheckedAt: now.Add(3 * time.Minute)})
 	require.Equal(t, 0, entry.FailureCount)
 	require.True(t, entry.QuarantineUntil.IsZero())
 }

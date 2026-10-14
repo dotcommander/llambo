@@ -19,6 +19,7 @@ const writingLeaderboardFixture = `# Example
 `
 
 func TestParseWritingLeaderboard(t *testing.T) {
+	t.Parallel()
 	rows, err := ParseWritingLeaderboard(writingLeaderboardFixture)
 	if err != nil {
 		t.Fatal(err)
@@ -35,6 +36,7 @@ func TestParseWritingLeaderboard(t *testing.T) {
 }
 
 func TestParseWritingLeaderboardRejectsMissingTable(t *testing.T) {
+	t.Parallel()
 	for _, input := range []string{"", "| Rank | Model |\n| --- | --- |\n"} {
 		if _, err := ParseWritingLeaderboard(input); err == nil {
 			t.Fatalf("ParseWritingLeaderboard(%q) unexpectedly succeeded", input)
@@ -43,6 +45,7 @@ func TestParseWritingLeaderboardRejectsMissingTable(t *testing.T) {
 }
 
 func TestDefaultWritingCatalogIncludesSourcesAndOpenModels(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, time.August, 5, 4, 0, 0, 0, time.FixedZone("test", 3600))
 	catalog := DefaultWritingCatalog(now)
 	if catalog.RegistryVersion != WritingCatalogVersion || !catalog.GeneratedAt.Equal(now.UTC()) {
@@ -74,6 +77,7 @@ func TestDefaultWritingCatalogIncludesSourcesAndOpenModels(t *testing.T) {
 }
 
 func TestBuildWritingModelCoverageDistinguishesExactAndVariantMatches(t *testing.T) {
+	t.Parallel()
 	models := []WritingOpenModel{
 		{ID: "exact", Name: "Kimi K3", LeaderboardAliases: []string{"Kimi K3"}},
 		{ID: "variant", Name: "Gemma 4 31B it", LeaderboardAliases: []string{"Gemma 4 31B"}},
@@ -96,6 +100,7 @@ func TestBuildWritingModelCoverageDistinguishesExactAndVariantMatches(t *testing
 }
 
 func TestFetchWritingCatalog(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("User-Agent"); got != "llambo-writing-benchmarks/1" {
 			t.Errorf("User-Agent = %q", got)
@@ -105,7 +110,7 @@ func TestFetchWritingCatalog(t *testing.T) {
 		}
 		_, _ = w.Write([]byte(writingLeaderboardFixture))
 	}))
-	defer server.Close()
+	t.Cleanup(server.Close)
 
 	now := time.Date(2026, time.August, 5, 4, 0, 0, 0, time.UTC)
 	catalog, err := FetchWritingCatalog(context.Background(), WritingCatalogOptions{
@@ -125,10 +130,11 @@ func TestFetchWritingCatalog(t *testing.T) {
 }
 
 func TestFetchWritingCatalogRejectsHTTPError(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "nope", http.StatusBadGateway)
 	}))
-	defer server.Close()
+	t.Cleanup(server.Close)
 
 	if _, err := FetchWritingCatalog(context.Background(), WritingCatalogOptions{Client: server.Client(), URL: server.URL}); err == nil || !strings.Contains(err.Error(), "HTTP 502") {
 		t.Fatalf("unexpected error: %v", err)
@@ -136,28 +142,9 @@ func TestFetchWritingCatalogRejectsHTTPError(t *testing.T) {
 }
 
 func TestFetchWritingCatalogValidatesSourcesAndModels(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/primary":
-			_, _ = w.Write([]byte(writingLeaderboardFixture))
-		case "/source/writingbench":
-			_, _ = w.Write([]byte("{\"prompt\":\"one\"}\n{\"prompt\":\"two\"}\n"))
-		case "/source/eqbench-creative-v3":
-			_, _ = w.Write([]byte(`{"1":{"writing_prompt":"creative one"},"2":{"writing_prompt":"creative two"}}`))
-		case "/source/ifeval":
-			_, _ = w.Write([]byte("{\"prompt\":\"one\"}\n"))
-		case "/model":
-			modelID := r.URL.Query().Get("id")
-			_, _ = fmt.Fprintf(w, `{"id":%q,"private":false,"pipeline_tag":"text-generation","downloads":42,"gated":false,"createdAt":"2026-07-31T07:30:24.000Z","lastModified":"2026-08-01T03:07:41.000Z","tags":["license:mit"],"cardData":{"license":"mit"}}`, modelID)
-		default:
-			if strings.HasPrefix(r.URL.Path, "/source/") {
-				_, _ = w.Write([]byte("<html>available</html>"))
-				return
-			}
-			http.NotFound(w, r)
-		}
-	}))
-	defer server.Close()
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(writingCatalogValidationHandler))
+	t.Cleanup(server.Close)
 
 	catalog := DefaultWritingCatalog(time.Unix(1, 0).UTC())
 	sourceURLs := make(map[string]string, len(catalog.Benchmarks))
@@ -184,6 +171,11 @@ func TestFetchWritingCatalogValidatesSourcesAndModels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	assertWritingCatalogValidation(t, fetched, catalog)
+}
+
+func assertWritingCatalogValidation(t *testing.T, fetched, catalog WritingCatalog) {
+	t.Helper()
 	if len(fetched.SourceChecks) != len(catalog.Benchmarks) {
 		t.Fatalf("source checks = %d, want %d: %#v", len(fetched.SourceChecks), len(catalog.Benchmarks), fetched.SourceChecks)
 	}
@@ -199,21 +191,14 @@ func TestFetchWritingCatalogValidatesSourcesAndModels(t *testing.T) {
 	if check := writingSourceCheckByID(fetched.SourceChecks, "ifeval"); check.Status != "available" || check.Records != 1 {
 		t.Fatalf("unexpected IFEval check: %#v", check)
 	}
-	if len(fetched.PromptRecords) != 5 {
-		t.Fatalf("prompt records = %d, want 5: %#v", len(fetched.PromptRecords), fetched.PromptRecords)
-	}
-	if fetched.PromptRecords[0].BenchmarkID != "writingbench" || fetched.PromptRecords[0].Prompt != "one" || fetched.PromptRecords[0].SourceURL == "" {
-		t.Fatalf("unexpected first normalized prompt: %#v", fetched.PromptRecords[0])
-	}
-	if fetched.PromptRecords[2].BenchmarkID != "eqbench-creative-v3" || fetched.PromptRecords[2].ID != "1" || fetched.PromptRecords[2].Prompt != "creative one" {
-		t.Fatalf("unexpected EQ-Bench normalized prompt: %#v", fetched.PromptRecords[2])
-	}
+	assertWritingCatalogPromptRecords(t, fetched.PromptRecords)
 	if check := writingModelCheckByID(fetched.OpenModelChecks, "deepseek-ai/DeepSeek-V4.1-Flash"); check.Status != "available" || check.RemoteLicense != "mit" || !check.LicenseMatch || check.Downloads != 42 {
 		t.Fatalf("unexpected DeepSeek metadata check: %#v", check)
 	}
 }
 
 func TestFetchWritingCatalogDiscoversFreshPublicModels(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/primary":
@@ -233,7 +218,7 @@ func TestFetchWritingCatalogDiscoversFreshPublicModels(t *testing.T) {
 			http.NotFound(w, r)
 		}
 	}))
-	defer server.Close()
+	t.Cleanup(server.Close)
 
 	fetched, err := FetchWritingCatalog(context.Background(), WritingCatalogOptions{
 		Client:             server.Client(),
@@ -252,16 +237,7 @@ func TestFetchWritingCatalogDiscoversFreshPublicModels(t *testing.T) {
 	if len(fetched.DiscoveredOpenModels) != 2 {
 		t.Fatalf("discovered models = %d, want 2: %#v", len(fetched.DiscoveredOpenModels), fetched.DiscoveredOpenModels)
 	}
-	first := fetched.DiscoveredOpenModels[0]
-	if first.ID != "fresh/CreativeWriter-7B" || first.Name != "CreativeWriter-7B" || first.License != "apache-2.0" || first.ReviewStatus != "needs-review" {
-		t.Fatalf("unexpected first discovered model: %#v", first)
-	}
-	if first.Notes == "" || first.HuggingFaceURL == "" || first.Downloads != 12 || first.Likes != 4 {
-		t.Fatalf("discovered model lost review metadata: %#v", first)
-	}
-	if fetched.DiscoveredOpenModels[1].ID != "fresh/SecondWriter" {
-		t.Fatalf("unexpected second discovered model: %#v", fetched.DiscoveredOpenModels[1])
-	}
+	assertDiscoveredWritingModels(t, fetched.DiscoveredOpenModels)
 }
 
 func writingSourceCheckByID(checks []WritingSourceStatus, id string) WritingSourceStatus {
@@ -307,4 +283,53 @@ func writingBenchmarkByID(benchmarks []WritingBenchmark, id string) WritingBench
 		}
 	}
 	return WritingBenchmark{ID: id}
+}
+
+func writingCatalogValidationHandler(w http.ResponseWriter, r *http.Request) {
+	switch r.URL.Path {
+	case "/primary":
+		_, _ = w.Write([]byte(writingLeaderboardFixture))
+	case "/source/writingbench":
+		_, _ = w.Write([]byte("{\"prompt\":\"one\"}\n{\"prompt\":\"two\"}\n"))
+	case "/source/eqbench-creative-v3":
+		_, _ = w.Write([]byte(`{"1":{"writing_prompt":"creative one"},"2":{"writing_prompt":"creative two"}}`))
+	case "/source/ifeval":
+		_, _ = w.Write([]byte("{\"prompt\":\"one\"}\n"))
+	case "/model":
+		modelID := r.URL.Query().Get("id")
+		_, _ = fmt.Fprintf(w, `{"id":%q,"private":false,"pipeline_tag":"text-generation","downloads":42,"gated":false,"createdAt":"2026-07-31T07:30:24.000Z","lastModified":"2026-08-01T03:07:41.000Z","tags":["license:mit"],"cardData":{"license":"mit"}}`, modelID)
+	default:
+		if strings.HasPrefix(r.URL.Path, "/source/") {
+			_, _ = w.Write([]byte("<html>available</html>"))
+			return
+		}
+		http.NotFound(w, r)
+	}
+}
+
+func assertWritingCatalogPromptRecords(t *testing.T, records []WritingPromptRecord) {
+	t.Helper()
+	if len(records) != 5 {
+		t.Fatalf("prompt records = %d, want 5: %#v", len(records), records)
+	}
+	if records[0].BenchmarkID != "writingbench" || records[0].Prompt != "one" || records[0].SourceURL == "" {
+		t.Fatalf("unexpected first normalized prompt: %#v", records[0])
+	}
+	if records[2].BenchmarkID != "eqbench-creative-v3" || records[2].ID != "1" || records[2].Prompt != "creative one" {
+		t.Fatalf("unexpected EQ-Bench normalized prompt: %#v", records[2])
+	}
+}
+
+func assertDiscoveredWritingModels(t *testing.T, models []WritingDiscoveredOpenModel) {
+	t.Helper()
+	first := models[0]
+	if first.ID != "fresh/CreativeWriter-7B" || first.Name != "CreativeWriter-7B" || first.License != "apache-2.0" || first.ReviewStatus != "needs-review" {
+		t.Fatalf("unexpected first discovered model: %#v", first)
+	}
+	if first.Notes == "" || first.HuggingFaceURL == "" || first.Downloads != 12 || first.Likes != 4 {
+		t.Fatalf("discovered model lost review metadata: %#v", first)
+	}
+	if models[1].ID != "fresh/SecondWriter" {
+		t.Fatalf("unexpected second discovered model: %#v", models[1])
+	}
 }

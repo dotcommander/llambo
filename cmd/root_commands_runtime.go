@@ -59,7 +59,7 @@ type providersListCommand struct {
 	Ignored []string `arg:"" optional:"" hidden:""`
 }
 
-func (*providersListCommand) Run(io *commandIO) error { return runProviders(io, nil) }
+func (*providersListCommand) Run(io *commandIO) error { return runProviders(io) }
 
 type providersRefreshCommand struct {
 	Force     bool          `short:"f" help:"Force refresh from upstream APIs, bypassing the 4-hour cache"`

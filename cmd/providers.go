@@ -14,7 +14,7 @@ const (
 	never1 = "never"
 )
 
-func runProviders(cmd *commandIO, args []string) error {
+func runProviders(cmd *commandIO) error {
 	out := cmd.OutOrStdout()
 	cfg, err := providers.LoadGlobalConfig()
 	if err != nil {
@@ -41,33 +41,50 @@ func runProviders(cmd *commandIO, args []string) error {
 			enabledStr = yes1
 		}
 
-		modelCount, pinned, avoided := 0, 0, 0
-		lastRefreshStr := never1
-
-		if pc := cat.Providers[name]; pc != nil {
-			modelCount = len(pc.Models)
-			for _, m := range pc.Models {
-				if m.Pinned {
-					pinned++
-				}
-				if m.Avoid {
-					avoided++
-				}
-			}
-			if !pc.LastRefresh.IsZero() {
-				lastRefreshStr = humanDuration(time.Since(pc.LastRefresh)) + " ago"
-			}
-		}
-
-		base := pcfg.BaseURL
-		if len(base) > 40 {
-			base = base[:37] + "..."
-		}
+		summary := providerCatalogSummary(cat, name)
 
 		fmt.Fprintf(out, "%-14s %-8s %-42s %-7d %-7d %-7d %s\n",
-			name, enabledStr, base, modelCount, pinned, avoided, lastRefreshStr)
+			name, enabledStr, truncatedBaseURL(pcfg.BaseURL), summary.models, summary.pinned, summary.avoided, summary.lastRefresh)
 	}
 	return nil
+}
+
+type providerCatalogCounts struct {
+	models      int
+	pinned      int
+	avoided     int
+	lastRefresh string
+}
+
+// providerCatalogSummary summarizes tracked models, pin/avoid counts, and the
+// last refresh age for one configured provider.
+func providerCatalogSummary(cat *catalog.Catalog, name string) providerCatalogCounts {
+	summary := providerCatalogCounts{lastRefresh: never1}
+	pc := cat.Providers[name]
+	if pc == nil {
+		return summary
+	}
+	for _, m := range pc.Models {
+		if m.Pinned {
+			summary.pinned++
+		}
+		if m.Avoid {
+			summary.avoided++
+		}
+	}
+	if !pc.LastRefresh.IsZero() {
+		summary.lastRefresh = humanDuration(time.Since(pc.LastRefresh)) + " ago"
+	}
+	summary.models = len(pc.Models)
+	return summary
+}
+
+// truncatedBaseURL shortens long base URLs for the fixed-width table.
+func truncatedBaseURL(base string) string {
+	if len(base) <= 40 {
+		return base
+	}
+	return base[:37] + "..."
 }
 
 func runProvidersRefresh(cmd *commandIO, args []string, opts catalog.RefreshOptions) error {

@@ -90,15 +90,16 @@ func TestWritingRunCancellationStopsDispatch(t *testing.T) {
 	adapter := WritingBenchAdapter{}
 	model := WritingModelSpec{Provider: "p", Model: "writer", MaxOutputTokens: 64}
 	judge := WritingModelSpec{Provider: "p", Model: "judge", MaxOutputTokens: 32}
-	manifest := NewWritingRunManifest("input", "hash", records, adapter, []WritingModelSpec{model}, judge, 1, 1, time.Minute, 1, time.Unix(1, 0))
+	manifest := NewWritingRunManifest(WritingRunManifestOptions{InputPath: "input", InputHash: "hash", Records: records, Adapter: adapter, Models: []WritingModelSpec{model}, Judge: judge, Iterations: 1, Concurrency: 1, Timeout: time.Minute, MaxRunCost: 1, Now: time.Unix(1, 0)})
 	store, err := OpenWritingRunStore(t.TempDir(), manifest)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
 	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
 	executor := &cancelWritingExecutor{cancel: cancel}
-	if err := RunWritingEvaluation(ctx, manifest, records, adapter, executor, store); !errors.Is(err, context.Canceled) {
+	if err := RunWritingEvaluation(ctx, records, WritingEvaluation{Manifest: manifest, Adapter: adapter, Executor: executor, Store: store}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("run error = %v, want context canceled", err)
 	}
 	if executor.calls != 1 {
@@ -107,18 +108,19 @@ func TestWritingRunCancellationStopsDispatch(t *testing.T) {
 }
 
 func TestProseScreenRunUsesAdapterOwnedSchemaAndControls(t *testing.T) {
+	t.Parallel()
 	adapter := ProseScreenAdapter{}
 	record := WritingPromptRecord{BenchmarkID: adapter.ID(), ID: "case", Prompt: "Write a deployment note.", SourceRecord: []byte(`{"prompt":"Write a deployment note.","task":"Explain deployment safety.","reader_profile":"An operator."}`)}
 	model := WritingModelSpec{Provider: "p", Model: "writer", MaxOutputTokens: 64}
 	judge := WritingModelSpec{Provider: "p", Model: "judge", MaxOutputTokens: DefaultProseEvaluationMaxTokens}
-	manifest := NewWritingRunManifest("input", "hash", []WritingPromptRecord{record}, adapter, []WritingModelSpec{model}, judge, 1, 1, time.Minute, 1, time.Unix(1, 0))
+	manifest := NewWritingRunManifest(WritingRunManifestOptions{InputPath: "input", InputHash: "hash", Records: []WritingPromptRecord{record}, Adapter: adapter, Models: []WritingModelSpec{model}, Judge: judge, Iterations: 1, Concurrency: 1, Timeout: time.Minute, MaxRunCost: 1, Now: time.Unix(1, 0)})
 	store, err := OpenWritingRunStore(t.TempDir(), manifest)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = store.Close() }()
+	t.Cleanup(func() { _ = store.Close() })
 	executor := &recordingProseScreenExecutor{}
-	if err = RunWritingEvaluation(t.Context(), manifest, []WritingPromptRecord{record}, adapter, executor, store); err != nil {
+	if err = RunWritingEvaluation(t.Context(), []WritingPromptRecord{record}, WritingEvaluation{Manifest: manifest, Adapter: adapter, Executor: executor, Store: store}); err != nil {
 		t.Fatal(err)
 	}
 	if len(executor.calls) != 2 {
@@ -133,6 +135,15 @@ func TestProseScreenRunUsesAdapterOwnedSchemaAndControls(t *testing.T) {
 	if judgment.MaxOutputTokens != DefaultProseEvaluationMaxTokens {
 		t.Fatalf("judge tokens=%d", judgment.MaxOutputTokens)
 	}
+	assertProseScreenJudgmentSchema(t, judgment)
+	generations, judgments := store.Records()
+	if len(generations) != 1 || generations[0].Status != "success" || len(judgments) != 1 || judgments[0].Status != "success" || len(judgments[0].Results) != 6 {
+		t.Fatalf("records=%#v %#v", generations, judgments)
+	}
+}
+
+func assertProseScreenJudgmentSchema(t *testing.T, judgment WritingExecutionCall) {
+	t.Helper()
 	generationConfig, ok := judgment.Settings.ExtraBody["generationConfig"].(map[string]any)
 	if !ok || generationConfig["responseMimeType"] != "application/json" {
 		t.Fatalf("settings=%#v", judgment.Settings)
@@ -154,13 +165,10 @@ func TestProseScreenRunUsesAdapterOwnedSchemaAndControls(t *testing.T) {
 	if strings.Contains(string(schemaJSON), "criterion_id") {
 		t.Fatalf("schema=%s", schemaJSON)
 	}
-	generations, judgments := store.Records()
-	if len(generations) != 1 || generations[0].Status != "success" || len(judgments) != 1 || judgments[0].Status != "success" || len(judgments[0].Results) != 6 {
-		t.Fatalf("records=%#v %#v", generations, judgments)
-	}
 }
 
 func TestWritingFinishReasonTruncated(t *testing.T) {
+	t.Parallel()
 	for _, reason := range []string{"length", "max_tokens", "truncated", "token_limit"} {
 		if !writingFinishReasonTruncated(reason) {
 			t.Fatalf("%q was accepted", reason)
@@ -174,19 +182,20 @@ func TestWritingFinishReasonTruncated(t *testing.T) {
 }
 
 func TestProseScreenRunRejectsTruncatedGenerationAndJudgment(t *testing.T) {
+	t.Parallel()
 	newRun := func(t *testing.T, executor *recordingProseScreenExecutor) ([]WritingGenerationRecord, []WritingJudgmentRecord, error) {
 		t.Helper()
 		adapter := ProseScreenAdapter{}
 		record := WritingPromptRecord{BenchmarkID: adapter.ID(), ID: "case", Prompt: "Write a deployment note.", SourceRecord: []byte(`{"prompt":"Write a deployment note.","task":"Explain deployment safety.","reader_profile":"An operator."}`)}
 		model := WritingModelSpec{Provider: "p", Model: "writer", MaxOutputTokens: 64}
 		judge := WritingModelSpec{Provider: "p", Model: "judge", MaxOutputTokens: DefaultProseEvaluationMaxTokens}
-		manifest := NewWritingRunManifest("input", "hash", []WritingPromptRecord{record}, adapter, []WritingModelSpec{model}, judge, 1, 1, time.Minute, 1, time.Unix(1, 0))
+		manifest := NewWritingRunManifest(WritingRunManifestOptions{InputPath: "input", InputHash: "hash", Records: []WritingPromptRecord{record}, Adapter: adapter, Models: []WritingModelSpec{model}, Judge: judge, Iterations: 1, Concurrency: 1, Timeout: time.Minute, MaxRunCost: 1, Now: time.Unix(1, 0)})
 		store, err := OpenWritingRunStore(t.TempDir(), manifest)
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer func() { _ = store.Close() }()
-		runErr := RunWritingEvaluation(t.Context(), manifest, []WritingPromptRecord{record}, adapter, executor, store)
+		t.Cleanup(func() { _ = store.Close() })
+		runErr := RunWritingEvaluation(t.Context(), []WritingPromptRecord{record}, WritingEvaluation{Manifest: manifest, Adapter: adapter, Executor: executor, Store: store})
 		generations, judgments := store.Records()
 		return generations, judgments, runErr
 	}
@@ -212,7 +221,7 @@ func TestWritingRunRefusesInDoubtDispatchIntent(t *testing.T) {
 	adapter := WritingBenchAdapter{}
 	model := WritingModelSpec{Provider: "p", Model: "writer", MaxOutputTokens: 64}
 	judge := WritingModelSpec{Provider: "p", Model: "judge", MaxOutputTokens: 32}
-	manifest := NewWritingRunManifest("input", "hash", records, adapter, []WritingModelSpec{model}, judge, 1, 1, time.Minute, 1, time.Unix(1, 0))
+	manifest := NewWritingRunManifest(WritingRunManifestOptions{InputPath: "input", InputHash: "hash", Records: records, Adapter: adapter, Models: []WritingModelSpec{model}, Judge: judge, Iterations: 1, Concurrency: 1, Timeout: time.Minute, MaxRunCost: 1, Now: time.Unix(1, 0)})
 	store, err := OpenWritingRunStore(t.TempDir(), manifest)
 	if err != nil {
 		t.Fatal(err)
@@ -223,7 +232,7 @@ func TestWritingRunRefusesInDoubtDispatchIntent(t *testing.T) {
 		t.Fatal(err)
 	}
 	executor := &fixtureWritingExecutor{}
-	err = RunWritingEvaluation(t.Context(), manifest, records, adapter, executor, store)
+	err = RunWritingEvaluation(t.Context(), records, WritingEvaluation{Manifest: manifest, Adapter: adapter, Executor: executor, Store: store})
 	if err == nil || !strings.Contains(err.Error(), "in doubt") {
 		t.Fatalf("run error = %v, want in-doubt refusal", err)
 	}
@@ -238,14 +247,14 @@ func TestWritingRunBoundedAndResumable(t *testing.T) {
 	adapter := WritingBenchAdapter{}
 	model := WritingModelSpec{Provider: "p", Model: "writer", InputPer1M: 1, OutputPer1M: 2, MaxOutputTokens: 64, Workers: 2}
 	judge := WritingModelSpec{Provider: "p", Model: "judge", InputPer1M: 1, OutputPer1M: 2, MaxOutputTokens: 32, Workers: 2}
-	manifest := NewWritingRunManifest("input", "hash", records, adapter, []WritingModelSpec{model}, judge, 1, 2, time.Minute, 1, time.Unix(1, 0))
+	manifest := NewWritingRunManifest(WritingRunManifestOptions{InputPath: "input", InputHash: "hash", Records: records, Adapter: adapter, Models: []WritingModelSpec{model}, Judge: judge, Iterations: 1, Concurrency: 2, Timeout: time.Minute, MaxRunCost: 1, Now: time.Unix(1, 0)})
 	store, err := OpenWritingRunStore(t.TempDir(), manifest)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
 	executor := &fixtureWritingExecutor{}
-	if err := RunWritingEvaluation(t.Context(), manifest, records, adapter, executor, store); err != nil {
+	if err := RunWritingEvaluation(t.Context(), records, WritingEvaluation{Manifest: manifest, Adapter: adapter, Executor: executor, Store: store}); err != nil {
 		t.Fatal(err)
 	}
 	calls, maxActive := executor.stats()
@@ -272,7 +281,7 @@ func TestWritingRunBoundedAndResumable(t *testing.T) {
 			t.Fatal("judgment did not persist its conservative accounting cost")
 		}
 	}
-	if err := RunWritingEvaluation(t.Context(), manifest, records, adapter, executor, store); err != nil {
+	if err := RunWritingEvaluation(t.Context(), records, WritingEvaluation{Manifest: manifest, Adapter: adapter, Executor: executor, Store: store}); err != nil {
 		t.Fatal(err)
 	}
 	calls, _ = executor.stats()
@@ -298,7 +307,7 @@ func TestPlanWritingRunWorstCase(t *testing.T) {
 	adapter := WritingBenchAdapter{}
 	model := WritingModelSpec{Provider: "p", Model: "writer", InputPer1M: 1, OutputPer1M: 2, MaxOutputTokens: 64}
 	judge := WritingModelSpec{Provider: "p", Model: "judge", InputPer1M: 1, OutputPer1M: 2, MaxOutputTokens: 32}
-	manifest := NewWritingRunManifest("input", "hash", records, adapter, []WritingModelSpec{model}, judge, 1, 2, time.Minute, 1, time.Unix(1, 0))
+	manifest := NewWritingRunManifest(WritingRunManifestOptions{InputPath: "input", InputHash: "hash", Records: records, Adapter: adapter, Models: []WritingModelSpec{model}, Judge: judge, Iterations: 1, Concurrency: 2, Timeout: time.Minute, MaxRunCost: 1, Now: time.Unix(1, 0)})
 	plan, err := PlanWritingRun(manifest, records, adapter)
 	if err != nil {
 		t.Fatal(err)

@@ -35,38 +35,67 @@ func (t ResolvedTarget) Model() string { return t.model }
 
 // Allows reports whether a provider may serve the resolved target.
 func (t ResolvedTarget) Allows(name string) bool { return t.model == "" || t.providers[name] }
+
+// ResolveTarget resolves an exact-model admission constraint. A
+// "provider/model" prefix pins the provider when it names a configured one;
+// otherwise the whole string is treated as the exact model.
 func ResolveTarget(configs map[string]Config, model, embeddingDefault string) (ResolvedTarget, error) {
 	if model == "" {
 		return ResolvedTarget{}, nil
 	}
-	exact := model
-	pinned := ""
-	if prefix, rest, ok := strings.Cut(model, "/"); ok {
-		if _, exists := configs[prefix]; exists {
-			pinned = prefix
-			exact = rest
-		}
-	}
-	target := ResolvedTarget{model: exact, providers: make(map[string]bool)}
-	_, embeddingBackend := selectEmbeddingProvider(configs)
-	for name, cfg := range configs {
-		if !cfg.Enabled || (pinned != "" && name != pinned) {
-			continue
-		}
-		known := cfg.Model == exact || (embeddingDefault != "" && exact == embeddingDefault && name == embeddingBackend)
-		for _, id := range cfg.Models {
-			if id == exact {
-				known = true
-			}
-		}
-		if known {
-			target.providers[name] = true
-		}
-	}
+	pin, exact := splitModelPin(model, configs)
+	target := ResolvedTarget{model: exact, providers: targetProviders(configs, pin, exact, embeddingDefault)}
 	if exact == "" || len(target.providers) == 0 {
 		return ResolvedTarget{}, fmt.Errorf("unknown model target %q", model)
 	}
 	return target, nil
+}
+
+// splitModelPin splits an optional provider pin off the model string; a
+// prefix that does not name a configured provider stays part of the model.
+func splitModelPin(model string, configs map[string]Config) (pin, exact string) {
+	prefix, rest, ok := strings.Cut(model, "/")
+	if !ok {
+		return "", model
+	}
+	if _, exists := configs[prefix]; exists {
+		return prefix, rest
+	}
+	return "", model
+}
+
+// targetProviders collects the enabled providers known to serve the exact
+// model, restricted to the pin when one is present.
+func targetProviders(configs map[string]Config, pin, exact, embeddingDefault string) map[string]bool {
+	_, embeddingBackend := selectEmbeddingProvider(configs)
+	providers := make(map[string]bool)
+	for name, cfg := range configs {
+		if !cfg.Enabled || (pin != "" && name != pin) {
+			continue
+		}
+		if providerServesModel(cfg, name, exact, embeddingDefault, embeddingBackend) {
+			providers[name] = true
+		}
+	}
+	return providers
+}
+
+// providerServesModel reports whether a provider is known to serve the exact
+// model: as its configured model, a cataloged model id, or the embedding
+// default backend.
+func providerServesModel(cfg Config, name, exact, embeddingDefault, embeddingBackend string) bool {
+	if cfg.Model == exact {
+		return true
+	}
+	if embeddingDefault != "" && exact == embeddingDefault && name == embeddingBackend {
+		return true
+	}
+	for _, id := range cfg.Models {
+		if id == exact {
+			return true
+		}
+	}
+	return false
 }
 
 type structuredRequestKey struct{}

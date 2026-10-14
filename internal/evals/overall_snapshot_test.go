@@ -11,6 +11,7 @@ import (
 )
 
 func TestOMLXScoreSnapshotRoundTripRetainsEmptyInventoryAndProvenance(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "llambo-scores.json")
 	snapshot := OMLXScoreSnapshot{
 		GeneratedAt:           time.Unix(7, 0).UTC(),
@@ -38,16 +39,11 @@ func TestOMLXScoreSnapshotRoundTripRetainsEmptyInventoryAndProvenance(t *testing
 	if loaded.FormulaVersion != CategoryFormulaVersion || strings.Contains(string(data), `"prior_formula_versions"`) {
 		t.Fatalf("rolling snapshot retained formula lineage: %s", data)
 	}
-	if err = SaveOMLXScoreSnapshot(path, OMLXScoreSnapshot{FormulaVersion: CategoryFormulaVersion, Inventory: []string{}, CategoryScores: map[string]map[string]*LlamboScore{}}); err != nil {
-		t.Fatal(err)
-	}
-	loaded, err = LoadOMLXScoreSnapshot(path)
-	if err != nil || loaded == nil || loaded.Inventory == nil || len(loaded.Inventory) != 0 || len(loaded.CategoryScores) != 0 || len(loaded.Scores) != 0 {
-		t.Fatalf("empty inventory did not replace stale snapshot: %#v %v", loaded, err)
-	}
+	assertEmptyOMLXSnapshotReplacement(t, path)
 }
 
 func TestNewOMLXScoreSnapshotRemovesStaleInventory(t *testing.T) {
+	t.Parallel()
 	result := Report{Models: []ReportModel{{Key: "model-b", LlamboScores: map[string]*LlamboScore{"coding": {Score: 64}}}}}
 	snapshot := NewOMLXScoreSnapshot(result, []string{"model-b"}, "", time.Unix(1, 0))
 	if len(snapshot.Inventory) != 1 || snapshot.Inventory[0] != "model-b" || snapshot.CategoryScores["model-a"] != nil || snapshot.CategoryScores["model-b"]["coding"].Score != 64 || !snapshot.Contains("model-b") || snapshot.Contains("model-a") {
@@ -56,6 +52,7 @@ func TestNewOMLXScoreSnapshotRemovesStaleInventory(t *testing.T) {
 }
 
 func TestLoadLegacySnapshotsThenReplaceWithRollingSnapshot(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "llambo-scores.json")
 	legacy := `{"schema_version":1,"generated_at":"2026-08-21T00:00:00Z","formula_version":"LLAMBO-5","omlx_population_fingerprint":"legacy-fp","inventory":["model"],"scores":{"model":{"coverage":0.5,"confidence":"low","formula_version":"LLAMBO-5","population_fingerprint":"legacy-fp"}}}`
@@ -79,6 +76,7 @@ func TestLoadLegacySnapshotsThenReplaceWithRollingSnapshot(t *testing.T) {
 }
 
 func TestLoadLegacySnapshotAcceptsRetiredFormulaLineage(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "llambo-scores.json")
 	legacy := `{"schema_version":2,"generated_at":"2026-08-21T00:00:00Z","formula_version":"LLAMBO-6-category-v5","prior_formula_versions":["LLAMBO-6-category-v4"],"inventory":["model"],"category_scores":{"model":{"coding":{"score":70}}}}`
 	if err := os.WriteFile(path, []byte(legacy), 0o644); err != nil {
@@ -101,6 +99,7 @@ func TestLoadLegacySnapshotAcceptsRetiredFormulaLineage(t *testing.T) {
 }
 
 func TestSaveOMLXScoreSnapshotConcurrentWritersRemainAtomic(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "llambo-scores.json")
 	const writers = 16
 	var wg sync.WaitGroup
@@ -139,5 +138,18 @@ func TestSaveOMLXScoreSnapshotConcurrentWritersRemainAtomic(t *testing.T) {
 	}
 	if len(matches) != 0 {
 		t.Fatalf("temporary files remain after saves: %v", matches)
+	}
+}
+
+func assertEmptyOMLXSnapshotReplacement(t *testing.T, path string) {
+	t.Helper()
+	var loaded *OMLXScoreSnapshot
+	var err error
+	if err = SaveOMLXScoreSnapshot(path, OMLXScoreSnapshot{FormulaVersion: CategoryFormulaVersion, Inventory: []string{}, CategoryScores: map[string]map[string]*LlamboScore{}}); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err = LoadOMLXScoreSnapshot(path)
+	if err != nil || loaded == nil || loaded.Inventory == nil || len(loaded.Inventory) != 0 || len(loaded.CategoryScores) != 0 || len(loaded.Scores) != 0 {
+		t.Fatalf("empty inventory did not replace stale snapshot: %#v %v", loaded, err)
 	}
 }

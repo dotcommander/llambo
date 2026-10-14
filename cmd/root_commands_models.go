@@ -132,7 +132,7 @@ func (*evalsWritingCatalogCommand) Run(c *evalsCommand, io *commandIO) error {
 	if io.FlagChanged(refreshOfficialModelCards) {
 		return errors.New("--refresh-official-model-cards is not supported with evals writing")
 	}
-	return runWritingCatalog(io, c.Format, c.Output, c.Refresh, c.ExportPrompts, c.PromptSource, c.PromptLimit, c.DiscoverModels, c.DiscoverLimit)
+	return runWritingCatalog(io, writingCatalogOptions{format: c.Format, output: c.Output, refresh: c.Refresh, exportPrompts: c.ExportPrompts, promptSource: c.PromptSource, promptLimit: c.PromptLimit, discoverModels: c.DiscoverModels, discoverLimit: c.DiscoverLimit})
 }
 
 type jobsCommand struct {
@@ -297,7 +297,7 @@ type modelsDiscoverFreeCommand struct {
 func (c *modelsDiscoverFreeCommand) Run(io *commandIO) error {
 	cliOpts := &invocationOptions{}
 	cliOpts.discoverFreePin, cliOpts.discoverFreeIncludeQuarantine, cliOpts.discoverFreeProviders, cliOpts.discoverFreeTimeout = c.Pin, c.IncludeQuarantined, c.Provider, c.TimeoutSeconds
-	return cliOpts.runModelsDiscoverFree(io, nil)
+	return cliOpts.runModelsDiscoverFree(io)
 }
 
 type modelsSyncPricingCommand struct {

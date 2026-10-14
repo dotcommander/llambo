@@ -2,7 +2,6 @@ package evals
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,6 +13,7 @@ import (
 )
 
 func TestWritingEvidenceSourceDescriptorsOwnDefaultsAndMetadata(t *testing.T) {
+	t.Parallel()
 	opts := Options{
 		WritingBenchURL:     "https://example.test/writingbench",
 		EQBenchCreativeURL:  "https://example.test/eqbench",
@@ -39,6 +39,7 @@ func TestWritingEvidenceSourceDescriptorsOwnDefaultsAndMetadata(t *testing.T) {
 }
 
 func TestRefreshEvaluationSourcesIsScopedAndValidatesProvenance(t *testing.T) {
+	t.Parallel()
 	var writingRequests, eqBenchRequests, lechRequests int
 	writing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		writingRequests++
@@ -47,19 +48,19 @@ func TestRefreshEvaluationSourcesIsScopedAndValidatesProvenance(t *testing.T) {
 		w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 		_, _ = w.Write(syntheticWritingBenchXLSX(t))
 	}))
-	defer writing.Close()
+	t.Cleanup(writing.Close)
 	eqBench := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		eqBenchRequests++
 		w.Header().Set("Content-Type", "application/javascript")
 		_, _ = w.Write(syntheticEQBenchCreativeJS())
 	}))
-	defer eqBench.Close()
+	t.Cleanup(eqBench.Close)
 	lech := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		lechRequests++
 		w.Header().Set("ETag", `"lech-revision"`)
 		_, _ = w.Write([]byte(writingLeaderboardFixture))
 	}))
-	defer lech.Close()
+	t.Cleanup(lech.Close)
 
 	now := time.Unix(1, 0).UTC()
 	dir := t.TempDir()
@@ -77,25 +78,11 @@ func TestRefreshEvaluationSourcesIsScopedAndValidatesProvenance(t *testing.T) {
 	if writingRequests != 1 || eqBenchRequests != 1 || lechRequests != 1 || len(statuses) != 3 {
 		t.Fatalf("unexpected source-scoped refresh: writing=%d eq=%d lech=%d statuses=%#v", writingRequests, eqBenchRequests, lechRequests, statuses)
 	}
-	for _, name := range []string{"writingbench", "eqbench-creative-v3", WritingPrimaryID} {
-		snapshot, err := readSnapshot(dir + "/" + name + ".json")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !snapshot.FetchedAt.Equal(now) || len(snapshot.Models) == 0 {
-			t.Fatalf("unexpected %s snapshot: %#v", name, snapshot)
-		}
-		for _, model := range snapshot.Models {
-			for benchmark, result := range model.Benchmarks {
-				if result.SourceID != name || result.SourceClass == "" || result.EvidenceGrade == "" || result.Method == "" || result.ContentSHA == "" {
-					t.Fatalf("invalid %s/%s provenance: %#v", name, benchmark, result)
-				}
-			}
-		}
-	}
+	assertRefreshedWritingEvidenceRows(t, dir, now)
 }
 
 func TestRefreshEvaluationSourcesRejectsUnknownBeforeFetch(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	_, _, err := RefreshEvaluationSources(context.Background(), Options{CacheDir: dir}, []string{"writingbench", "artificial-analysis"})
 	if err == nil || err.Error() != "unsupported evaluation source \"artificial-analysis\" (supported: arena-creative-writing, eqbench-creative-v3, lechmazur-writing, writingbench)" {
@@ -107,6 +94,7 @@ func TestRefreshEvaluationSourcesRejectsUnknownBeforeFetch(t *testing.T) {
 }
 
 func TestPreserveEvaluationSourceCachesPreservesPredecessors(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "writingbench.json"), []byte("previous"), 0o600); err != nil {
 		t.Fatal(err)
@@ -122,32 +110,8 @@ func TestPreserveEvaluationSourceCachesPreservesPredecessors(t *testing.T) {
 }
 
 func TestRefreshLLMStatsStatsV1SourceReplacesCacheAfterValidation(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer secret" {
-			t.Errorf("missing Bearer token: %q", r.Header.Get("Authorization"))
-		}
-		w.Header().Set("Content-Type", "application/json")
-		switch r.URL.Path {
-		case "/v1/models":
-			if r.URL.Query().Get("cursor") == "" {
-				_, _ = w.Write([]byte(`{"models":[{"id":"m1","name":"M1","organization":{"id":"lab","name":"Lab"},"license":{"id":"mit","name":"MIT"},"open_weight":true,"model_type":"llm","providers":[]},{"id":"m2","name":"M2","organization":{"id":"lab","name":"Lab"},"license":{"id":"mit","name":"MIT"},"open_weight":true,"model_type":"llm","providers":[]},{"id":"image","name":"Image","organization":{"id":"lab","name":"Lab"},"license":{"id":"mit","name":"MIT"},"open_weight":false,"model_type":"image","providers":[]}],"next_cursor":"page-2","total":6}`))
-				return
-			}
-			_, _ = w.Write([]byte(`{"models":[{"id":"m3","name":"M3","organization":{"id":"lab","name":"Lab"},"license":{"id":"mit","name":"MIT"},"open_weight":true,"model_type":"llm","providers":[]},{"id":"m4","name":"M4","organization":{"id":"lab","name":"Lab"},"license":{"id":"mit","name":"MIT"},"open_weight":true,"model_type":"llm","providers":[]},{"id":"m5","name":"M5","organization":{"id":"lab","name":"Lab"},"license":{"id":"mit","name":"MIT"},"open_weight":true,"model_type":"llm","providers":[]}],"next_cursor":"","total":6}`))
-		case "/v1/benchmarks":
-			_, _ = w.Write([]byte(`{"benchmarks":[{"id":"gpqa","name":"GPQA","model_count":5}]}`))
-		case "/v1/scores":
-			rows := make([]string, 0, 5)
-			for index := 1; index <= 5; index++ {
-				rows = append(rows, statsV1ScoreRow(fmt.Sprintf("m%d", index), float64(index)/10, true))
-			}
-			_, _ = fmt.Fprintf(w, `{"scores":[%s],"next_cursor":"","total":5}`, strings.Join(rows, ","))
-		default:
-			t.Errorf("unexpected Stats v1 request: %s", r.URL.String())
-			http.NotFound(w, r)
-		}
-	}))
-	defer server.Close()
+	t.Parallel()
+	server := statsV1RefreshFixtureServer(t)
 
 	dir := t.TempDir()
 	previous := filepath.Join(dir, "llm-stats.json")
@@ -168,13 +132,7 @@ func TestRefreshLLMStatsStatsV1SourceReplacesCacheAfterValidation(t *testing.T) 
 	if status.Models != 5 || status.Observations != 5 || status.Cache != "fetched" || status.RegistryVersion != SourceRegistryVersion || status.ContentSHA == "" {
 		t.Fatalf("unexpected Stats v1 status: %#v", status)
 	}
-	// Cache reuse must read the same filename as the publisher, without credentials.
-	statuses, backups, err := RefreshEvaluationSourcesWithOptions(context.Background(), Options{
-		CacheDir: dir, Now: func() time.Time { return now.Add(time.Hour) },
-	}, []string{"llm-stats-stats-v1"}, RefreshSourceOptions{TTL: 4 * time.Hour})
-	if err != nil || len(statuses) != 1 || statuses[0].Cache != "cached" || statuses[0].Models != 5 || len(backups) != 0 {
-		t.Fatalf("Stats v1 cache reuse failed: %#v %v %v", statuses, backups, err)
-	}
+	assertStatsV1RefreshedCacheReuse(t, dir, now)
 	if backup == "" {
 		t.Fatal("predecessor cache was not preserved")
 	}
@@ -182,25 +140,8 @@ func TestRefreshLLMStatsStatsV1SourceReplacesCacheAfterValidation(t *testing.T) 
 	if data, err = os.ReadFile(backup); err != nil || !strings.Contains(string(data), `"key": "previous"`) {
 		t.Fatalf("invalid predecessor backup: %s %v", data, err)
 	}
-	snapshot, err := readSnapshot(previous)
-	if err != nil || len(snapshot.Models) != 5 || snapshot.Observations != 5 || !snapshot.FetchedAt.Equal(now) || snapshot.RegistryVersion != SourceRegistryVersion {
-		t.Fatalf("unexpected replacement snapshot: %#v %v", snapshot, err)
-	}
-	for _, model := range snapshot.Models {
-		if model.Benchmarks["gpqa"].SourceID != llmStatsStatsV1SourceID {
-			t.Fatalf("Stats v1 observations were not attached: %#v", model)
-		}
-	}
-	for pattern, want := range map[string]int{
-		filepath.Join(dir, "sealed", "llm-stats-stats-v1", "models-*.json"):        2,
-		filepath.Join(dir, "sealed", "llm-stats-stats-v1", "catalog-*.json"):       1,
-		filepath.Join(dir, "sealed", "llm-stats-stats-v1", "observations-*.jsonl"): 1,
-	} {
-		matches, err := filepath.Glob(pattern)
-		if err != nil || len(matches) != want {
-			t.Fatalf("unexpected sealed Stats v1 artifact %s: %#v %v", pattern, matches, err)
-		}
-	}
+	assertStatsV1ReplacementSnapshot(t, previous, now)
+	assertStatsV1ReplacementArtifacts(t, dir)
 }
 
 func TestRefreshEvaluationSources_CachingAndIdempotency(t *testing.T) {
@@ -261,6 +202,7 @@ func TestRefreshEvaluationSources_CachingAndIdempotency(t *testing.T) {
 }
 
 func TestSourceRefreshRejectsInvalidCache(t *testing.T) {
+	t.Parallel()
 	now := time.Now().UTC()
 	for _, tc := range []struct {
 		name    string
@@ -271,12 +213,13 @@ func TestSourceRefreshRejectsInvalidCache(t *testing.T) {
 		{"incomplete", now.Add(-time.Hour), ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			dir := t.TempDir()
 			if err := writeSnapshot(filepath.Join(dir, "writingbench.json"), sourceSnapshot{FetchedAt: tc.fetched, ContentSHA: tc.sha, Method: "test", Models: []Model{{Key: "model"}}}); err != nil {
 				t.Fatal(err)
 			}
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Error(w, "expected fetch", http.StatusBadGateway) }))
-			defer server.Close()
+			t.Cleanup(server.Close)
 			statuses, _, err := RefreshEvaluationSourcesWithOptions(context.Background(), Options{CacheDir: dir, Now: func() time.Time { return now }, WritingBenchURL: server.URL}, []string{"writingbench"}, RefreshSourceOptions{TTL: 4 * time.Hour})
 			if err == nil {
 				t.Fatalf("invalid cache accepted: %#v", statuses)

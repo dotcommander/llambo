@@ -38,12 +38,13 @@ func (cliOpts *invocationOptions) runPromptCommand(cmd *commandIO, args []string
 	}
 	cliOpts.applyPromptUXDefaults(cmd)
 
-	// Get system prompt from flag
+	// Get system prompt from flag; treat empty string as no system prompt.
 	sysPrompt := cliOpts.systemPrompt
-	// Treat empty string as no system prompt
 	if sysPrompt == "" {
 		sysPrompt = "You are a helpful assistant."
 	}
+	req := promptRequest{promptText: promptText, systemPrompt: sysPrompt, timeoutSecs: cliOpts.timeoutSeconds}
+
 	var run *promptRun
 	if !hasInjectedPromptExecutionSeam() {
 		run, err = newPromptRun(cmd.ErrOrStderr())
@@ -53,73 +54,109 @@ func (cliOpts *invocationOptions) runPromptCommand(cmd *commandIO, args []string
 		defer run.close()
 	}
 
-	var results []PromptResult
-	if run == nil {
-		results, err = cliOpts.executePromptAgainstSelectedModelsTo(cmd.Context(), cmd.ErrOrStderr(), promptRequest{promptText: promptText, systemPrompt: sysPrompt, timeoutSecs: cliOpts.timeoutSeconds})
-	} else {
-		results, err = cliOpts.executePromptAgainstSelectedModelsWithRun(cmd.Context(), cmd.ErrOrStderr(), promptRequest{promptText: promptText, systemPrompt: sysPrompt, timeoutSecs: cliOpts.timeoutSeconds}, run)
-	}
+	results, err := cliOpts.executePromptResults(cmd, req, run)
 	if err != nil {
 		return err
 	}
 	if err := cmd.Context().Err(); err != nil {
 		return err
 	}
-	baseErr := checkAllFailed(results)
-	var control *PromptFusionControl
-	var controlErr error
-	if cliOpts.promptFuseControl && baseErr == nil {
-		control, controlErr = cliOpts.executePromptFusionControlWithRun(cmd.Context(), promptRequest{promptText: promptText, systemPrompt: sysPrompt, timeoutSecs: cliOpts.timeoutSeconds}, cliOpts.promptFuseModels, run)
-	}
-	if err := cmd.Context().Err(); err != nil {
-		return err
-	}
-	var fusion *PromptFusion
-	var fuseErr error
-	if cliOpts.promptFuse && baseErr == nil {
-		fusion, fuseErr = cliOpts.executePromptFusionResponseWithRun(cmd.Context(), promptRequest{promptText: promptText, systemPrompt: sysPrompt, timeoutSecs: cliOpts.timeoutSeconds}, results, cliOpts.promptFuseModels, run)
-	}
 
+	stages := cliOpts.executePromptFusionStages(cmd, req, results, run)
 	if err := cmd.Context().Err(); err != nil {
 		return err
 	}
-	healthResults := results
-	if control != nil {
-		healthResults = append(append([]PromptResult(nil), healthResults...), control.Result)
-	}
-	if fusion != nil {
-		healthResults = append(append([]PromptResult(nil), healthResults...), fusion.Result)
-	}
-	if err := recordPromptCatalogHealth(cmd.Context(), healthResults); err != nil {
+	if err := recordPromptCatalogHealth(cmd.Context(), promptHealthResults(results, stages)); err != nil {
 		fmt.Fprintf(cmd.ErrOrStderr(), "Warning: %v\n", err)
 	}
 
-	var outputErr error
-	// If output file is specified, write to file
-	if cliOpts.outputFile != "" {
-		if err := writeResultsToFile(cmd, resultsOutput{promptText: promptText, results: results, control: control, fusion: fusion}, cliOpts.outputFile); err != nil {
-			outputErr = err
-			// Print error but continue to display results to stdout
-			fmt.Fprintf(cmd.ErrOrStderr(), "Error writing to file %s: %v\n", cliOpts.outputFile, err)
-			fmt.Fprintln(cmd.OutOrStdout(), "Displaying results to stdout instead:")
-		} else {
-			// Success message
-			fmt.Fprintf(cmd.OutOrStdout(), "Results written to %s\n", cliOpts.outputFile)
-			// Return early - don't print to stdout when file write succeeds
-			return errors.Join(baseErr, controlErr, fuseErr)
-		}
+	output := resultsOutput{promptText: promptText, results: results, control: stages.control, fusion: stages.fusion}
+	written, outputErr := writePromptOutputFile(cmd, cliOpts, output)
+	if written {
+		// Don't print to stdout when the file write succeeds.
+		return errors.Join(stages.baseErr, stages.controlErr, stages.fuseErr)
 	}
 
 	// Output results to stdout (either no file specified or file write failed)
 	outputPromptResults(cmd, promptText, results)
-	if control != nil {
-		outputPromptFusionControl(cmd, control)
+	if stages.control != nil {
+		outputPromptFusionControl(cmd, stages.control)
 	}
-	if fusion != nil {
-		outputPromptFusion(cmd, fusion)
+	if stages.fusion != nil {
+		outputPromptFusion(cmd, stages.fusion)
 	}
 
-	return errors.Join(baseErr, controlErr, fuseErr, outputErr)
+	return errors.Join(stages.baseErr, stages.controlErr, stages.fuseErr, outputErr)
+}
+
+// executePromptResults runs the primary multi-provider fanout through the
+// active execution seam.
+func (cliOpts *invocationOptions) executePromptResults(cmd *commandIO, req promptRequest, run *promptRun) ([]PromptResult, error) {
+	if run == nil {
+		return cliOpts.executePromptAgainstSelectedModelsTo(cmd.Context(), cmd.ErrOrStderr(), req)
+	}
+	return cliOpts.executePromptAgainstSelectedModelsWithRun(cmd.Context(), cmd.ErrOrStderr(), req, run)
+}
+
+// promptFusionStages bundles the optional fusion-stage outputs after a
+// primary fanout.
+type promptFusionStages struct {
+	baseErr    error
+	control    *PromptFusionControl
+	controlErr error
+	fusion     *PromptFusion
+	fuseErr    error
+}
+
+// executePromptFusionStages runs optional fusion control and response stages
+// only when the fanout produced at least one success, stopping at the
+// cancellation fence between stages.
+func (cliOpts *invocationOptions) executePromptFusionStages(cmd *commandIO, req promptRequest, results []PromptResult, run *promptRun) promptFusionStages {
+	var stages promptFusionStages
+	stages.baseErr = checkAllFailed(results)
+	if stages.baseErr != nil {
+		return stages
+	}
+	if cliOpts.promptFuseControl {
+		stages.control, stages.controlErr = cliOpts.executePromptFusionControlWithRun(cmd.Context(), req, cliOpts.promptFuseModels, run)
+	}
+	if cmd.Context().Err() != nil {
+		return stages
+	}
+	if cliOpts.promptFuse {
+		stages.fusion, stages.fuseErr = cliOpts.executePromptFusionResponseWithRun(cmd.Context(), req, results, cliOpts.promptFuseModels, run)
+	}
+	return stages
+}
+
+// promptHealthResults extends the primary results with successful fusion-stage
+// results for catalog health recording.
+func promptHealthResults(results []PromptResult, stages promptFusionStages) []PromptResult {
+	healthResults := results
+	if stages.control != nil {
+		healthResults = append(append([]PromptResult(nil), healthResults...), stages.control.Result)
+	}
+	if stages.fusion != nil {
+		healthResults = append(append([]PromptResult(nil), healthResults...), stages.fusion.Result)
+	}
+	return healthResults
+}
+
+// writePromptOutputFile writes markdown results when --output is set. It
+// reports whether stdout display can be skipped; write failures fall back to
+// stdout display and are returned for exit-status joining.
+func writePromptOutputFile(cmd *commandIO, cliOpts *invocationOptions, output resultsOutput) (written bool, err error) {
+	if cliOpts.outputFile == "" {
+		return false, nil
+	}
+	if writeErr := writeResultsToFile(cmd, output, cliOpts.outputFile); writeErr != nil {
+		// Print error but continue to display results to stdout.
+		fmt.Fprintf(cmd.ErrOrStderr(), "Error writing to file %s: %v\n", cliOpts.outputFile, writeErr)
+		fmt.Fprintln(cmd.OutOrStdout(), "Displaying results to stdout instead:")
+		return false, writeErr
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "Results written to %s\n", cliOpts.outputFile)
+	return true, nil
 }
 
 // hasInjectedPromptExecutionSeam preserves the package-level execution seams

@@ -29,6 +29,7 @@ func mustProseJSON(t *testing.T, value any) []byte {
 }
 
 func TestProseEvaluationV2SchemaContract(t *testing.T) {
+	t.Parallel()
 	var schema map[string]any
 	if err := json.Unmarshal(ProseEvaluationSchema(), &schema); err != nil {
 		t.Fatal(err)
@@ -42,6 +43,7 @@ func TestProseEvaluationV2SchemaContract(t *testing.T) {
 	}
 }
 func TestDecodeProseEvaluationStrictAndBound(t *testing.T) {
+	t.Parallel()
 	input := proseInput()
 	want := validProseEvaluation()
 	got, err := DecodeProseEvaluation(mustProseJSON(t, want), input.Prose)
@@ -76,6 +78,7 @@ func TestDecodeProseEvaluationStrictAndBound(t *testing.T) {
 	}
 }
 func TestDecodeProseEvaluationRejectsMissingRequiredZeroValueFields(t *testing.T) {
+	t.Parallel()
 	base := mustProseJSON(t, validProseEvaluation())
 	var value map[string]any
 	if err := json.Unmarshal(base, &value); err != nil {
@@ -96,6 +99,7 @@ func TestDecodeProseEvaluationRejectsMissingRequiredZeroValueFields(t *testing.T
 		}},
 	} {
 		t.Run(omission.name, func(t *testing.T) {
+			t.Parallel()
 			var copyValue map[string]any
 			data, _ := json.Marshal(value)
 			if err := json.Unmarshal(data, &copyValue); err != nil {
@@ -110,6 +114,7 @@ func TestDecodeProseEvaluationRejectsMissingRequiredZeroValueFields(t *testing.T
 	}
 }
 func TestDecodeProseEvaluationRejectsDuplicateFixture(t *testing.T) {
+	t.Parallel()
 	raw, err := os.ReadFile("testdata/prose-evaluation-duplicate.json")
 	if err != nil {
 		t.Fatal(err)
@@ -119,6 +124,7 @@ func TestDecodeProseEvaluationRejectsDuplicateFixture(t *testing.T) {
 	}
 }
 func TestNewProseJudgeRequestUsesPublicPayload(t *testing.T) {
+	t.Parallel()
 	input := proseInput()
 	request, err := NewProseJudgeRequest(input)
 	if err != nil {
@@ -136,6 +142,7 @@ func TestNewProseJudgeRequestUsesPublicPayload(t *testing.T) {
 	}
 }
 func TestMechanicsCannotRescueAggregate(t *testing.T) {
+	t.Parallel()
 	value := validProseEvaluation()
 	value.Mechanics.Score = 1
 	aggregate := ComputeProseEvaluationAggregate(value)

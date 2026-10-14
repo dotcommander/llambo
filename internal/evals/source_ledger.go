@@ -197,7 +197,7 @@ func ValidateCoverageCampaignResearchLedger(ledger SourceResearchLedger, campaig
 func CanonicalSourceResearchLedger(ledger SourceResearchLedger) ([]byte, error) {
 	normalized := cloneSourceResearchLedger(ledger)
 	normalizeSourceResearchLedger(&normalized)
-	if err := validateSourceResearchLedger(normalized, nil); err != nil {
+	if err := validateResearchLedgerContent(normalized, nil); err != nil {
 		return nil, err
 	}
 	data, err := json.Marshal(normalized)

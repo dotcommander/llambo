@@ -97,39 +97,65 @@ func (oc *OpenAIClients) evaluateAndPublishCanary(ctx context.Context, snapshot 
 	if status == nil || !status.ShouldPromote {
 		return nil
 	}
-	// Prepare the runtime generation before publication; raw persisted values
-	// supply only the promotion priority, never credentials or unrelated edits.
+	prepared, err := oc.prepareCanaryGeneration(ctx, snapshot, *canary)
+	if err != nil {
+		return err
+	}
+	return oc.publishCanaryGeneration(ctx, prepared, *canary, status)
+}
+
+// prepareCanaryGeneration runs the persisted-config transaction that grants
+// the promotion, returning the prepared runtime generation for publication.
+func (oc *OpenAIClients) prepareCanaryGeneration(ctx context.Context, snapshot *routingSnapshot, canary CanaryConfig) (*routingSnapshot, error) {
 	var prepared *routingSnapshot
 	update := oc.canaryUpdate
 	if update == nil {
 		update = UpdateGlobalConfig
 	}
-	err = update(ctx, func(cfg *GlobalConfig) error {
-		if cfg.Routing.Canary == nil || *cfg.Routing.Canary != *canary {
-			return errStaleCanary
+	err := update(ctx, func(cfg *GlobalConfig) error {
+		generation, err := promoteCanaryGeneration(snapshot, cfg, canary)
+		if err != nil {
+			return err
 		}
-		provider, exists := cfg.Providers[canary.Provider]
-		if !exists || !provider.Enabled {
-			return errStaleCanary
-		}
-		_, priority := PromoteCanaryConfig(cfg, *canary)
-		prepared = &routingSnapshot{configs: cloneProviderConfigs(snapshot.configs), routing: cloneRoutingConfig(snapshot.routing)}
-		runtimeProvider, exists := prepared.configs[canary.Provider]
-		if !exists {
-			return errStaleCanary
-		}
-		runtimeProvider.Priority = priority
-		prepared.configs[canary.Provider] = runtimeProvider
-		prepared.routing.Canary = nil
+		prepared = generation
 		return nil
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
+	return prepared, nil
+}
+
+// promoteCanaryGeneration derives the promoted runtime generation from the
+// persisted promotion priority. Raw persisted values supply only that
+// priority, never credentials or unrelated edits, and any identity drift
+// between the evaluated snapshot and the persisted config aborts the grant.
+func promoteCanaryGeneration(snapshot *routingSnapshot, cfg *GlobalConfig, canary CanaryConfig) (*routingSnapshot, error) {
+	if cfg.Routing.Canary == nil || *cfg.Routing.Canary != canary {
+		return nil, errStaleCanary
+	}
+	provider, exists := cfg.Providers[canary.Provider]
+	if !exists || !provider.Enabled {
+		return nil, errStaleCanary
+	}
+	_, priority := PromoteCanaryConfig(cfg, canary)
+	prepared := &routingSnapshot{configs: cloneProviderConfigs(snapshot.configs), routing: cloneRoutingConfig(snapshot.routing)}
+	runtimeProvider, exists := prepared.configs[canary.Provider]
+	if !exists {
+		return nil, errStaleCanary
+	}
+	runtimeProvider.Priority = priority
+	prepared.configs[canary.Provider] = runtimeProvider
+	prepared.routing.Canary = nil
+	return prepared, nil
+}
+
+// publishCanaryGeneration installs the prepared generation live. A delayed
+// evaluation may never overwrite a newer published generation.
+func (oc *OpenAIClients) publishCanaryGeneration(ctx context.Context, prepared *routingSnapshot, canary CanaryConfig, status *CanaryStatus) error {
 	oc.routingMu.Lock()
 	defer oc.routingMu.Unlock()
-	// A delayed evaluation may never overwrite a newer published generation.
-	if oc.routingState != nil && (oc.routingState.routing.Canary == nil || *oc.routingState.routing.Canary != *canary) {
+	if oc.routingState != nil && (oc.routingState.routing.Canary == nil || *oc.routingState.routing.Canary != canary) {
 		return errStaleCanary
 	}
 	oc.routingState = prepared

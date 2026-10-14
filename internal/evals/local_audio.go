@@ -3,16 +3,12 @@ package evals
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"mime/multipart"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -47,6 +43,7 @@ type ASREvaluation struct {
 	OutputRawJSON  json.RawMessage
 }
 
+// Transcribe performs a bounded audio request and validates the served identity.
 func (a OMLXAudioAdapter) Transcribe(ctx context.Context, model string, input ASRAudioInput) (ASREvaluation, error) {
 	if strings.TrimSpace(model) == "" || strings.TrimSpace(input.Case.ID) == "" || strings.TrimSpace(input.Case.Transcript) == "" {
 		return ASREvaluation{}, errors.New("model, ASR case id, and transcript are required")
@@ -55,43 +52,23 @@ func (a OMLXAudioAdapter) Transcribe(ctx context.Context, model string, input AS
 	if err != nil {
 		return ASREvaluation{}, err
 	}
-	wav, filename, err := loadSealedWAV(input)
+	audio, err := sealedTranscriptionAudio(input)
 	if err != nil {
 		return ASREvaluation{}, err
-	}
-	if input.WAVPath != "" {
-		got := fmt.Sprintf("%x", sha256.Sum256(wav))
-		if input.Case.WAVSHA256 == "" || !strings.EqualFold(got, input.Case.WAVSHA256) {
-			return ASREvaluation{}, errors.New("sealed WAV SHA-256 mismatch")
-		}
-	}
-	metadata, err := ValidateWAV(wav)
-	if err != nil {
-		return ASREvaluation{}, fmt.Errorf("validate sealed WAV: %w", err)
 	}
 	root, err := validatedOMLXRoot(a.BaseURL)
 	if err != nil {
 		return ASREvaluation{}, err
 	}
-	var body bytes.Buffer
-	form := multipart.NewWriter(&body)
-	if err = form.WriteField("model", endpointModel); err != nil {
-		return ASREvaluation{}, err
-	}
-	part, err := form.CreateFormFile("file", filename)
+	body, contentType, err := transcriptionForm(endpointModel, audio)
 	if err != nil {
 		return ASREvaluation{}, err
 	}
-	if _, err = part.Write(wav); err != nil {
-		return ASREvaluation{}, err
-	}
-	if err = form.Close(); err != nil {
-		return ASREvaluation{}, err
-	}
-	response, responseBody, elapsed, err := a.doHTTP(ctx, http.MethodPost, root+"/v1/audio/transcriptions", &body, form.FormDataContentType()) //nolint:bodyclose // doHTTP drains and closes the body before returning
+	httpResult, err := a.doHTTP(ctx, http.MethodPost, root+"/v1/audio/transcriptions", body, contentType)
 	if err != nil {
 		return ASREvaluation{}, err
 	}
+	response, responseBody, elapsed := httpResult.response, httpResult.body, httpResult.elapsed
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		return ASREvaluation{}, fmt.Errorf("transcription HTTP %d: %s", response.StatusCode, boundedErrorText(responseBody))
 	}
@@ -110,7 +87,7 @@ func (a OMLXAudioAdapter) Transcribe(ctx context.Context, model string, input AS
 	if err != nil {
 		return ASREvaluation{}, err
 	}
-	return ASREvaluation{ServedModel: served, Transcript: payload.Text, WER: WordErrorRate(input.Case.Transcript, payload.Text), CER: CharErrorRate(input.Case.Transcript, payload.Text), Latency: elapsed, RealTimeFactor: elapsed.Seconds() / metadata.DurationSeconds, InputWAV: metadata, OutputRawJSON: append(json.RawMessage(nil), responseBody...)}, nil
+	return ASREvaluation{ServedModel: served, Transcript: payload.Text, WER: WordErrorRate(input.Case.Transcript, payload.Text), CER: CharErrorRate(input.Case.Transcript, payload.Text), Latency: elapsed, RealTimeFactor: elapsed.Seconds() / audio.metadata.DurationSeconds, InputWAV: audio.metadata, OutputRawJSON: append(json.RawMessage(nil), responseBody...)}, nil
 }
 
 // TTSSpeechRequest is the OMLX speech-synthesis request body.
@@ -178,10 +155,11 @@ func (a OMLXAudioAdapter) Synthesize(ctx context.Context, request TTSSpeechReque
 	if len(body) > localAdapterResponseLimit {
 		return TTSEvaluation{}, fmt.Errorf("speech request exceeds %d bytes", localAdapterResponseLimit)
 	}
-	response, wav, elapsed, err := a.doHTTP(ctx, http.MethodPost, root+"/v1/audio/speech", bytes.NewReader(body), applicationJSON) //nolint:bodyclose // doHTTP drains and closes the body before returning
+	httpResult, err := a.doHTTP(ctx, http.MethodPost, root+"/v1/audio/speech", bytes.NewReader(body), applicationJSON)
 	if err != nil {
 		return TTSEvaluation{}, err
 	}
+	response, wav, elapsed := httpResult.response, httpResult.body, httpResult.elapsed
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		return TTSEvaluation{}, fmt.Errorf("speech HTTP %d: %s", response.StatusCode, boundedErrorText(wav))
 	}
@@ -205,7 +183,7 @@ func (a OMLXAudioAdapter) Synthesize(ctx context.Context, request TTSSpeechReque
 	return result, nil
 }
 
-func (a OMLXAudioAdapter) doHTTP(ctx context.Context, method, endpoint string, body io.Reader, contentType string) (*http.Response, []byte, time.Duration, error) {
+func (a OMLXAudioAdapter) doHTTP(ctx context.Context, method, endpoint string, body io.Reader, contentType string) (localOMLXHTTPResponse, error) {
 	result, err := executeLocalOMLXHTTP(ctx, localOMLXHTTPRequest{
 		method:         method,
 		endpoint:       endpoint,
@@ -219,10 +197,10 @@ func (a OMLXAudioAdapter) doHTTP(ctx context.Context, method, endpoint string, b
 		measureLatency: true,
 	})
 	if err != nil {
-		return nil, nil, result.elapsed, err
+		return localOMLXHTTPResponse{elapsed: result.elapsed}, err
 	}
 	defer func() { _ = result.response.Body.Close() }()
-	return result.response, result.body, result.elapsed, nil
+	return result, nil
 }
 
 func validatedOMLXRoot(baseURL string) (string, error) {
@@ -230,31 +208,6 @@ func validatedOMLXRoot(baseURL string) (string, error) {
 		return "", err
 	}
 	return normalizeOMLXBaseURL(baseURL)
-}
-
-func loadSealedWAV(input ASRAudioInput) ([]byte, string, error) {
-	if len(input.WAV) > 0 && strings.TrimSpace(input.WAVPath) != "" {
-		return nil, "", errors.New("provide sealed WAV data or path, not both")
-	}
-	wav := input.WAV
-	filename := input.FileName
-	if input.WAVPath != "" {
-		data, err := os.ReadFile(input.WAVPath)
-		if err != nil {
-			return nil, "", fmt.Errorf("read sealed WAV: %w", err)
-		}
-		wav = data
-		if filename == "" {
-			filename = filepath.Base(input.WAVPath)
-		}
-	}
-	if len(wav) == 0 || len(wav) > localAudioLimit {
-		return nil, "", fmt.Errorf("sealed WAV must be between 1 and %d bytes", localAudioLimit)
-	}
-	if filename == "" {
-		filename = "sealed.wav"
-	}
-	return append([]byte(nil), wav...), filename, nil
 }
 
 func firstNonEmpty(values ...string) string {

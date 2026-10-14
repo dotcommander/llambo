@@ -6,6 +6,7 @@ import (
 )
 
 func TestCoverageCampaignFrozenManifestAndProjectedRows(t *testing.T) {
+	t.Parallel()
 	manifest, err := loadCoverageCampaignManifest()
 	if err != nil {
 		t.Fatal(err)
@@ -36,21 +37,11 @@ func TestCoverageCampaignFrozenManifestAndProjectedRows(t *testing.T) {
 	if first.Unresolved[0] != second.Unresolved[0] || first.Unresolved[len(first.Unresolved)-1] != second.Unresolved[len(second.Unresolved)-1] {
 		t.Fatal("campaign ordering is not deterministic")
 	}
-	first.Unresolved[0].Reason = "needs <sealed>|official receipt"
-	markdown, html := RenderMarkdown(Report{CoverageCampaign: first}, 0), RenderHTML(Report{CoverageCampaign: first}, 0)
-	for _, want := range []string{"External score coverage", "Reason", "needs <sealed>\\|official receipt", "Inactive/new models", "Added after the frozen 11-target campaign"} {
-		if !strings.Contains(markdown, want) {
-			t.Fatalf("Markdown coverage campaign missing %q:\n%s", want, markdown)
-		}
-	}
-	for _, want := range []string{"External score coverage", "Reason", "needs &lt;sealed&gt;|official receipt", "Inactive/new models", "Added after the frozen 11-target campaign"} {
-		if !strings.Contains(html, want) {
-			t.Fatalf("HTML coverage campaign missing %q:\n%s", want, html)
-		}
-	}
+	assertCoverageCampaignRendering(t, first)
 }
 
 func TestFilterProjectedRowsRefreshesCampaignCoverage(t *testing.T) {
+	t.Parallel()
 	manifest, err := loadCoverageCampaignManifest()
 	if err != nil {
 		t.Fatal(err)
@@ -89,11 +80,28 @@ type errUnavailableOMLX struct{}
 func (errUnavailableOMLX) Error() string { return "offline" }
 
 func TestBuildReportIncludesBlockedCoverageCampaign(t *testing.T) {
+	t.Parallel()
 	report, err := BuildReport(Result{}, "matrix")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if report.CoverageCampaign == nil || report.CoverageCampaign.TargetModels != 11 || report.CoverageCampaign.TotalCells != 66 || report.CoverageCampaign.Status != "blocked" {
 		t.Fatalf("missing blocked campaign: %#v", report.CoverageCampaign)
+	}
+}
+
+func assertCoverageCampaignRendering(t *testing.T, first *CoverageCampaign) {
+	t.Helper()
+	first.Unresolved[0].Reason = "needs <sealed>|official receipt"
+	markdown, html := RenderMarkdown(Report{CoverageCampaign: first}, 0), RenderHTML(Report{CoverageCampaign: first}, 0)
+	for _, want := range []string{"External score coverage", "Reason", "needs <sealed>\\|official receipt", "Inactive/new models", "Added after the frozen 11-target campaign"} {
+		if !strings.Contains(markdown, want) {
+			t.Fatalf("Markdown coverage campaign missing %q:\n%s", want, markdown)
+		}
+	}
+	for _, want := range []string{"External score coverage", "Reason", "needs &lt;sealed&gt;|official receipt", "Inactive/new models", "Added after the frozen 11-target campaign"} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("HTML coverage campaign missing %q:\n%s", want, html)
+		}
 	}
 }

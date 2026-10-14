@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -16,44 +15,11 @@ import (
 )
 
 func TestLLMStatsBenchmarkOffsetPaginationSealingAndGradedAdmission(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	var mu sync.Mutex
 	offsets := []int{}
-	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
-		body := ""
-		switch request.URL.Path {
-		case "/models":
-			rows := make([]string, 21)
-			for i := range rows {
-				rows[i] = fmt.Sprintf(`{"model_id":"m%d","name":"M%d","model_type":"llm","organization":"Lab","is_open":true}`, i, i)
-			}
-			body = "[" + strings.Join(rows, ",") + "]"
-		case "/full":
-			body = "[]"
-		case "/indexes":
-			body = "{}"
-		case "/benchmarks":
-			body = `[{"benchmark_id":"gpqa","name":"GPQA","max_score":1,"model_count":21}]`
-		case "/benchmarks/gpqa":
-			offset, _ := strconv.Atoi(request.URL.Query().Get("offset"))
-			mu.Lock()
-			offsets = append(offsets, offset)
-			mu.Unlock()
-			count := 20
-			if offset == 20 {
-				count = 1
-			}
-			entries := make([]string, count)
-			for i := range entries {
-				id := offset + i
-				entries[i] = fmt.Sprintf(`{"model_id":"m%d","organization_id":"lab","benchmark_score":%d,"verified":false,"self_reported":true}`, id, id)
-			}
-			body = fmt.Sprintf(`{"benchmark_id":"gpqa","max_score":1,"total_models":21,"entries":[%s]}`, strings.Join(entries, ","))
-		default:
-			return nil, fmt.Errorf("unexpected request %s", request.URL.String())
-		}
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
-	})}
+	client := llmStatsOffsetFixtureClient(&mu, &offsets)
 	opts := Options{CacheDir: dir, Refresh: true, IngestLLMBenchmarks: true, Client: client, LLMModelsURL: "https://test/models", LLMFullURL: "https://test/full", LLMIndexURL: "https://test/indexes", LLMBenchmarksURL: "https://test/benchmarks", Now: func() time.Time { return time.Unix(1, 0).UTC() }}
 	snapshot, err := fetchLLMStats(context.Background(), opts)
 	if err != nil {
@@ -86,6 +52,7 @@ func TestLLMStatsBenchmarkOffsetPaginationSealingAndGradedAdmission(t *testing.T
 }
 
 func TestLLMStatsBenchmarkPaginationRejectsIncompletePage(t *testing.T) {
+	t.Parallel()
 	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
 		body := `{"benchmark_id":"gpqa","total_models":2,"entries":[]}`
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
@@ -98,6 +65,7 @@ func TestLLMStatsBenchmarkPaginationRejectsIncompletePage(t *testing.T) {
 }
 
 func TestLLMStatsBenchmarkCatalogRejectsSchemaDrift(t *testing.T) {
+	t.Parallel()
 	for _, input := range []string{`[]`, `[{"name":"missing id"}]`, `[{"benchmark_id":1,"name":"bad type"}]`} {
 		if _, err := decodeLLMStatsBenchmarkCatalog([]byte(input)); err == nil {
 			t.Fatalf("schema drift accepted: %s", input)

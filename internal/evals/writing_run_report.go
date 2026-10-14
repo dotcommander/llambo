@@ -1,17 +1,10 @@
 package evals
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 )
 
 // Repeated string literals consolidated by goconst.
@@ -20,6 +13,7 @@ const (
 	success1          = "success"
 )
 
+// BuildWritingRunReport derives scores and costs from the recorded run outcomes.
 func BuildWritingRunReport(manifest WritingRunManifest, adapter WritingBenchmarkAdapter, generations []WritingGenerationRecord, judgments []WritingJudgmentRecord, complete bool) WritingRunReport {
 	report := WritingRunReport{
 		SchemaVersion: WritingRunSchemaVersion,
@@ -39,67 +33,30 @@ func BuildWritingRunReport(manifest WritingRunManifest, adapter WritingBenchmark
 	if specialized, ok := adapter.(writingRunReportAdapter); ok {
 		return specialized.buildRunReport(report, generations, judgments)
 	}
-	type accumulator struct {
-		total int
-		count int
-	}
-	byModel := make(map[string]*accumulator)
-	byPrompt := make(map[string]*accumulator)
-	promptGeneration := make(map[string]WritingGenerationRecord)
+	state := writingReportAccumulation{byModel: make(map[string]*writingScoreAccumulator), byPrompt: make(map[string]*writingScoreAccumulator), promptGeneration: make(map[string]WritingGenerationRecord)}
 	for _, record := range judgments {
-		report.ObservedCostUSD += record.Usage.CostUSD
-		if record.Status != success1 {
-			report.JudgmentFailures++
-			continue
-		}
-		results := record.Results
-		if len(results) == 0 {
-			results = []WritingCriterionJudgment{{CriterionID: record.CriterionID, Criterion: record.Criterion, Score: record.Score, Reason: record.Reason}}
-		}
-		generation := generationByKey(generations, record.GenerationKey)
-		key := generation.Provider + "\x00" + generation.Model
-		entry := byModel[key]
-		if entry == nil {
-			entry = &accumulator{}
-			byModel[key] = entry
-		}
-		for _, result := range results {
-			report.Judgments++
-			entry.total += result.Score
-			entry.count++
-		}
-		promptEntry := byPrompt[generation.Key]
-		if promptEntry == nil {
-			promptEntry = &accumulator{}
-			byPrompt[generation.Key] = promptEntry
-			promptGeneration[generation.Key] = generation
-		}
-		for _, result := range results {
-			promptEntry.total += result.Score
-			promptEntry.count++
-			report.CriterionScores = append(report.CriterionScores, WritingCriterionScore{Provider: generation.Provider, Model: generation.Model, PromptID: generation.PromptID, Iteration: generation.Iteration, CriterionID: result.CriterionID, Score: result.Score, Applicable: result.Applicable, Evidence: append([]ProseEvidenceSpan(nil), result.Evidence...), Reason: result.Reason})
-		}
+		state.consume(&report, generations, record)
 	}
-	keys := make([]string, 0, len(byModel))
-	for key := range byModel {
+	keys := make([]string, 0, len(state.byModel))
+	for key := range state.byModel {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
 	for _, key := range keys {
 		provider, model, _ := strings.Cut(key, "\x00")
-		entry := byModel[key]
+		entry := state.byModel[key]
 		if entry.count > 0 {
 			report.Scores = append(report.Scores, WritingScore{Provider: provider, Model: model, Score: float64(entry.total) / float64(entry.count), Judgments: entry.count})
 		}
 	}
-	promptKeys := make([]string, 0, len(byPrompt))
-	for key := range byPrompt {
+	promptKeys := make([]string, 0, len(state.byPrompt))
+	for key := range state.byPrompt {
 		promptKeys = append(promptKeys, key)
 	}
 	sort.Strings(promptKeys)
 	for _, key := range promptKeys {
-		generation := promptGeneration[key]
-		entry := byPrompt[key]
+		generation := state.promptGeneration[key]
+		entry := state.byPrompt[key]
 		if entry.count == 0 {
 			continue
 		}
@@ -113,36 +70,7 @@ func BuildWritingRunReport(manifest WritingRunManifest, adapter WritingBenchmark
 		a, b := report.CriterionScores[i], report.CriterionScores[j]
 		return strings.Join([]string{a.Provider, a.Model, a.PromptID, strconv.Itoa(a.Iteration), a.CriterionID}, "\x00") < strings.Join([]string{b.Provider, b.Model, b.PromptID, strconv.Itoa(b.Iteration), b.CriterionID}, "\x00")
 	})
-	type domainAccumulator struct {
-		total float64
-		count int
-	}
-	byDomain := make(map[string]*domainAccumulator)
-	for _, prompt := range report.PromptScores {
-		for _, domain := range []string{domainLabel("domain1", prompt.Domain1), domainLabel("domain2", prompt.Domain2)} {
-			if domain == "" {
-				continue
-			}
-			key := strings.Join([]string{prompt.Provider, prompt.Model, domain}, "\x00")
-			entry := byDomain[key]
-			if entry == nil {
-				entry = &domainAccumulator{}
-				byDomain[key] = entry
-			}
-			entry.total += prompt.Score
-			entry.count++
-		}
-	}
-	domainKeys := make([]string, 0, len(byDomain))
-	for key := range byDomain {
-		domainKeys = append(domainKeys, key)
-	}
-	sort.Strings(domainKeys)
-	for _, key := range domainKeys {
-		parts := strings.Split(key, "\x00")
-		entry := byDomain[key]
-		report.DomainScores = append(report.DomainScores, WritingDomainScore{Provider: parts[0], Model: parts[1], Domain: parts[2], Score: entry.total / float64(entry.count), Prompts: entry.count})
-	}
+	appendWritingDomainScores(&report)
 	return report
 }
 
@@ -192,7 +120,8 @@ func buildProseScreenRunReport(report WritingRunReport, generations []WritingGen
 				caps++
 			}
 		}
-		mean, median, min, max := proseScreenDistribution(values)
+		stats := proseScreenDistribution(values)
+		mean, median, min, max := stats.mean, stats.median, stats.min, stats.max
 		report.Scores = append(report.Scores, WritingScore{Provider: provider, Model: model, Score: mean, Judgments: len(values)})
 		report.ModelAggregates = append(report.ModelAggregates, WritingModelAggregate{Version: "prose-evaluation-aggregate-v2", Provider: provider, Model: model, Samples: len(values), Score: mean, MechanicsCaps: caps})
 		report.ModelDispersion = append(report.ModelDispersion, WritingModelDispersion{Provider: provider, Model: model, Samples: len(values), Mean: mean, Median: median, Min: min, Max: max, Spread: max - min, InsufficientSample: len(values) < 2})
@@ -208,23 +137,28 @@ func buildProseScreenRunReport(report WritingRunReport, generations []WritingGen
 	return report
 }
 
-func proseScreenDistribution(values []float64) (mean, median, min, max float64) {
+type proseScreenStatistics struct {
+	mean, median, min, max float64
+}
+
+func proseScreenDistribution(values []float64) proseScreenStatistics {
+	var stats proseScreenStatistics
 	if len(values) == 0 {
-		return 0, 0, 0, 0
+		return stats
 	}
 	for _, value := range values {
-		mean += value
+		stats.mean += value
 	}
-	mean /= float64(len(values))
+	stats.mean /= float64(len(values))
 	sorted := append([]float64(nil), values...)
 	sort.Float64s(sorted)
-	min, max = sorted[0], sorted[len(sorted)-1]
+	stats.min, stats.max = sorted[0], sorted[len(sorted)-1]
 	middle := len(sorted) / 2
-	median = sorted[middle]
+	stats.median = sorted[middle]
 	if len(sorted)%2 == 0 {
-		median = (sorted[middle-1] + sorted[middle]) / 2
+		stats.median = (sorted[middle-1] + sorted[middle]) / 2
 	}
-	return mean, median, min, max
+	return stats
 }
 
 func domainLabel(level, value string) string {
@@ -303,100 +237,6 @@ func RenderWritingRunMarkdown(report WritingRunReport) string {
 		out.WriteString("\n> This is a local rubric score. It is not the official EQ-Bench Elo, Glicko, or leaderboard result.\n")
 	}
 	return out.String()
-}
-
-func WriteWritingRunArtifacts(dir string, manifest WritingRunManifest, adapter WritingBenchmarkAdapter, generations []WritingGenerationRecord, judgments []WritingJudgmentRecord, complete bool, now time.Time) (WritingRunReceipt, error) {
-	if _, err := os.Stat(filepath.Join(dir, "receipt.json")); err == nil {
-		return WritingRunReceipt{}, errors.New("completed writing output is immutable; use a new --output-dir")
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return WritingRunReceipt{}, err
-	}
-	for _, name := range []string{reportJSON1, reportMd, qualityImportJSON} {
-		if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
-			return WritingRunReceipt{}, fmt.Errorf("writing output has %s without a receipt; preserve it and use a new --output-dir", name)
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return WritingRunReceipt{}, err
-		}
-	}
-	report := BuildWritingRunReport(manifest, adapter, generations, judgments, complete)
-	reportJSON, err := json.MarshalIndent(report, "", "  ")
-	if err != nil {
-		return WritingRunReceipt{}, err
-	}
-	reportJSON = append(reportJSON, '\n')
-	reportMarkdown := []byte(RenderWritingRunMarkdown(report))
-	quality := make([]WritingQualityImportRecord, 0, len(report.Scores))
-	if complete && !report.PreScreenOnly {
-		for _, score := range report.Scores {
-			quality = append(quality, WritingQualityImportRecord{
-				Provider: score.Provider,
-				Model:    score.Model,
-				Task:     report.ScoreIdentity,
-				Score:    score.Score / 10,
-				Source:   "llambo-writing-run/" + report.RunID,
-				Notes:    fmt.Sprintf("%d local judge criteria; explicit import required", score.Judgments),
-			})
-		}
-	}
-	qualityJSON, err := json.MarshalIndent(quality, "", "  ")
-	if err != nil {
-		return WritingRunReceipt{}, err
-	}
-	qualityJSON = append(qualityJSON, '\n')
-	artifacts := map[string][]byte{
-		reportJSON1:       reportJSON,
-		reportMd:          reportMarkdown,
-		qualityImportJSON: qualityJSON,
-	}
-	hashes := make(map[string]string, len(artifacts))
-	for name, data := range artifacts {
-		if err := writeSyncedBytes(filepath.Join(dir, name), data); err != nil {
-			return WritingRunReceipt{}, fmt.Errorf("write %s: %w", name, err)
-		}
-		sum := sha256.Sum256(data)
-		hashes[name] = hex.EncodeToString(sum[:])
-	}
-	for _, name := range []string{manifestJSON, intentsJsonl, "generations.jsonl", "judgments.jsonl"} {
-		data, err := os.ReadFile(filepath.Join(dir, name))
-		if err != nil {
-			return WritingRunReceipt{}, fmt.Errorf("hash %s: %w", name, err)
-		}
-		sum := sha256.Sum256(data)
-		hashes[name] = hex.EncodeToString(sum[:])
-	}
-	status := partial1
-	if complete && !report.PreScreenOnly {
-		status = completeQuality
-	} else if complete && report.PreScreenOnly {
-		status = "complete_pre_screen"
-	}
-	requested, served, servedJudges := make([]string, 0, len(manifest.Identity.Models)), []string{}, []string{}
-	for _, model := range manifest.Identity.Models {
-		requested = append(requested, model.ID())
-	}
-	for _, record := range generations {
-		if record.Status == success1 {
-			if record.ActualProvider != "" && record.ActualModel != "" {
-				served = append(served, record.ActualProvider+"/"+record.ActualModel)
-			} else {
-				served = append(served, record.Provider+"/"+record.Model)
-			}
-		}
-	}
-	for _, record := range judgments {
-		if record.Status == success1 {
-			if record.ActualProvider != "" && record.ActualModel != "" {
-				servedJudges = append(servedJudges, record.ActualProvider+"/"+record.ActualModel)
-			} else {
-				servedJudges = append(servedJudges, record.JudgeProvider+"/"+record.JudgeModel)
-			}
-		}
-	}
-	receipt := WritingRunReceipt{SchemaVersion: WritingRunSchemaVersion, RunID: manifest.RunID, IdentitySHA256: WritingRunIdentityHash(manifest), InputSHA256: manifest.Identity.InputSHA256, RequestedModels: sortedUnique(requested), ServedModels: sortedUnique(served), RequestedJudge: manifest.Identity.Judge.ID(), ServedJudges: sortedUnique(servedJudges), CompletedAt: now.UTC(), Status: status, Report: report, Artifacts: hashes}
-	if err := writeSyncedJSON(filepath.Join(dir, "receipt.json"), receipt); err != nil {
-		return WritingRunReceipt{}, fmt.Errorf("write receipt: %w", err)
-	}
-	return receipt, nil
 }
 
 func writeSyncedBytes(path string, data []byte) error {

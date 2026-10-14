@@ -53,24 +53,7 @@ func projectGeminiProseSchemaNode(node, root any, resolving map[string]bool) (an
 	switch value := node.(type) {
 	case map[string]any:
 		if rawReference, ok := value["$ref"]; ok {
-			reference, ok := rawReference.(string)
-			if !ok || strings.TrimSpace(reference) == "" {
-				return nil, errors.New("$ref must be a non-empty string")
-			}
-			if len(value) != 1 {
-				return nil, fmt.Errorf("$ref %q must not have sibling keywords", reference)
-			}
-			if resolving[reference] {
-				return nil, fmt.Errorf("cyclic $ref %q", reference)
-			}
-			target, err := resolveLocalSchemaReference(root, reference)
-			if err != nil {
-				return nil, err
-			}
-			resolving[reference] = true
-			projected, err := projectGeminiProseSchemaNode(target, root, resolving)
-			delete(resolving, reference)
-			return projected, err
+			return projectGeminiProseReference(value, rawReference, root, resolving)
 		}
 
 		projected := make(map[string]any, len(value))
@@ -98,6 +81,27 @@ func projectGeminiProseSchemaNode(node, root any, resolving map[string]bool) (an
 	default:
 		return value, nil
 	}
+}
+
+func projectGeminiProseReference(value map[string]any, rawReference, root any, resolving map[string]bool) (any, error) {
+	reference, ok := rawReference.(string)
+	if !ok || strings.TrimSpace(reference) == "" {
+		return nil, errors.New("$ref must be a non-empty string")
+	}
+	if len(value) != 1 {
+		return nil, fmt.Errorf("$ref %q must not have sibling keywords", reference)
+	}
+	if resolving[reference] {
+		return nil, fmt.Errorf("cyclic $ref %q", reference)
+	}
+	target, err := resolveLocalSchemaReference(root, reference)
+	if err != nil {
+		return nil, err
+	}
+	resolving[reference] = true
+	projected, err := projectGeminiProseSchemaNode(target, root, resolving)
+	delete(resolving, reference)
+	return projected, err
 }
 
 func resolveLocalSchemaReference(root any, reference string) (any, error) {

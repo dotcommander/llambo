@@ -10,6 +10,7 @@ import (
 )
 
 func TestBuiltInProjectionRegistryHasReviewedRows(t *testing.T) {
+	t.Parallel()
 	registry, err := loadProjectionRegistry("")
 	if err != nil {
 		t.Fatal(err)
@@ -42,13 +43,14 @@ func TestBuiltInProjectionRegistryHasReviewedRows(t *testing.T) {
 }
 
 func TestBuildReportAppendsProjectedRowsOutsideFormulaPopulation(t *testing.T) {
+	t.Parallel()
 	registry, err := loadProjectionRegistry("")
 	if err != nil {
 		t.Fatal(err)
 	}
 	models := make([]Model, 0, len(registry.Projections))
 	for i, projection := range registry.Projections {
-		model := externalTestModel(projection.SourceKey, float64(30+i*10), 60, 60, 60, 60)
+		model := externalTestModel(projection.SourceKey, externalModelMetrics{float64(30 + i*10), 60, 60, 60, 60})
 		benchmark := model.Benchmarks["swe-bench-verified"]
 		benchmark.Version = "public-leaderboard"
 		model.Benchmarks["swe-bench-verified"] = benchmark
@@ -65,27 +67,12 @@ func TestBuildReportAppendsProjectedRowsOutsideFormulaPopulation(t *testing.T) {
 		t.Fatalf("unexpected projection diagnostics: %#v", report.Projections)
 	}
 	for _, projection := range registry.Projections {
-		row, ok := reportModelByKey(report.Models, projection.ArtifactKey)
-		if !ok || row.IdentityMatch != IdentityMatchProjected || row.Projection == nil {
-			t.Fatalf("projection %q missing or unlabeled: %#v", projection.ArtifactKey, row)
-		}
-		if row.Projection.SourceKey != projection.SourceKey || row.Projection.Confidence != projection.Confidence {
-			t.Fatalf("projection provenance mismatch: %#v", row.Projection)
-		}
-		if row.Projection.Basis != projection.Basis || row.Projection.ReviewedAt != projection.ReviewedAt {
-			t.Fatalf("projection review provenance mismatch: %#v", row.Projection)
-		}
-		source, _ := reportModelByKey(report.Models, projection.SourceKey)
-		if row.LlamboScores["coding"].Score != source.LlamboScores["coding"].Score || row.LlamboScores["coding"].TrustedCoverage != source.LlamboScores["coding"].TrustedCoverage*projectionMultiplier(row.Projection) {
-			t.Fatalf("projection was not confidence-calibrated: projected=%#v source=%#v", row.LlamboScores["coding"], source.LlamboScores["coding"])
-		}
-		if row.LlamboScores["coding"].Confidence != "low" {
-			t.Fatalf("projection confidence was not capped at low: %#v", row.LlamboScores["coding"])
-		}
+		assertProjectedReportRow(t, report, projection)
 	}
 }
 
 func TestProjectionLeavesMissingCategoriesUnresolved(t *testing.T) {
+	t.Parallel()
 	source := ReportModel{
 		Key: "upstream", Name: "Upstream", LlamboScores: map[string]*LlamboScore{
 			"agents": {Score: 90, Coverage: .5, TrustedCoverage: .5, Confidence: "medium", Families: []string{"tool-api-orchestration"}},
@@ -114,7 +101,8 @@ func TestProjectionLeavesMissingCategoriesUnresolved(t *testing.T) {
 }
 
 func TestMissingProjectionSourceIsReported(t *testing.T) {
-	report, err := BuildReport(Result{Models: []Model{externalTestModel("gpt-oss-20b-high", 50, 50, 50, 50, 50)}}, "coding")
+	t.Parallel()
+	report, err := BuildReport(Result{Models: []Model{externalTestModel("gpt-oss-20b-high", externalModelMetrics{50, 50, 50, 50, 50})}}, "coding")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,6 +115,7 @@ func TestMissingProjectionSourceIsReported(t *testing.T) {
 }
 
 func TestProjectionDeepCopyDoesNotMutateUpstream(t *testing.T) {
+	t.Parallel()
 	disagreement := 4.0
 	price := 2.0
 	source := ReportModel{
@@ -159,6 +148,7 @@ func TestProjectionDeepCopyDoesNotMutateUpstream(t *testing.T) {
 }
 
 func TestProjectionRemovesHostedOperationalEvidence(t *testing.T) {
+	t.Parallel()
 	price, speed, latency := 2.0, 80.0, 0.5
 	source := ReportModel{
 		Key: "upstream", Name: "Upstream", Open: boolPtr(false),
@@ -173,22 +163,14 @@ func TestProjectionRemovesHostedOperationalEvidence(t *testing.T) {
 		t.Fatal(err)
 	}
 	projected := rows[1]
-	if projected.Open != nil || projected.Scores["price"] != nil || projected.Scores["speed"] != nil {
-		t.Fatalf("projection retained hosted operational scores: %#v", projected)
-	}
-	if _, ok := projected.MetricPercentiles["aa_output_price"]; ok {
-		t.Fatalf("projection retained hosted operational percentile: %#v", projected.MetricPercentiles)
-	}
-	if projected.LLMStats.InputPrice != nil || projected.LLMStats.OutputPrice != nil || projected.LLMStats.Throughput != nil || projected.LLMStats.Latency != nil ||
-		projected.AA.InputPrice != nil || projected.AA.OutputPrice != nil || projected.AA.OutputTokensPS != nil || projected.AA.TTFTSeconds != nil || projected.AA.E2ESeconds != nil {
-		t.Fatalf("projection retained hosted operational raw values: %#v %#v", projected.LLMStats, projected.AA)
-	}
+	assertNoHostedProjectionMetrics(t, projected)
 	if projected.LlamboScores["coding"] == nil || projected.LlamboScores["coding"].Score != 70 || projected.LlamboScores["coding"].Confidence != "low" || projected.MetricPercentiles["aa_intelligence_general"] != 70 {
 		t.Fatal("projection removed capability evidence")
 	}
 }
 
 func TestProjectionRejectsCanonicalKeyCollision(t *testing.T) {
+	t.Parallel()
 	rows := []ReportModel{{Key: "upstream", Scores: map[string]*ExternalScore{}}}
 	if _, _, err := appendProjectedRows(rows, []projectionSpec{{ArtifactKey: "upstream", SourceKey: "upstream", Confidence: "low"}}); err == nil {
 		t.Fatal("expected canonical key collision error")
@@ -196,6 +178,7 @@ func TestProjectionRejectsCanonicalKeyCollision(t *testing.T) {
 }
 
 func TestReplacementProjectionRegistryIsDeterministicallyOrdered(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "projections.json")
 	data := []byte(`{"version":1,"projections":[{"artifact_key":"z","source_key":"s","confidence":"low","basis":"reviewed","reviewed_at":"2026-07-10T00:00:00Z"},{"artifact_key":"a","source_key":"s","confidence":"medium","basis":"reviewed","reviewed_at":"2026-07-10T00:00:00Z"}]}`)
 	if err := os.WriteFile(path, data, 0o600); err != nil {
@@ -208,7 +191,7 @@ func TestReplacementProjectionRegistryIsDeterministicallyOrdered(t *testing.T) {
 	if got := []string{registry.Projections[0].ArtifactKey, registry.Projections[1].ArtifactKey}; !slices.Equal(got, []string{"a", "z"}) {
 		t.Fatalf("replacement registry order is nondeterministic: %v", got)
 	}
-	report, err := BuildReportWithProjectionFile(Result{Models: []Model{externalTestModel("s", 50, 50, 50, 50, 50)}}, "coding", path)
+	report, err := BuildReportWithProjectionFile(Result{Models: []Model{externalTestModel("s", externalModelMetrics{50, 50, 50, 50, 50})}}, "coding", path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,6 +201,7 @@ func TestReplacementProjectionRegistryIsDeterministicallyOrdered(t *testing.T) {
 }
 
 func TestRenderMarkdownKeepsTrackedProjectionsOutsideCanonicalLimit(t *testing.T) {
+	t.Parallel()
 	report := Report{
 		RankingProfile: "coding",
 		Projections:    ProjectionDiagnostics{RegistrySource: "embedded", Version: 1, Configured: 1, Applied: 1},
@@ -248,4 +232,39 @@ func reportModelByKey(rows []ReportModel, key string) (ReportModel, bool) {
 		}
 	}
 	return ReportModel{}, false
+}
+
+func assertProjectedReportRow(t *testing.T, report Report, projection projectionSpec) {
+	t.Helper()
+	row, ok := reportModelByKey(report.Models, projection.ArtifactKey)
+	if !ok || row.IdentityMatch != IdentityMatchProjected || row.Projection == nil {
+		t.Fatalf("projection %q missing or unlabeled: %#v", projection.ArtifactKey, row)
+	}
+	if row.Projection.SourceKey != projection.SourceKey || row.Projection.Confidence != projection.Confidence {
+		t.Fatalf("projection provenance mismatch: %#v", row.Projection)
+	}
+	if row.Projection.Basis != projection.Basis || row.Projection.ReviewedAt != projection.ReviewedAt {
+		t.Fatalf("projection review provenance mismatch: %#v", row.Projection)
+	}
+	source, _ := reportModelByKey(report.Models, projection.SourceKey)
+	if row.LlamboScores["coding"].Score != source.LlamboScores["coding"].Score || row.LlamboScores["coding"].TrustedCoverage != source.LlamboScores["coding"].TrustedCoverage*projectionMultiplier(row.Projection) {
+		t.Fatalf("projection was not confidence-calibrated: projected=%#v source=%#v", row.LlamboScores["coding"], source.LlamboScores["coding"])
+	}
+	if row.LlamboScores["coding"].Confidence != "low" {
+		t.Fatalf("projection confidence was not capped at low: %#v", row.LlamboScores["coding"])
+	}
+}
+
+func assertNoHostedProjectionMetrics(t *testing.T, projected ReportModel) {
+	t.Helper()
+	if projected.Open != nil || projected.Scores["price"] != nil || projected.Scores["speed"] != nil {
+		t.Fatalf("projection retained hosted operational scores: %#v", projected)
+	}
+	if _, ok := projected.MetricPercentiles["aa_output_price"]; ok {
+		t.Fatalf("projection retained hosted operational percentile: %#v", projected.MetricPercentiles)
+	}
+	if projected.LLMStats.InputPrice != nil || projected.LLMStats.OutputPrice != nil || projected.LLMStats.Throughput != nil || projected.LLMStats.Latency != nil ||
+		projected.AA.InputPrice != nil || projected.AA.OutputPrice != nil || projected.AA.OutputTokensPS != nil || projected.AA.TTFTSeconds != nil || projected.AA.E2ESeconds != nil {
+		t.Fatalf("projection retained hosted operational raw values: %#v %#v", projected.LLMStats, projected.AA)
+	}
 }

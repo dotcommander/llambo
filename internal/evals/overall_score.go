@@ -68,13 +68,7 @@ func ApplyOMLXCategoryScores(report *Report, inventory []OMLXScoreInput) {
 	}
 	// A subset rerank must never leave winner markers inherited from an earlier,
 	// larger population. Clear every row before selecting the frozen inventory.
-	for i := range report.Models {
-		for _, score := range report.Models[i].LlamboScores {
-			if score != nil {
-				score.WinnerStatus = ""
-			}
-		}
-	}
+	clearCategoryWinnerStatuses(report.Models)
 	byKey := make(map[string]int, len(report.Models))
 	for i := range report.Models {
 		byKey[report.Models[i].Key] = i
@@ -86,24 +80,7 @@ func ApplyOMLXCategoryScores(report *Report, inventory []OMLXScoreInput) {
 			index = len(report.Models) - 1
 			byKey[input.Key] = index
 		}
-		row := &report.Models[index]
-		if input.Projection != nil {
-			row.Projection = cloneProjection(input.Projection)
-		}
-		if input.Capabilities != nil {
-			row.LlamboScores = cloneCategoryScores(input.Capabilities)
-		}
-		if row.LlamboScores == nil {
-			row.LlamboScores = map[string]*LlamboScore{}
-		}
-		if row.UnresolvedReasons == nil {
-			row.UnresolvedReasons = map[string]string{}
-		}
-		for _, category := range categorySpecs {
-			if _, ok := row.LlamboScores[category.name]; !ok {
-				row.UnresolvedReasons[category.name] = "no eligible reviewed cached evidence"
-			}
-		}
+		applyOMLXScoreInput(&report.Models[index], input)
 	}
 	selectedRows := make([]ReportModel, 0, len(inventory))
 	for _, input := range inventory {

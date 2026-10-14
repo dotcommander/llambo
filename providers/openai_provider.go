@@ -300,13 +300,13 @@ func (p *OpenAIProvider) chatStreamRequest(ctx context.Context, call chatAttempt
 	}
 	defer p.oc.releaseAttempt(call.backendName, lease)
 
-	reply, emitted, identity, err := executeChatStreamRequestWithIdentity(ctx, lease.Client(), call, onChunk, DefaultChatConfig)
-	result, reqErr := finalizeChatRequest(call, start, reply, err)
-	result.actualProvider = identity.provider
-	result.actualModel = identity.model
+	outcome := executeChatStreamRequestWithIdentity(ctx, lease.Client(), call, onChunk, DefaultChatConfig)
+	result, reqErr := finalizeChatRequest(call, start, outcome.reply, outcome.err)
+	result.actualProvider = outcome.identity.provider
+	result.actualModel = outcome.identity.model
 	result.clientKey = lease.keyForRotation()
 	result.clientGeneration = lease.generationForRotation()
-	return result, emitted, reqErr
+	return result, outcome.emitted, reqErr
 }
 
 func (p *OpenAIProvider) rotateKeyWithErrorForResult(backend string, result chatRequestResult) (bool, error) {

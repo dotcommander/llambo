@@ -23,7 +23,7 @@ func localStoreManifest(t *testing.T, limit int) (LocalRunManifest, LocalInputMa
 		}
 		in.Cases = append(in.Cases, json.RawMessage(fmt.Sprintf(`{"id":"case-%d","prompt":"Do not call a tool.","tools":[{"name":"noop","parameters":{"type":"object"}}],"expected":%s}`, i+1, expected)))
 	}
-	m, err := NewLocalRunManifest("sealed.json", "input-hash", in, "groq/exact", "", "", limit, time.Minute, LocalPricing{Known: true}, time.Unix(100, 0))
+	m, err := NewLocalRunManifest(LocalManifestInput{InputPath: "sealed.json", InputSHA256: "input-hash", Input: in, Model: "groq/exact", Reference: "", Feature: "", Limit: limit, Timeout: time.Minute, Pricing: LocalPricing{Known: true}, CreatedAt: time.Unix(100, 0)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,6 +54,7 @@ func (e *recordingLocalExecutor) Count() int {
 }
 
 func TestLocalRunStoreManifestFirstResumeAndFinalize(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	m, in := localStoreManifest(t, 2)
 	store, err := OpenLocalRunStore(dir, m)
@@ -85,6 +86,11 @@ func TestLocalRunStoreManifestFirstResumeAndFinalize(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	assertLocalRunFinalization(t, store, report, dir)
+}
+
+func assertLocalRunFinalization(t *testing.T, store *LocalRunStore, report LocalReport, dir string) {
+	t.Helper()
 	receipt, err := store.Finalize(report, time.Unix(200, 0))
 	if err != nil {
 		t.Fatal(err)
@@ -98,12 +104,13 @@ func TestLocalRunStoreManifestFirstResumeAndFinalize(t *testing.T) {
 	if err := VerifyLocalReceipt(dir); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := OpenLocalRunStore(dir, m); err == nil {
+	if _, err := OpenLocalRunStore(dir, store.manifest); err == nil {
 		t.Fatal("completed receipt accepted for overwrite")
 	}
 }
 
 func TestLocalRunStorePersistsFailedCallAndRejectsDifferentIdentity(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	m, in := localStoreManifest(t, 1)
 	store, err := OpenLocalRunStore(dir, m)
@@ -128,19 +135,21 @@ func TestLocalRunStorePersistsFailedCallAndRejectsDifferentIdentity(t *testing.T
 }
 
 func TestLocalRunStoreOutputLock(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	m, _ := localStoreManifest(t, 1)
 	first, err := OpenLocalRunStore(dir, m)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = first.Close() }()
+	t.Cleanup(func() { _ = first.Close() })
 	if _, err := OpenLocalRunStore(dir, m); err == nil {
 		t.Fatal("concurrent output owner acquired lock")
 	}
 }
 
 func TestLocalRunStoreRefusesInDoubtRedispatch(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	m, in := localStoreManifest(t, 1)
 	store, err := OpenLocalRunStore(dir, m)
@@ -157,7 +166,7 @@ func TestLocalRunStoreRefusesInDoubtRedispatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = store.Close() }()
+	t.Cleanup(func() { _ = store.Close() })
 	exec := &recordingLocalExecutor{}
 	if _, err := RunStoredLocalEvaluation(context.Background(), m, in, exec, store); err == nil || exec.Count() != 0 {
 		t.Fatalf("in-doubt attempt redispatched: calls=%d err=%v", exec.Count(), err)
@@ -165,6 +174,7 @@ func TestLocalRunStoreRefusesInDoubtRedispatch(t *testing.T) {
 }
 
 func TestCampaignLedgerOwnedRecoveryConcurrencyAndUnknownCost(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "campaign.json")
 	ledger, err := OpenCampaignLedger(path, 10)
 	if err != nil {
@@ -189,34 +199,40 @@ func TestCampaignLedgerOwnedRecoveryConcurrencyAndUnknownCost(t *testing.T) {
 	if _, err := reopened.Reserve(otherOwner, 4, 4); err == nil {
 		t.Fatal("duplicate concurrent identity admitted")
 	}
-	if err := reopened.RecordOwned(owner, nil, "partial"); err != nil {
+	assertCampaignSettlementAndAttemptLimit(t, reopened, owner, otherOwner)
+}
+
+func assertCampaignSettlementAndAttemptLimit(t *testing.T, ledger *CampaignLedger, owner, otherOwner CampaignReservationOwner) {
+	t.Helper()
+	if err := ledger.RecordOwned(owner, nil, "partial"); err != nil {
 		t.Fatal(err)
 	}
-	if math.Abs(reopened.Remaining()-6) > 1e-9 || reopened.Budget.Attempts[0].Status != campaignAttemptUnknownCost || reopened.Budget.Attempts[0].OutcomeStatus != "partial" {
-		t.Fatalf("unknown cost did not retain reservation: %#v", reopened.Budget)
+	if math.Abs(ledger.Remaining()-6) > 1e-9 || ledger.Budget.Attempts[0].Status != campaignAttemptUnknownCost || ledger.Budget.Attempts[0].OutcomeStatus != "partial" {
+		t.Fatalf("unknown cost did not retain reservation: %#v", ledger.Budget)
 	}
 	observed := 1.25
-	if err := reopened.RecordOwned(owner, &observed, "partial"); err != nil {
+	if err := ledger.RecordOwned(owner, &observed, "partial"); err != nil {
 		t.Fatal(err)
 	}
-	if math.Abs(reopened.Remaining()-8.75) > 1e-9 {
-		t.Fatalf("known cost did not settle reservation: %.2f", reopened.Remaining())
+	if math.Abs(ledger.Remaining()-8.75) > 1e-9 {
+		t.Fatalf("known cost did not settle reservation: %.2f", ledger.Remaining())
 	}
-	if _, err := reopened.Reserve(otherOwner, 4, 4); err != nil {
+	if _, err := ledger.Reserve(otherOwner, 4, 4); err != nil {
 		t.Fatal(err)
 	}
-	if err := reopened.RecordOwned(otherOwner, &observed, "partial"); err != nil {
+	if err := ledger.RecordOwned(otherOwner, &observed, "partial"); err != nil {
 		t.Fatal(err)
 	}
 	third := otherOwner
 	third.AttemptID = "attempt-3"
 	third.OutputDir = "/runs/three"
-	if _, err := reopened.Reserve(third, 1, 1); err == nil {
+	if _, err := ledger.Reserve(third, 1, 1); err == nil {
 		t.Fatal("third attempt for run identity admitted")
 	}
 }
 
 func TestCampaignReservationOwnerIsStablePerOutputDirectory(t *testing.T) {
+	t.Parallel()
 	first, err := NewCampaignReservationOwner("run", "identity", "relative-output")
 	if err != nil {
 		t.Fatal(err)

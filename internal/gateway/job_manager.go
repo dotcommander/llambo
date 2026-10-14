@@ -314,31 +314,3 @@ func (m *JobManager) CleanupOldJobs(maxAge time.Duration) int {
 
 	return m.enforceRetentionLocked(time.Now().Add(-maxAge))
 }
-
-// Stats returns job statistics
-func (m *JobManager) Stats() (total, pending, processing, completed, failed, cancelled int) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	total = len(m.jobs)
-	for _, job := range m.jobs {
-		job.mu.RLock()
-		switch job.Status {
-		case JobStatusPending:
-			pending++
-		case JobStatusProcessing:
-			processing++
-		case JobStatusCompleted:
-			completed++
-		case JobStatusFailed:
-			failed++
-		case JobStatusCancelled:
-			cancelled++
-		case JobStatusPartialFailure:
-			// Terminal with mixed per-request outcomes; counted as completed.
-			completed++
-		}
-		job.mu.RUnlock()
-	}
-	return total, pending, processing, completed, failed, cancelled
-}

@@ -3,9 +3,9 @@ package evals
 import (
 	"context"
 	"errors"
-	"io"
 	"net/http"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -13,35 +13,9 @@ import (
 )
 
 func TestFetchSourcesAndFreshCache(t *testing.T) {
+	t.Parallel()
 	var requests atomic.Int64
-	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		requests.Add(1)
-		var body string
-		switch r.URL.Path {
-		case "/models":
-			body = `[{"model_id":"gpt-oss-20b-high","name":"GPT OSS 20B High","model_type":"llm","organization":"Lab","license":"apache_2_0","is_open":true},{"model_id":"closed-llm","name":"Closed LLM","model_type":"llm","organization":"Lab","is_open":false},{"model_id":"not-an-llm","name":"Image","model_type":"image","is_open":false}]`
-		case "/full":
-			body = `[{"model_id":"gpt-oss-20b-high","gpqa_score":0.8,"swe_bench_verified_score":0.7}]`
-		case "/indexes":
-			body = `{"coding":{"models":[{"model_id":"gpt-oss-20b-high","conservative":42,"mu":44,"sigma":1,"rank":2,"games_played":5}]}}`
-		case "/aa":
-			if r.Header.Get("x-api-key") != "secret" {
-				t.Errorf("missing API key")
-			}
-			body = `{"intelligence_index_version":4.1,"pagination":{"page":1,"total_pages":1,"has_more":false},"data":[{"id":"aa-1","name":"GPT OSS 20B High","slug":"gpt-oss-20b","model_creator":{"name":"Lab"},"evaluations":{"artificial_analysis_intelligence_index":30,"artificial_analysis_coding_index":25},"pricing":{"price_1m_input_tokens":1},"performance":{"median_output_tokens_per_second":100}}]}`
-		case "/score.xlsx":
-			body = string(syntheticWritingBenchXLSX(t))
-		case "/creative_writing.js":
-			body = string(syntheticEQBenchCreativeJS())
-		case "/lechmazur-writing.md":
-			body = writingLeaderboardFixture
-		case "/arena-creative.json":
-			body = arenaCreativeFixture
-		default:
-			return &http.Response{StatusCode: http.StatusNotFound, Body: io.NopCloser(strings.NewReader("not found")), Header: make(http.Header)}, nil
-		}
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
-	})}
+	client := fetchSourcesFixtureClient(t, &requests)
 
 	now := time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC)
 	opts := Options{CacheDir: t.TempDir(), AAAPIKey: "secret", Client: client, Now: func() time.Time { return now }, LLMModelsURL: "https://test/models", LLMFullURL: "https://test/full", LLMIndexURL: "https://test/indexes", AAURL: "https://test/aa", WritingBenchURL: "https://test/score.xlsx", EQBenchCreativeURL: "https://test/creative_writing.js", LechMazurWritingURL: "https://test/lechmazur-writing.md", ArenaCreativeURL: "https://test/arena-creative.json"}
@@ -49,32 +23,8 @@ func TestFetchSourcesAndFreshCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Models) != 2 {
-		t.Fatalf("unexpected merged models: %#v", result.Models)
-	}
-	if len(result.ReferenceModels) != 17 || sourceModelCounts(result.ReferenceModels)["writingbench"] != 1 || sourceModelCounts(result.ReferenceModels)["eqbench_creative_v3"] != 1 || sourceModelCounts(result.ReferenceModels)["ifeval_official"] != 8 {
-		t.Fatalf("source-native drift population was not preserved: %#v", result.ReferenceModels)
-	}
-	models := make(map[string]Model, len(result.Models))
-	for _, model := range result.Models {
-		models[model.Key] = model
-	}
-	if models["gpt-oss-20b-high"].AA == nil || models["gpt-oss-20b-high"].LLMStats == nil {
-		t.Fatalf("safe cross-source variant was not merged: %#v", models["gpt-oss-20b-high"])
-	}
-	if models["gpt-oss-20b-high"].IdentityMatch != IdentityMatchNormalized || models["closed-llm"].IdentityMatch != IdentityMatchUnmatched {
-		t.Fatalf("unexpected identity status: %#v", models)
-	}
-	closed := models["closed-llm"]
-	if closed.Open == nil || *closed.Open {
-		t.Fatalf("closed LLM was not retained: %#v", closed)
-	}
-	if len(result.Sources) != 14 || sourceStatusNamed(t, result.Sources, "LLM Stats").Cache != "fetched" || sourceStatusNamed(t, result.Sources, "LLM Stats frozen cohorts").Cache != "unavailable" || sourceStatusNamed(t, result.Sources, "Artificial Analysis").Cache != "fetched" || sourceStatusNamed(t, result.Sources, "WritingBench").Cache != "fetched" || sourceStatusNamed(t, result.Sources, "EQ-Bench Creative v3").Cache != "fetched" || sourceStatusNamed(t, result.Sources, "Lech Mazur Creative Story-Writing").Cache != "fetched" || sourceStatusNamed(t, result.Sources, "Arena Creative Writing").Cache != "fetched" || sourceStatusNamed(t, result.Sources, "Official IFEval").Cache != "frozen" {
-		t.Fatalf("unexpected source status: %#v", result.Sources)
-	}
-	if sourceStatusNamed(t, result.Sources, "WritingBench").ContentSHA == "" || sourceStatusNamed(t, result.Sources, "WritingBench").Methodology == "" || sourceStatusNamed(t, result.Sources, "EQ-Bench Creative v3").CommitSHA == "" || sourceStatusNamed(t, result.Sources, "Official IFEval").Version == "" || sourceStatusNamed(t, result.Sources, "Official IFEval").ContentSHA == "" {
-		t.Fatalf("snapshot provenance was not surfaced in source status: %#v", result.Sources)
-	}
+	assertFetchedSourceModels(t, result)
+	assertFetchedSourceProvenance(t, result)
 	firstRequests := requests.Load()
 	result, err = Fetch(context.Background(), opts)
 	if err != nil {
@@ -83,12 +33,13 @@ func TestFetchSourcesAndFreshCache(t *testing.T) {
 	if requests.Load() != firstRequests {
 		t.Fatalf("fresh cache made requests: before=%d after=%d", firstRequests, requests.Load())
 	}
-	if sourceStatusNamed(t, result.Sources, "LLM Stats").Cache != "fresh" || sourceStatusNamed(t, result.Sources, "LLM Stats frozen cohorts").Cache != "unavailable" || sourceStatusNamed(t, result.Sources, "Artificial Analysis").Cache != "fresh" || sourceStatusNamed(t, result.Sources, "WritingBench").Cache != "fresh" || sourceStatusNamed(t, result.Sources, "EQ-Bench Creative v3").Cache != "fresh" || sourceStatusNamed(t, result.Sources, "Official IFEval").Cache != "frozen" {
+	if !fetchSourceCachesMatch(t, result.Sources, map[string]string{"LLM Stats": "fresh", "LLM Stats frozen cohorts": "unavailable", "Artificial Analysis": "fresh", "WritingBench": "fresh", "EQ-Bench Creative v3": "fresh", "Official IFEval": "frozen"}) {
 		t.Fatalf("expected fresh cache: %#v", result.Sources)
 	}
 }
 
 func TestFetchUsesStaleCacheAndAllowsMissingAAKey(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC)
 	dir := t.TempDir()
 	if err := writeSnapshot(filepath.Join(dir, "llm-stats.json"), sourceSnapshot{FetchedAt: now.Add(-72 * time.Hour), Models: []Model{{Key: "cached", Name: "Cached", LLMStats: &LLMStatsMetrics{}}}}); err != nil {
@@ -108,6 +59,7 @@ func TestFetchUsesStaleCacheAndAllowsMissingAAKey(t *testing.T) {
 }
 
 func TestMergeModelsMatchesUniqueNormalizedIdentity(t *testing.T) {
+	t.Parallel()
 	llm := []Model{{Key: "model", Name: "Model 3.1-Pro", Organization: "Lab", LLMStats: &LLMStatsMetrics{}}}
 	aa := []Model{{Key: "model-3-1-pro", Name: "Model 3.1 Pro", Organization: "Lab", AA: &ArtificialMetrics{}}}
 	merged := mergeModels(llm, aa)
@@ -117,6 +69,7 @@ func TestMergeModelsMatchesUniqueNormalizedIdentity(t *testing.T) {
 }
 
 func TestMergeModelsMatchesReviewedOrganizationAliases(t *testing.T) {
+	t.Parallel()
 	llm := []Model{
 		{Key: "qwen", Name: "Qwen 3.6-27B", Organization: "Alibaba Cloud / Qwen Team", LLMStats: &LLMStatsMetrics{}},
 	}
@@ -128,6 +81,7 @@ func TestMergeModelsMatchesReviewedOrganizationAliases(t *testing.T) {
 }
 
 func TestMergeModelsMarksMatchingSourceKeysExact(t *testing.T) {
+	t.Parallel()
 	llm := []Model{{Key: "model-3.1-pro", Name: "Model 3.1-Pro", Organization: "Lab", LLMStats: &LLMStatsMetrics{}}}
 	aa := []Model{{Key: "model-3-1-pro", Name: "Model 3.1 Pro", Organization: "Lab", AA: &ArtificialMetrics{}}}
 	merged := mergeModels(llm, aa)
@@ -137,6 +91,7 @@ func TestMergeModelsMarksMatchingSourceKeysExact(t *testing.T) {
 }
 
 func TestMergeModelsKeepsAmbiguousDuplicatesSeparate(t *testing.T) {
+	t.Parallel()
 	llm := []Model{
 		{Key: "one", Name: "Model One", Organization: "Lab", LLMStats: &LLMStatsMetrics{}},
 		{Key: "two", Name: "Model One", Organization: "Lab", LLMStats: &LLMStatsMetrics{}},
@@ -154,6 +109,7 @@ func TestMergeModelsKeepsAmbiguousDuplicatesSeparate(t *testing.T) {
 }
 
 func TestMergeModelsPreservesNameQualifiers(t *testing.T) {
+	t.Parallel()
 	llm := []Model{{Key: "command-a", Name: "Command A", Organization: "Cohere", LLMStats: &LLMStatsMetrics{}}}
 	aa := []Model{{Key: "command-a-plus", Name: "Command A+", Organization: "Cohere", AA: &ArtificialMetrics{}}}
 	merged := mergeModels(llm, aa)
@@ -163,6 +119,7 @@ func TestMergeModelsPreservesNameQualifiers(t *testing.T) {
 }
 
 func TestFetchRequiresArtificialAnalysisByDefault(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC)
 	dir := t.TempDir()
 	if err := writeSnapshot(filepath.Join(dir, "llm-stats.json"), sourceSnapshot{FetchedAt: now, Models: []Model{{Key: "cached", Name: "Cached", LLMStats: &LLMStatsMetrics{}}}}); err != nil {
@@ -175,6 +132,7 @@ func TestFetchRequiresArtificialAnalysisByDefault(t *testing.T) {
 }
 
 func TestFetchOfflineUsesOnlyExistingSnapshots(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC)
 	dir := t.TempDir()
 	if err := writeSnapshot(filepath.Join(dir, "llm-stats.json"), sourceSnapshot{FetchedAt: now.Add(-30 * 24 * time.Hour), Models: []Model{{Key: "llm", Name: "LLM", LLMStats: &LLMStatsMetrics{}}}}); err != nil {
@@ -199,12 +157,13 @@ func TestFetchOfflineUsesOnlyExistingSnapshots(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if requests.Load() != 0 || len(result.Models) != 3 || len(result.Sources) != 14 || sourceStatusNamed(t, result.Sources, "LLM Stats").Cache != "cached" || sourceStatusNamed(t, result.Sources, "LLM Stats frozen cohorts").Cache != "unavailable" || sourceStatusNamed(t, result.Sources, "Artificial Analysis").Cache != "cached" || sourceStatusNamed(t, result.Sources, "WritingBench").Cache != "unavailable" || sourceStatusNamed(t, result.Sources, "EQ-Bench Creative v3").Cache != "unavailable" || sourceStatusNamed(t, result.Sources, "Lech Mazur Creative Story-Writing").Cache != "unavailable" || sourceStatusNamed(t, result.Sources, "Arena Creative Writing").Cache != "unavailable" || sourceStatusNamed(t, result.Sources, "Official IFEval").Cache != "frozen" || sourceStatusNamed(t, result.Sources, "LiquidAI LFM2.5-2.6B card").Cache != "stale" {
+	if requests.Load() != 0 || len(result.Models) != 3 || len(result.Sources) != 14 || !fetchSourceCachesMatch(t, result.Sources, map[string]string{"LLM Stats": "cached", "LLM Stats frozen cohorts": "unavailable", "Artificial Analysis": "cached", "WritingBench": "unavailable", "EQ-Bench Creative v3": "unavailable", "Lech Mazur Creative Story-Writing": "unavailable", "Arena Creative Writing": "unavailable", "Official IFEval": "frozen", "LiquidAI LFM2.5-2.6B card": "stale"}) {
 		t.Fatalf("offline fetch touched network or lost cache state: requests=%d result=%#v", requests.Load(), result)
 	}
 }
 
 func TestFetchRefreshOfficialCardsRequestsOnlyPinnedCards(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
 	if err := writeSnapshot(filepath.Join(dir, "llm-stats.json"), sourceSnapshot{FetchedAt: now, Models: []Model{{Key: "llm", Name: "LLM", LLMStats: &LLMStatsMetrics{}}}}); err != nil {
@@ -213,28 +172,25 @@ func TestFetchRefreshOfficialCardsRequestsOnlyPinnedCards(t *testing.T) {
 	if err := writeSnapshot(filepath.Join(dir, "artificial-analysis.json"), sourceSnapshot{FetchedAt: now, Models: []Model{{Key: "aa", Name: "AA", AA: &ArtificialMetrics{}}}}); err != nil {
 		t.Fatal(err)
 	}
-	previousLFM, previousQwen, previousGPT, previousLFMVL, previousGemma := fetchOfficialLFM25Source, fetchOfficialQwen38Source, fetchOfficialGPTOSSSource, fetchOfficialLFMVLSource, fetchOfficialGemmaSource
-	t.Cleanup(func() {
-		fetchOfficialLFM25Source, fetchOfficialQwen38Source, fetchOfficialGPTOSSSource, fetchOfficialLFMVLSource, fetchOfficialGemmaSource = previousLFM, previousQwen, previousGPT, previousLFMVL, previousGemma
-	})
+	fetchers := officialCardFetchers{}
 	var requested []string
-	fetchOfficialLFM25Source = func(_ context.Context, opts Options) (sourceSnapshot, error) {
+	fetchers[officialLFM25Card] = func(_ context.Context, opts Options) (sourceSnapshot, error) {
 		requested = append(requested, opts.OfficialLFMURL)
 		return validOfficialSnapshot(t, "official-lfm25-2.6b"), nil
 	}
-	fetchOfficialQwen38Source = func(_ context.Context, opts Options) (sourceSnapshot, error) {
+	fetchers[officialQwen38Card] = func(_ context.Context, opts Options) (sourceSnapshot, error) {
 		requested = append(requested, opts.OfficialQwenURL)
 		return validOfficialSnapshot(t, "official-qwen3.8-27b"), nil
 	}
-	fetchOfficialGPTOSSSource = func(_ context.Context, opts Options) (sourceSnapshot, error) {
+	fetchers[officialGPTOSSCard] = func(_ context.Context, opts Options) (sourceSnapshot, error) {
 		requested = append(requested, opts.OfficialGPTOSSURL)
 		return validOfficialSnapshot(t, "official-gpt-oss-20b"), nil
 	}
-	fetchOfficialLFMVLSource = func(_ context.Context, opts Options) (sourceSnapshot, error) {
+	fetchers[officialLFMVLCard] = func(_ context.Context, opts Options) (sourceSnapshot, error) {
 		requested = append(requested, opts.OfficialLFMVLURL)
 		return validOfficialSnapshot(t, "official-lfm25-vl-3b"), nil
 	}
-	fetchOfficialGemmaSource = func(_ context.Context, opts Options) (sourceSnapshot, error) {
+	fetchers[officialGemma4Card] = func(_ context.Context, opts Options) (sourceSnapshot, error) {
 		requested = append(requested, opts.OfficialGemmaURL)
 		return validOfficialSnapshot(t, "official-gemma4"), nil
 	}
@@ -243,46 +199,44 @@ func TestFetchRefreshOfficialCardsRequestsOnlyPinnedCards(t *testing.T) {
 		return validOfficialSnapshot(t, officialLFM25A1BCacheName), nil
 	}
 	var unexpected atomic.Int64
-	result, err := Fetch(context.Background(), Options{CacheDir: dir, RefreshOfficialCards: true, Now: func() time.Time { return now }, officialLFM8Fetcher: lfm8Fetcher, Client: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+	result, err := fetchWithOfficialCardFetchers(context.Background(), Options{CacheDir: dir, RefreshOfficialCards: true, Now: func() time.Time { return now }, officialLFM8Fetcher: lfm8Fetcher, Client: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		unexpected.Add(1)
 		return nil, errors.New("non-card source must remain cache-only")
-	})}})
+	})}}, fetchers)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if unexpected.Load() != 0 || len(requested) != 6 || requested[0] != "https://huggingface.co/LiquidAI/LFM2.5-2.6B/resolve/a334ee78cd38458bb71eda24109ac42dcec1309d/README.md" || requested[1] != "https://huggingface.co/Qwen/Qwen3.8-27B/resolve/1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0/README.md" || requested[2] != "https://arxiv.org/html/2508.10925v1" || requested[3] != "https://huggingface.co/LiquidAI/LFM2.5-VL-3B/resolve/5a414ead75d45db003906d06fb62bd5b6846cec0/README.md" || requested[4] != "https://huggingface.co/google/gemma-4-31B/resolve/5bbc2fb1c1b2c611d06e3d9f23c170ba21659d89/README.md" || requested[5] != lfm25A1BURL {
+	if unexpected.Load() != 0 || len(requested) != 6 || !slices.Equal(requested, []string{"https://huggingface.co/LiquidAI/LFM2.5-2.6B/resolve/a334ee78cd38458bb71eda24109ac42dcec1309d/README.md", "https://huggingface.co/Qwen/Qwen3.8-27B/resolve/1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0/README.md", "https://arxiv.org/html/2508.10925v1", "https://huggingface.co/LiquidAI/LFM2.5-VL-3B/resolve/5a414ead75d45db003906d06fb62bd5b6846cec0/README.md", "https://huggingface.co/google/gemma-4-31B/resolve/5bbc2fb1c1b2c611d06e3d9f23c170ba21659d89/README.md", lfm25A1BURL}) {
 		t.Fatalf("source-scoped refresh requested unexpected URLs: requests=%#v non-card=%d", requested, unexpected.Load())
 	}
-	if len(result.Sources) != 14 || sourceStatusNamed(t, result.Sources, "LiquidAI LFM2.5-8B-A1B card").Cache != "fetched" || sourceStatusNamed(t, result.Sources, "LiquidAI LFM2.5-2.6B card").Cache != "fetched" || sourceStatusNamed(t, result.Sources, "Qwen3.8-27B card").Cache != "fetched" || sourceStatusNamed(t, result.Sources, "OpenAI gpt-oss model card").Cache != "fetched" || sourceStatusNamed(t, result.Sources, "LiquidAI LFM2.5-VL-3B card").Cache != "fetched" || sourceStatusNamed(t, result.Sources, "Google Gemma 4 model card").Cache != "fetched" {
+	if len(result.Sources) != 14 || !fetchSourceCachesMatch(t, result.Sources, map[string]string{"LiquidAI LFM2.5-8B-A1B card": "fetched", "LiquidAI LFM2.5-2.6B card": "fetched", "Qwen3.8-27B card": "fetched", "OpenAI gpt-oss model card": "fetched", "LiquidAI LFM2.5-VL-3B card": "fetched", "Google Gemma 4 model card": "fetched"}) {
 		t.Fatalf("official card refresh did not retain fetched statuses: %#v", result.Sources)
 	}
 }
 
 func TestFetchRefreshOfficialCardsContinuePastFailure(t *testing.T) {
-	previousLFM, previousQwen, previousGPT, previousLFMVL, previousGemma := fetchOfficialLFM25Source, fetchOfficialQwen38Source, fetchOfficialGPTOSSSource, fetchOfficialLFMVLSource, fetchOfficialGemmaSource
-	t.Cleanup(func() {
-		fetchOfficialLFM25Source, fetchOfficialQwen38Source, fetchOfficialGPTOSSSource, fetchOfficialLFMVLSource, fetchOfficialGemmaSource = previousLFM, previousQwen, previousGPT, previousLFMVL, previousGemma
-	})
+	t.Parallel()
+	fetchers := officialCardFetchers{}
 	now := time.Date(2026, 9, 19, 6, 0, 0, 0, time.UTC)
-	fetchOfficialLFM25Source = func(context.Context, Options) (sourceSnapshot, error) {
+	fetchers[officialLFM25Card] = func(context.Context, Options) (sourceSnapshot, error) {
 		return sourceSnapshot{}, errors.New("card unavailable")
 	}
-	fetchOfficialQwen38Source = func(_ context.Context, opts Options) (sourceSnapshot, error) {
+	fetchers[officialQwen38Card] = func(_ context.Context, opts Options) (sourceSnapshot, error) {
 		return validOfficialSnapshot(t, "official-qwen3.8-27b"), nil
 	}
-	fetchOfficialGPTOSSSource = func(_ context.Context, opts Options) (sourceSnapshot, error) {
+	fetchers[officialGPTOSSCard] = func(_ context.Context, opts Options) (sourceSnapshot, error) {
 		return validOfficialSnapshot(t, "official-gpt-oss-20b"), nil
 	}
-	fetchOfficialLFMVLSource = func(_ context.Context, opts Options) (sourceSnapshot, error) {
+	fetchers[officialLFMVLCard] = func(_ context.Context, opts Options) (sourceSnapshot, error) {
 		return validOfficialSnapshot(t, "official-lfm25-vl-3b"), nil
 	}
-	fetchOfficialGemmaSource = func(_ context.Context, opts Options) (sourceSnapshot, error) {
+	fetchers[officialGemma4Card] = func(_ context.Context, opts Options) (sourceSnapshot, error) {
 		return validOfficialSnapshot(t, "official-gemma4"), nil
 	}
 	dir := t.TempDir()
-	_, err := Fetch(context.Background(), Options{CacheDir: dir, RefreshOfficialCards: true, Now: func() time.Time { return now }, officialLFM8Fetcher: func(_ context.Context, opts Options) (sourceSnapshot, error) {
+	_, err := fetchWithOfficialCardFetchers(context.Background(), Options{CacheDir: dir, RefreshOfficialCards: true, Now: func() time.Time { return now }, officialLFM8Fetcher: func(_ context.Context, opts Options) (sourceSnapshot, error) {
 		return validOfficialSnapshot(t, officialLFM25A1BCacheName), nil
-	}})
+	}}, fetchers)
 	if err == nil || !strings.Contains(err.Error(), "official-lfm25-2.6b") || !strings.Contains(err.Error(), "card unavailable") {
 		t.Fatalf("aggregated card failure did not name the failed card and its cause: %v", err)
 	}
@@ -298,29 +252,27 @@ func TestFetchRefreshOfficialCardsContinuePastFailure(t *testing.T) {
 }
 
 func TestRefreshOfficialModelCardsReturnsSuccessfulStatuses(t *testing.T) {
-	previousLFM, previousQwen, previousGPT, previousLFMVL, previousGemma := fetchOfficialLFM25Source, fetchOfficialQwen38Source, fetchOfficialGPTOSSSource, fetchOfficialLFMVLSource, fetchOfficialGemmaSource
-	t.Cleanup(func() {
-		fetchOfficialLFM25Source, fetchOfficialQwen38Source, fetchOfficialGPTOSSSource, fetchOfficialLFMVLSource, fetchOfficialGemmaSource = previousLFM, previousQwen, previousGPT, previousLFMVL, previousGemma
-	})
+	t.Parallel()
+	fetchers := officialCardFetchers{}
 	now := time.Date(2026, 9, 19, 6, 0, 0, 0, time.UTC)
-	fetchOfficialLFM25Source = func(context.Context, Options) (sourceSnapshot, error) {
+	fetchers[officialLFM25Card] = func(context.Context, Options) (sourceSnapshot, error) {
 		return sourceSnapshot{}, errors.New("card unavailable")
 	}
-	fetchOfficialQwen38Source = func(_ context.Context, opts Options) (sourceSnapshot, error) {
+	fetchers[officialQwen38Card] = func(_ context.Context, opts Options) (sourceSnapshot, error) {
 		return validOfficialSnapshot(t, "official-qwen3.8-27b"), nil
 	}
-	fetchOfficialGPTOSSSource = func(_ context.Context, opts Options) (sourceSnapshot, error) {
+	fetchers[officialGPTOSSCard] = func(_ context.Context, opts Options) (sourceSnapshot, error) {
 		return validOfficialSnapshot(t, "official-gpt-oss-20b"), nil
 	}
-	fetchOfficialLFMVLSource = func(_ context.Context, opts Options) (sourceSnapshot, error) {
+	fetchers[officialLFMVLCard] = func(_ context.Context, opts Options) (sourceSnapshot, error) {
 		return validOfficialSnapshot(t, "official-lfm25-vl-3b"), nil
 	}
-	fetchOfficialGemmaSource = func(_ context.Context, opts Options) (sourceSnapshot, error) {
+	fetchers[officialGemma4Card] = func(_ context.Context, opts Options) (sourceSnapshot, error) {
 		return validOfficialSnapshot(t, "official-gemma4"), nil
 	}
-	statuses, err := refreshOfficialModelCards(context.Background(), Options{CacheDir: t.TempDir(), Now: func() time.Time { return now }, officialLFM8Fetcher: func(_ context.Context, opts Options) (sourceSnapshot, error) {
+	statuses, err := refreshOfficialModelCardsWithFetchers(context.Background(), Options{CacheDir: t.TempDir(), Now: func() time.Time { return now }, officialLFM8Fetcher: func(_ context.Context, opts Options) (sourceSnapshot, error) {
 		return validOfficialSnapshot(t, officialLFM25A1BCacheName), nil
-	}})
+	}}, fetchers)
 	if err == nil || !strings.Contains(err.Error(), "official-lfm25-2.6b") {
 		t.Fatalf("expected aggregated error naming the failed card: %v", err)
 	}
@@ -335,6 +287,7 @@ func TestRefreshOfficialModelCardsReturnsSuccessfulStatuses(t *testing.T) {
 }
 
 func TestFetchOfficialCardRefreshConflictsAreRejected(t *testing.T) {
+	t.Parallel()
 	for _, opts := range []Options{{Refresh: true, RefreshOfficialCards: true}, {Offline: true, RefreshOfficialCards: true}} {
 		if _, err := Fetch(context.Background(), opts); err == nil {
 			t.Fatalf("conflicting official-card refresh options were accepted: %#v", opts)
@@ -343,6 +296,7 @@ func TestFetchOfficialCardRefreshConflictsAreRejected(t *testing.T) {
 }
 
 func TestMergeRefreshedStatusesMatchesByNameNotOffset(t *testing.T) {
+	t.Parallel()
 	// Deliberately reorder the card rows relative to refresh order to prove the
 	// merge keys on the source name instead of a positional offset.
 	result := []SourceStatus{
@@ -375,6 +329,7 @@ func TestMergeRefreshedStatusesMatchesByNameNotOffset(t *testing.T) {
 }
 
 func TestMergeRefreshedStatusesFailsClosedOnUnknownSource(t *testing.T) {
+	t.Parallel()
 	result := []SourceStatus{{Name: "LLM Stats", Cache: "cached"}}
 	refreshed := []SourceStatus{{Name: "Unknown future card", Cache: "fetched"}}
 	err := mergeRefreshedStatuses(result, refreshed)

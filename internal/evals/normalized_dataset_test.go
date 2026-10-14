@@ -10,6 +10,7 @@ import (
 )
 
 func TestNormalizedDatasetSemanticDeduplicationAndEditorialReranking(t *testing.T) {
+	t.Parallel()
 	result, report := normalizedDatasetFixture()
 	dataset := buildNormalizedDataset(result, report)
 
@@ -27,31 +28,11 @@ func TestNormalizedDatasetSemanticDeduplicationAndEditorialReranking(t *testing.
 		t.Fatalf("lower-authority aggregator outranked benchmark owner: %#v", observation)
 	}
 
-	var rankedModel string
-	for _, score := range dataset.Scores {
-		if score.Category == "writing" && score.EditorialRank == 1 {
-			rankedModel = score.ModelKey
-			break
-		}
-	}
-	if rankedModel != "model-a" {
-		t.Fatalf("editorial score rank did not follow score descending: %#v", dataset.Scores)
-	}
-	if dataset.Scores[0].Category != "agents" || dataset.Scores[len(dataset.Scores)-1].Category != "writing" {
-		t.Fatalf("category order was not stable: %#v", dataset.Scores)
-	}
-	ranksByCategory := make(map[string][]int)
-	for _, score := range dataset.Scores {
-		ranksByCategory[score.Category] = append(ranksByCategory[score.Category], score.EditorialRank)
-	}
-	for category, ranks := range ranksByCategory {
-		if len(ranks) != 2 || ranks[0] != 1 || ranks[1] != 2 {
-			t.Fatalf("editorial ranks are not unique and ordered for %s: %#v", category, ranks)
-		}
-	}
+	assertNormalizedEditorialRanks(t, dataset)
 }
 
 func TestTaggedSourceModelsPreserveSourceNativeRows(t *testing.T) {
+	t.Parallel()
 	score := 10.0
 	model := Model{Key: "source", Benchmarks: map[string]BenchmarkResult{
 		"gpqa": {Score: &score, SourceID: "source"},
@@ -64,6 +45,7 @@ func TestTaggedSourceModelsPreserveSourceNativeRows(t *testing.T) {
 }
 
 func TestWriteNormalizedDatasetWritesManifestAndHashedArtifacts(t *testing.T) {
+	t.Parallel()
 	result, report := normalizedDatasetFixture()
 	dir := filepath.Join(t.TempDir(), "dataset")
 	manifest, err := WriteNormalizedDataset(result, report, dir)
@@ -92,21 +74,7 @@ func TestWriteNormalizedDatasetWritesManifestAndHashedArtifacts(t *testing.T) {
 		t.Fatalf("existing output directory was not rejected: %v", err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(dir, "source_observations.jsonl"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
-	if len(lines) != 1 {
-		t.Fatalf("unexpected JSONL row count %d: %s", len(lines), data)
-	}
-	var row map[string]any
-	if err := json.Unmarshal([]byte(lines[0]), &row); err != nil {
-		t.Fatal(err)
-	}
-	if row["semantic_fingerprint"] == "" || row["candidate_count"].(float64) != 2 {
-		t.Fatalf("unexpected normalized JSONL: %s", data)
-	}
+	assertNormalizedObservationJSONL(t, dir)
 }
 
 func normalizedDatasetFixture() (Result, Report) {
@@ -163,4 +131,49 @@ func normalizedDatasetFixture() (Result, Report) {
 	report.CategoryRankings = buildCategoryRankings(report.Models)
 	applyCategoryWinnerStatuses(report.Models, report.CategoryRankings)
 	return result, report
+}
+
+func assertNormalizedEditorialRanks(t *testing.T, dataset normalizedDataset) {
+	t.Helper()
+	var rankedModel string
+	for _, score := range dataset.Scores {
+		if score.Category == "writing" && score.EditorialRank == 1 {
+			rankedModel = score.ModelKey
+			break
+		}
+	}
+	if rankedModel != "model-a" {
+		t.Fatalf("editorial score rank did not follow score descending: %#v", dataset.Scores)
+	}
+	if dataset.Scores[0].Category != "agents" || dataset.Scores[len(dataset.Scores)-1].Category != "writing" {
+		t.Fatalf("category order was not stable: %#v", dataset.Scores)
+	}
+	ranksByCategory := make(map[string][]int)
+	for _, score := range dataset.Scores {
+		ranksByCategory[score.Category] = append(ranksByCategory[score.Category], score.EditorialRank)
+	}
+	for category, ranks := range ranksByCategory {
+		if len(ranks) != 2 || ranks[0] != 1 || ranks[1] != 2 {
+			t.Fatalf("editorial ranks are not unique and ordered for %s: %#v", category, ranks)
+		}
+	}
+}
+
+func assertNormalizedObservationJSONL(t *testing.T, dir string) {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(dir, "source_observations.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 1 {
+		t.Fatalf("unexpected JSONL row count %d: %s", len(lines), data)
+	}
+	var row map[string]any
+	if err := json.Unmarshal([]byte(lines[0]), &row); err != nil {
+		t.Fatal(err)
+	}
+	if row["semantic_fingerprint"] == "" || row["candidate_count"].(float64) != 2 {
+		t.Fatalf("unexpected normalized JSONL: %s", data)
+	}
 }

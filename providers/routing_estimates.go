@@ -32,7 +32,7 @@ func SimulateRoute(configs map[string]Config, routing RoutingConfig, metrics map
 		healthy = append(healthy, Backend{Name: e.Name, Model: e.Config.Model})
 	}
 
-	candidates := scoreCandidates(configs, healthy, routing, metrics, intent, estimatedTokens)
+	candidates := scoreCandidates(configs, healthy, newCandidateScoring(routing, metrics, intent, estimatedTokens))
 	decision := RouteDecision{
 		Mode:       routing.Mode,
 		Intent:     intent,

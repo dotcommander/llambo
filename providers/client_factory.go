@@ -136,20 +136,11 @@ func (oc *OpenAIClients) rotateKeyForResult(provider string, result chatRequestR
 // rate-limited request. It constructs a candidate before mutating key state,
 // then commits only while that generation is still installed.
 func (oc *OpenAIClients) rotateLeasedKeyWithError(provider, usedKey string, expected *clientGeneration) (bool, error) {
-	if oc.KeyRotator == nil {
+	if oc.KeyRotator == nil || oc.KeyRotator.KeyCount(provider) <= 1 {
 		return false, nil
 	}
-
-	// Only rotate if there are multiple keys
-	if oc.KeyRotator.KeyCount(provider) <= 1 {
-		return false, nil
-	}
-
-	oc.mu.RLock()
-	current := oc.generations[provider]
-	closed := oc.closed
-	oc.mu.RUnlock()
-	if closed || current == nil {
+	current, live := oc.currentGeneration(provider)
+	if !live {
 		return false, nil
 	}
 	if current.key != usedKey || (expected != nil && current != expected) {
@@ -165,28 +156,57 @@ func (oc *OpenAIClients) rotateLeasedKeyWithError(provider, usedKey string, expe
 	if !ok || newKey == "" || newKey == usedKey {
 		return false, nil
 	}
-	cfg := oc.configs[provider]
 
-	client, err := oc.newClient(provider, cfg, newKey)
+	client, err := oc.newClient(provider, oc.configs[provider], newKey)
 	if err != nil {
 		return false, fmt.Errorf("%w: %s: %w", ErrKeyClientInit, provider, err)
 	}
 
-	oc.mu.Lock()
-	if oc.closed || oc.generations[provider] != expected || expected.key != usedKey || !oc.KeyRotator.CommitRateLimit(provider, usedKey, newKey) {
-		oc.mu.Unlock()
-		_ = client.Close()
-		if oc.closed {
-			return false, nil
-		}
+	if oc.commitRotatedClient(provider, usedKey, newKey, expected, client) {
 		return true, nil
+	}
+	if oc.isClosed() {
+		return false, nil
+	}
+	// A concurrent request replaced the generation or committed the key first;
+	// retrying against that replacement is correct and does not advance past it.
+	return true, nil
+}
+
+// currentGeneration returns the provider's live client generation under the
+// read lock, reporting live=false once the owner is closed.
+func (oc *OpenAIClients) currentGeneration(provider string) (*clientGeneration, bool) {
+	oc.mu.RLock()
+	defer oc.mu.RUnlock()
+	if oc.closed {
+		return nil, false
+	}
+	return oc.generations[provider], oc.generations[provider] != nil
+}
+
+// isClosed reports whether the owner has been closed.
+func (oc *OpenAIClients) isClosed() bool {
+	oc.mu.RLock()
+	defer oc.mu.RUnlock()
+	return oc.closed
+}
+
+// commitRotatedClient replaces exactly the expected generation: the candidate
+// client is installed only while that generation is still current, the served
+// key is unchanged, and the key rotation commits. Any lost race or failed
+// commit discards the candidate without advancing key or generation state.
+func (oc *OpenAIClients) commitRotatedClient(provider, usedKey, newKey string, expected *clientGeneration, client whtypes.Provider) bool {
+	oc.mu.Lock()
+	defer oc.mu.Unlock()
+	if oc.closed || oc.generations[provider] != expected || expected.key != usedKey || !oc.KeyRotator.CommitRateLimit(provider, usedKey, newKey) {
+		_ = client.Close()
+		return false
 	}
 	oc.Clients[provider] = client
 	oc.generations[provider] = &clientGeneration{client: client, key: newKey}
 	expected.retired = true
 	oc.closeRetiredGenerationLocked(expected)
-	oc.mu.Unlock()
-	return true, nil
+	return true
 }
 
 func (oc *OpenAIClients) newClient(provider string, cfg Config, key string) (whtypes.Provider, error) {

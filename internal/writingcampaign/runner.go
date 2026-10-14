@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -48,7 +47,32 @@ func BuildPlan(roster Roster, _, _ string, options RunOptions) (Plan, error) {
 	return Plan{Models: len(roster.Models), InitialMaxTokens: options.InitialTokens, LengthRetryMaxTokens: options.RetryTokens, Execute: options.Execute}, nil
 }
 
-func Run(ctx context.Context, client *Client, roster Roster, source, systemPrompt string, options RunOptions) ([]Receipt, Plan, error) {
+// RunInput keeps one campaign's immutable content and execution limits together.
+type RunInput struct {
+	Source       string
+	SystemPrompt string
+	Options      RunOptions
+}
+
+type campaignContent struct {
+	source, systemPrompt, sourceHash, systemHash string
+}
+
+type modelRun struct {
+	model   Model
+	content campaignContent
+	options RunOptions
+}
+
+type campaignExecution struct {
+	content   campaignContent
+	options   RunOptions
+	completed map[string]Receipt
+}
+
+// Run executes or previews one campaign with its sealed content and bounds.
+func Run(ctx context.Context, client *Client, roster Roster, input RunInput) ([]Receipt, Plan, error) {
+	source, systemPrompt, options := input.Source, input.SystemPrompt, input.Options
 	plan, err := BuildPlan(roster, source, systemPrompt, options)
 	if err != nil {
 		return nil, Plan{}, err
@@ -70,103 +94,13 @@ func Run(ctx context.Context, client *Client, roster Roster, source, systemPromp
 	if err != nil {
 		return nil, plan, err
 	}
-	completed := make(map[string]Receipt, len(existing))
-	for _, receipt := range existing {
-		if receipt.Status == "complete" && receipt.SourceSHA256 == sourceHash && receipt.SystemSHA256 == systemHash {
-			completed[receipt.ModelID] = receipt
-		}
-	}
-	jobs := make(chan Model)
-	results := make(chan Receipt, len(roster.Models))
-	var workers sync.WaitGroup
-	for range options.Concurrency {
-		workers.Add(1)
-		go func() {
-			defer workers.Done()
-			for model := range jobs {
-				receipt := runModel(ctx, client, model, source, systemPrompt, sourceHash, systemHash, options)
-				if err := writeReceipt(options.OutputDir, receipt); err != nil {
-					receipt.Status = "write_failed"
-					if len(receipt.Attempts) == 0 {
-						receipt.Attempts = []Attempt{{Attempt: 1, Error: err.Error()}}
-					} else {
-						receipt.Attempts[len(receipt.Attempts)-1].Error = strings.TrimSpace(receipt.Attempts[len(receipt.Attempts)-1].Error + "; " + err.Error())
-					}
-				}
-				results <- receipt
-			}
-		}()
-	}
-	go func() {
-		defer close(jobs)
-		for _, model := range roster.Models {
-			if receipt, ok := completed[model.OpenRouterModelID]; ok {
-				results <- receipt
-				continue
-			}
-			select {
-			case jobs <- model:
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
-	go func() {
-		workers.Wait()
-		close(results)
-	}()
-	receipts := make([]Receipt, 0, len(roster.Models))
-	for receipt := range results {
-		receipts = append(receipts, receipt)
-	}
-	sort.Slice(receipts, func(i, j int) bool { return receipts[i].ModelID < receipts[j].ModelID })
+	content := campaignContent{source: source, systemPrompt: systemPrompt, sourceHash: sourceHash, systemHash: systemHash}
+	completed := completedCampaignReceipts(existing, content)
+	receipts := runCampaignWorkers(ctx, client, roster.Models, campaignExecution{content: content, options: options, completed: completed})
 	if err := ctx.Err(); err != nil {
 		return receipts, plan, err
 	}
 	return receipts, plan, nil
-}
-
-func runModel(ctx context.Context, client *Client, model Model, source, systemPrompt, sourceHash, systemHash string, options RunOptions) Receipt {
-	if options.ModelTimeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, options.ModelTimeout)
-		defer cancel()
-	}
-	receipt := Receipt{SchemaVersion: ReceiptSchemaVersion, ModelID: model.OpenRouterModelID, LlamboSelector: model.LlamboSelector, Status: "failed", SourceSHA256: sourceHash, SystemSHA256: systemHash, CreatedAt: time.Now().UTC()}
-	initial := min(options.InitialTokens, model.MaxCompletionTokens)
-	first := client.Execute(ctx, model, systemPrompt, source, initial, 1)
-	receipt.Attempts = append(receipt.Attempts, first)
-	if first.Error == "" && strings.EqualFold(first.FinishReason, "length") {
-		retry := min(options.RetryTokens, model.MaxCompletionTokens)
-		if retry > initial {
-			receipt.RetryDisposition = "retried_with_higher_max_completion_tokens"
-			receipt.Attempts = append(receipt.Attempts, client.Execute(ctx, model, systemPrompt, source, retry, 2))
-		} else {
-			receipt.RetryDisposition = "length_retry_unavailable_at_model_limit"
-		}
-	}
-	final := receipt.Attempts[len(receipt.Attempts)-1]
-	receipt.FinalAttempt = final.Attempt
-	receipt.OutputText = final.OutputText
-	receipt.ServedModel = final.ServedModel
-	receipt.ServedProvider = final.ServedProvider
-	receipt.FinishReason = final.FinishReason
-	for _, attempt := range receipt.Attempts {
-		receipt.TotalLatencyMS += attempt.LatencyMS
-		receipt.TotalCostUSD += attempt.Usage.CostUSD
-	}
-	if len(receipt.Attempts) > 0 {
-		duration := final.CompletedAt.Sub(receipt.Attempts[0].StartedAt)
-		receipt.TotalTimeToFinishMS = duration.Milliseconds()
-		if duration > 0 && receipt.TotalTimeToFinishMS == 0 {
-			receipt.TotalTimeToFinishMS = 1
-		}
-	}
-	receipt.TokensPerSecond = final.Usage.TokensPerSecond
-	if final.Error == "" && strings.TrimSpace(final.OutputText) != "" {
-		receipt.Status = "complete"
-	}
-	return receipt
 }
 
 // LoadReceipts loads all model receipts from a campaign output directory.

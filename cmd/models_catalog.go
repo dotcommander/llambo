@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -23,6 +24,22 @@ import (
 const (
 	pinned1 = "pinned"
 )
+
+// catalogRow is one rendered `models catalog list` entry.
+type catalogRow struct {
+	Provider        string
+	Model           string
+	FirstSeen       string
+	UpstreamCreated string
+	Status          string
+	Tags            string
+	Health          string
+	Cost            string
+	Context         string
+	Params          string
+	Reasoning       string
+	Quality         string
+}
 
 func (cliOpts *invocationOptions) runModelsCatalog(cmd *commandIO, args []string) error {
 	out := cmd.OutOrStdout()
@@ -41,26 +58,19 @@ func (cliOpts *invocationOptions) runModelsCatalog(cmd *commandIO, args []string
 		filterProvider = args[0]
 	}
 
-	type row struct {
-		Provider        string
-		Model           string
-		FirstSeen       string
-		UpstreamCreated string
-		Status          string
-		Tags            string
-		Health          string
-		Cost            string
-		Context         string
-		Params          string
-		Reasoning       string
-		Quality         string
-	}
-	var rows []row
 	costMap, err := costs.LoadAll()
 	if err != nil {
 		return err
 	}
 
+	rows := cliOpts.collectCatalogRows(cat, costMap, filterProvider)
+	return cliOpts.writeCatalogRows(out, rows)
+}
+
+// collectCatalogRows walks the catalog in display order and renders every
+// entry that passes the active filters.
+func (cliOpts *invocationOptions) collectCatalogRows(cat *catalog.Catalog, costMap map[string]costs.ModelCost, filterProvider string) []catalogRow {
+	var rows []catalogRow
 	for _, pname := range sortedCatalogProviders(cat) {
 		if filterProvider != "" && pname != filterProvider {
 			continue
@@ -69,53 +79,16 @@ func (cliOpts *invocationOptions) runModelsCatalog(cmd *commandIO, args []string
 
 		for _, mid := range sortedModelIDs(pc) {
 			m := pc.Models[mid]
-
-			if cliOpts.catalogFilterPinned && !m.Pinned {
-				continue
-			}
-			if cliOpts.catalogFilterAvoid && !m.Avoid {
-				continue
-			}
-			if cliOpts.catalogFilterNew && !isNewModel(m, pc.LastRefresh) {
-				continue
-			}
 			costStatus, inputCost, outputCost := catalog.CostForEntry(costMap, pname, mid, m)
-			if cliOpts.catalogFilterFree && costStatus != catalog.CostFree {
+			if !cliOpts.catalogRowMatchesFilters(m, pc, costStatus) {
 				continue
 			}
-			if cliOpts.catalogFilterTag != "" && !catalog.HasTag(m, cliOpts.catalogFilterTag) {
-				continue
-			}
-
-			status := ""
-			if m.Pinned {
-				status = pinned1
-			}
-			if m.Avoid {
-				s := "avoid"
-				if m.AvoidReason != "" {
-					s += ": " + m.AvoidReason
-				}
-				status = s
-			}
-			if m.QuarantineUntil.After(time.Now()) {
-				if status != "" {
-					status += ", "
-				}
-				status += "quarantine until " + m.QuarantineUntil.Format(time.RFC3339)
-			}
-
-			uc := "—"
-			if !m.UpstreamCreated.IsZero() {
-				uc = m.UpstreamCreated.Format("2006-01-02")
-			}
-
-			rows = append(rows, row{
+			rows = append(rows, catalogRow{
 				Provider:        pname,
 				Model:           mid,
 				FirstSeen:       humanAge(m.FirstSeen),
-				UpstreamCreated: uc,
-				Status:          status,
+				UpstreamCreated: upstreamCreatedLabel(m),
+				Status:          catalogStatusLabel(m),
 				Tags:            strings.Join(m.Tags, ","),
 				Health:          healthLabel(m),
 				Cost:            catalog.PriceLabel(costStatus, inputCost, outputCost),
@@ -126,7 +99,62 @@ func (cliOpts *invocationOptions) runModelsCatalog(cmd *commandIO, args []string
 			})
 		}
 	}
+	return rows
+}
 
+// catalogRowMatchesFilters applies the pinned, avoid, new, free, and tag
+// filters for one catalog entry.
+func (cliOpts *invocationOptions) catalogRowMatchesFilters(m *catalog.ModelEntry, pc *catalog.ProviderCatalog, costStatus catalog.CostStatus) bool {
+	if cliOpts.catalogFilterPinned && !m.Pinned {
+		return false
+	}
+	if cliOpts.catalogFilterAvoid && !m.Avoid {
+		return false
+	}
+	if cliOpts.catalogFilterNew && !isNewModel(m, pc.LastRefresh) {
+		return false
+	}
+	if cliOpts.catalogFilterFree && costStatus != catalog.CostFree {
+		return false
+	}
+	if cliOpts.catalogFilterTag != "" && !catalog.HasTag(m, cliOpts.catalogFilterTag) {
+		return false
+	}
+	return true
+}
+
+// catalogStatusLabel renders pin, avoid-reason, and quarantine state.
+func catalogStatusLabel(m *catalog.ModelEntry) string {
+	status := ""
+	if m.Pinned {
+		status = pinned1
+	}
+	if m.Avoid {
+		s := "avoid"
+		if m.AvoidReason != "" {
+			s += ": " + m.AvoidReason
+		}
+		status = s
+	}
+	if m.QuarantineUntil.After(time.Now()) {
+		if status != "" {
+			status += ", "
+		}
+		status += "quarantine until " + m.QuarantineUntil.Format(time.RFC3339)
+	}
+	return status
+}
+
+// upstreamCreatedLabel renders the upstream creation date when known.
+func upstreamCreatedLabel(m *catalog.ModelEntry) string {
+	if m.UpstreamCreated.IsZero() {
+		return "—"
+	}
+	return m.UpstreamCreated.Format("2006-01-02")
+}
+
+// writeCatalogRows renders the empty, JSON, metadata, and default views.
+func (cliOpts *invocationOptions) writeCatalogRows(out io.Writer, rows []catalogRow) error {
 	if len(rows) == 0 {
 		if cliOpts.catalogOutputJSON {
 			fmt.Fprintln(out, "[]")

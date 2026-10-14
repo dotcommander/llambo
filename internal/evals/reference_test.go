@@ -122,7 +122,7 @@ func TestGenerateFormulaReferenceIsDeterministic(t *testing.T) {
 	result := Result{
 		GeneratedAt: time.Unix(99, 0).UTC(), AAVersion: 4.1,
 		Sources: []SourceStatus{{Name: "LLM Stats", FetchedAt: time.Unix(10, 0).UTC()}, {Name: "Artificial Analysis", FetchedAt: time.Unix(20, 0).UTC()}},
-		Models:  []Model{externalTestModel("a", 20, 20, 20, 20, 20), externalTestModel("b", 80, 80, 80, 80, 80)},
+		Models:  []Model{externalTestModel("a", externalModelMetrics{20, 20, 20, 20, 20}), externalTestModel("b", externalModelMetrics{80, 80, 80, 80, 80})},
 	}
 	first, err := GenerateFormulaReference(result)
 	if err != nil {
@@ -164,7 +164,7 @@ func TestTwoSampleKS(t *testing.T) {
 }
 
 func TestEvaluateReferenceDriftReportsVersionAndDistributionChanges(t *testing.T) {
-	models := []Model{externalTestModel("a", 20, 20, 20, 20, 20), externalTestModel("b", 80, 80, 80, 80, 80)}
+	models := []Model{externalTestModel("a", externalModelMetrics{20, 20, 20, 20, 20}), externalTestModel("b", externalModelMetrics{80, 80, 80, 80, 80})}
 	reference := FormulaReference{
 		AAVersion: 4.1, SourceModelCounts: map[string]int{"llm_stats": 2, "artificial_analysis": 2},
 		Metrics: map[string][]float64{"metric": {1, 2, 3}},
@@ -203,7 +203,7 @@ func TestReferenceCoverageDriftUsesSourceCoverageRate(t *testing.T) {
 }
 
 func TestSourceFingerprintIncludesIdentityInputs(t *testing.T) {
-	models := []Model{externalTestModel("key", 50, 50, 50, 50, 50)}
+	models := []Model{externalTestModel("key", externalModelMetrics{50, 50, 50, 50, 50})}
 	before := sourceFingerprints(models)
 	models[0].Name = "renamed"
 	after := sourceFingerprints(models)

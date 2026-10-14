@@ -20,7 +20,7 @@ func TestWritingInitializationFailureClosesAcquiredLedgers(t *testing.T) {
 		}
 		return file, err
 	}
-	if store, err := openWritingRunStore(dir, testWritingManifest(), failedOpen); err == nil {
+	if store, err := acquireWritingRunStore(dir, testWritingManifest(), failedOpen); err == nil {
 		_ = store.Close()
 		t.Fatal("expected initialization error")
 	}
@@ -42,6 +42,35 @@ func TestWritingInitializationFailureClosesAcquiredLedgers(t *testing.T) {
 	}
 }
 
+func assertWritingLedgersClosed(t *testing.T, opened []*os.File) {
+	t.Helper()
+	if len(opened) != 3 {
+		t.Fatalf("opened %d ledgers", len(opened))
+	}
+	for _, file := range opened {
+		if _, err := file.Stat(); err == nil {
+			t.Fatalf("descriptor leaked: %s", file.Name())
+		}
+	}
+}
+
+func writingChmodFailureOpener(name string, opened *[]*os.File) func(string, int, os.FileMode) (*os.File, error) {
+	return func(path string, flags int, mode os.FileMode) (*os.File, error) {
+		file, err := os.OpenFile(path, flags, mode)
+		if err != nil {
+			return nil, err
+		}
+		*opened = append(*opened, file)
+		// Closing this acquired descriptor makes its subsequent Chmod fail deterministically.
+		if filepath.Base(path) == name {
+			if closeErr := file.Close(); closeErr != nil {
+				return nil, closeErr
+			}
+		}
+		return file, nil
+	}
+}
+
 func TestWritingInitializationChmodFailureClosesEveryLedger(t *testing.T) {
 	t.Parallel()
 	for _, name := range []string{"intents.jsonl", "generations.jsonl", "judgments.jsonl"} {
@@ -49,32 +78,12 @@ func TestWritingInitializationChmodFailureClosesEveryLedger(t *testing.T) {
 			t.Parallel()
 			dir := t.TempDir()
 			var opened []*os.File
-			openLedger := func(path string, flags int, mode os.FileMode) (*os.File, error) {
-				file, err := os.OpenFile(path, flags, mode)
-				if err != nil {
-					return nil, err
-				}
-				opened = append(opened, file)
-				// A closed acquired descriptor makes its subsequent Chmod fail deterministically.
-				if filepath.Base(path) == name {
-					if err := file.Close(); err != nil {
-						return nil, err
-					}
-				}
-				return file, nil
-			}
-			if store, err := openWritingRunStore(dir, testWritingManifest(), openLedger); err == nil {
+			openLedger := writingChmodFailureOpener(name, &opened)
+			if store, err := acquireWritingRunStore(dir, testWritingManifest(), openLedger); err == nil {
 				_ = store.Close()
 				t.Fatal("chmod failure accepted")
 			}
-			if len(opened) != 3 {
-				t.Fatalf("opened %d ledgers", len(opened))
-			}
-			for _, file := range opened {
-				if _, err := file.Stat(); err == nil {
-					t.Fatalf("descriptor leaked: %s", file.Name())
-				}
-			}
+			assertWritingLedgersClosed(t, opened)
 			resumed, err := OpenWritingRunStore(dir, testWritingManifest())
 			if err != nil {
 				t.Fatal("initializer leaked lock", err)

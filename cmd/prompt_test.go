@@ -840,9 +840,9 @@ func TestOutputPromptResults_MarkdownFormat_ThreeProviders(t *testing.T) {
 // Test AC2: Given results include latency, when output is rendered,
 // then latency is displayed per provider
 func TestOutputPromptResults_MarkdownFormat_LatencyDisplayed(t *testing.T) {
-	resetRootCmd()
+	t.Parallel()
 	var out bytes.Buffer
-	promptCmd.stdout = &out
+	cmd := &commandIO{stdout: &out}
 
 	results := []PromptResult{
 		{
@@ -868,7 +868,7 @@ func TestOutputPromptResults_MarkdownFormat_LatencyDisplayed(t *testing.T) {
 		},
 	}
 
-	outputPromptResults(promptCmd, "Latency test", results)
+	outputPromptResults(cmd, "Latency test", results)
 
 	output := out.String()
 
@@ -882,29 +882,25 @@ func TestOutputPromptResults_MarkdownFormat_LatencyDisplayed(t *testing.T) {
 
 	// Verify each latency appears in context with its provider
 	// (This ensures the latency is associated with the correct provider)
+	assertPromptSectionLatency(t, output, "## 1. openai", "125ms")
+	assertPromptSectionLatency(t, output, "## 2. anthropic", "2.5s")
+}
+
+func assertPromptSectionLatency(t *testing.T, output, heading, latency string) {
+	t.Helper()
 	lines := strings.Split(output, "\n")
 	for i, line := range lines {
-		if strings.Contains(line, "## 1. openai") {
-			// Find latency line within next 10 lines
-			found := false
-			for j := i; j < i+10 && j < len(lines); j++ {
-				if strings.Contains(lines[j], "125ms") {
-					found = true
-					break
-				}
-			}
-			assert.True(t, found, "Latency 125ms should appear near openai section")
+		if !strings.Contains(line, heading) {
+			continue
 		}
-		if strings.Contains(line, "## 2. anthropic") {
-			found := false
-			for j := i; j < i+10 && j < len(lines); j++ {
-				if strings.Contains(lines[j], "2.5s") {
-					found = true
-					break
-				}
+		found := false
+		for _, candidate := range lines[i:min(i+10, len(lines))] {
+			if strings.Contains(candidate, latency) {
+				found = true
+				break
 			}
-			assert.True(t, found, "Latency 2.5s should appear near anthropic section")
 		}
+		assert.True(t, found, "Latency %s should appear near %s section", latency, heading)
 	}
 }
 
@@ -1836,4 +1832,54 @@ func TestPromptCommand_TimeoutFlag_FastProviderCompletes(t *testing.T) {
 	assert.Contains(t, output, "Fast response")
 	assert.Contains(t, output, "✅ SUCCESS")
 	assert.Contains(t, output, "2s")
+}
+
+func TestWritePromptOutputFileWritesAndSkipsStdout(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "results.md")
+	var stdout, stderr bytes.Buffer
+	cmd := &commandIO{ctx: context.Background(), stdout: &stdout, stderr: &stderr}
+
+	written, err := writePromptOutputFile(cmd, &invocationOptions{outputFile: path}, resultsOutput{promptText: "sky question"})
+	if err != nil || !written {
+		t.Fatalf("written=%v err=%v, want a successful skip-stdout write", written, err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "sky question") {
+		t.Fatalf("markdown file missing prompt text: %q", string(data))
+	}
+	if !strings.Contains(stdout.String(), "Results written to ") {
+		t.Fatalf("success notice missing: %q", stdout.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("unexpected stderr output: %q", stderr.String())
+	}
+
+	// No output file configured leaves stdout display in charge.
+	written, err = writePromptOutputFile(cmd, &invocationOptions{}, resultsOutput{})
+	if written || err != nil {
+		t.Fatalf("no-file write = (%v, %v), want (false, nil)", written, err)
+	}
+}
+
+func TestWritePromptOutputFileFallsBackToStdoutDisplay(t *testing.T) {
+	t.Parallel()
+	// A missing parent directory forces the underlying file write to fail.
+	path := filepath.Join(t.TempDir(), "missing-dir", "results.md")
+	var stdout, stderr bytes.Buffer
+	cmd := &commandIO{ctx: context.Background(), stdout: &stdout, stderr: &stderr}
+
+	written, err := writePromptOutputFile(cmd, &invocationOptions{outputFile: path}, resultsOutput{promptText: "hi"})
+	if err == nil || written {
+		t.Fatalf("written=%v err=%v, want write failure with stdout fallback", written, err)
+	}
+	if !strings.Contains(stderr.String(), "Error writing to file") {
+		t.Fatalf("write-error notice missing: %q", stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Displaying results to stdout instead:") {
+		t.Fatalf("fallback notice missing: %q", stdout.String())
+	}
 }

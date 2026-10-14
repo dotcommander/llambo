@@ -314,27 +314,8 @@ func validateOfficialCardSnapshotForSpec(spec officialCardSpec, want map[string]
 		return fmt.Errorf("model count %d does not match pinned target count %d", len(snapshot.Models), len(want))
 	}
 	for _, model := range snapshot.Models {
-		expectedScores, ok := want[model.Key]
-		if !ok {
-			return fmt.Errorf("canonical card model %q is not pinned", model.Key)
-		}
-		if model.IdentityMatch != IdentityMatchExact {
-			return fmt.Errorf("canonical card model %q identity is %q, want exact", model.Key, model.IdentityMatch)
-		}
-		if len(model.Benchmarks) != len(expectedScores) {
-			return fmt.Errorf("model %q benchmark count %d does not match pinned row count %d", model.Key, len(model.Benchmarks), len(expectedScores))
-		}
-		for benchmark, expected := range expectedScores {
-			result, present := model.Benchmarks[benchmark]
-			if !present {
-				return fmt.Errorf("model %q missing pinned benchmark %q", model.Key, benchmark)
-			}
-			if result.Score == nil || *result.Score != expected {
-				return fmt.Errorf("model %q benchmark %q score does not match pinned source row", model.Key, benchmark)
-			}
-			if result.Identity != IdentityMatchExact || result.Version != spec.revision || result.URL != pinnedOfficialCardURL(spec) || result.ContentSHA != spec.contentSHA || result.Method != modelCardSourceType || result.EvidenceGrade != modelCardEvidence || result.Unit != modelCardUnit || result.Direction != modelCardDirection || result.Cohort != "official-comparison-table" || result.Locator != "published benchmark table: "+benchmark || result.SourceID != spec.sourceID || result.SourceClass != string(SourceFirstPartyResult) || result.SourceRevision != spec.revision {
-				return fmt.Errorf("model %q benchmark %q provenance does not match pinned source", model.Key, benchmark)
-			}
+		if err := validateOfficialCardModel(spec, want, model); err != nil {
+			return err
 		}
 	}
 	return nil

@@ -47,43 +47,20 @@ func ParseWritingBenchXLSX(data []byte) ([]WritingBenchScore, error) {
 		return nil, errors.New("WritingBench XLSX has no rows")
 	}
 	headers := normalizeXLSXHeaders(rows[0])
-	modelColumn, hasModel := headers["model"]
-	overallColumn, hasOverall := headers["overall"]
+	_, hasModel := headers["model"]
+	_, hasOverall := headers["overall"]
 	if !hasModel || !hasOverall {
 		return nil, errors.New("WritingBench XLSX requires Model and Overall headers")
 	}
-	organizationColumn, hasOrganization := headers["organization"]
 	results := make([]WritingBenchScore, 0, len(rows)-1)
 	for rowIndex, row := range rows[1:] {
-		if modelColumn >= len(row) {
-			continue
-		}
-		model := strings.TrimSpace(row[modelColumn])
-		if model == "" {
-			continue
-		}
-		if overallColumn >= len(row) {
-			return nil, fmt.Errorf("WritingBench row %d has no Overall value", rowIndex+2)
-		}
-		overall, err := parseXLSXNumber(row[overallColumn])
+		score, admitted, err := writingBenchScoreRow(headers, row, rowIndex)
 		if err != nil {
-			return nil, fmt.Errorf("WritingBench row %d overall: %w", rowIndex+2, err)
+			return nil, err
 		}
-		details := make(map[string]float64)
-		for header, column := range headers {
-			if header == "model" || header == "organization" || header == "overall" || column >= len(row) || strings.TrimSpace(row[column]) == "" {
-				continue
-			}
-			value, err := parseXLSXNumber(row[column])
-			if err == nil {
-				details[header] = value
-			}
+		if admitted {
+			results = append(results, score)
 		}
-		organization := ""
-		if hasOrganization && organizationColumn < len(row) {
-			organization = strings.TrimSpace(row[organizationColumn])
-		}
-		results = append(results, WritingBenchScore{Model: model, Organization: organization, Result: BenchmarkResult{Score: &overall, Details: details}})
 	}
 	if len(results) == 0 {
 		return nil, errors.New("WritingBench XLSX has no scored models")

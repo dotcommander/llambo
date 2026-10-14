@@ -37,10 +37,20 @@ func rawCanaryConfig(oc *OpenAIClients) *GlobalConfig {
 	return &GlobalConfig{Providers: cloneProviderConfigs(configs), Routing: cloneRoutingConfig(routing)}
 }
 
-func TestCanarySnapshotPublicationPreservesOldGeneration(t *testing.T) {
-	t.Parallel()
-	oc, _ := canaryTestOwner(t, 5)
-	oldConfigs, oldRouting := oc.routingSnapshot(nil)
+// canaryLiveResources pins the live provider resources a canary promotion
+// must never replace or alter.
+type canaryLiveResources struct {
+	client     *closeTrackingProvider
+	generation *clientGeneration
+	limiter    chan struct{}
+	breaker    *CircuitBreaker
+	keys       *KeyRotator
+}
+
+// installCanaryResources wires live client resources into the owner and
+// returns the pinned handles for later preservation checks.
+func installCanaryResources(t *testing.T, oc *OpenAIClients) canaryLiveResources {
+	t.Helper()
 	client := &closeTrackingProvider{}
 	generation := &clientGeneration{client: client, leases: 1, key: "retained-key"}
 	limiter := make(chan struct{}, 2)
@@ -53,6 +63,30 @@ func TestCanarySnapshotPublicationPreservesOldGeneration(t *testing.T) {
 	oc.CircuitBreaker = breaker
 	keys := NewKeyRotator(oc.configs)
 	oc.KeyRotator = keys
+	return canaryLiveResources{client: client, generation: generation, limiter: limiter, breaker: breaker, keys: keys}
+}
+
+// assertCanaryResourcesPreserved verifies the promotion left every live
+// provider resource untouched: same client and generation, lease intact, no
+// closes, limiter state, breaker, key rotator, and backend model.
+func assertCanaryResourcesPreserved(t *testing.T, oc *OpenAIClients, live canaryLiveResources) {
+	t.Helper()
+	if oc.Clients["canary"] != whtypes.Provider(live.client) || oc.generations["canary"] != live.generation || live.generation.leases != 1 || live.client.closes.Load() != 0 {
+		t.Fatal("promotion replaced or altered provider client resources")
+	}
+	if oc.limiters["canary"] != live.limiter || len(live.limiter) != 1 || oc.CircuitBreaker != live.breaker || oc.KeyRotator != live.keys {
+		t.Fatal("promotion replaced or altered provider admission resources")
+	}
+	if oc.Backends[0].Model != "Canary" {
+		t.Fatal("promotion replaced or altered backend registration")
+	}
+}
+
+func TestCanarySnapshotPublicationPreservesOldGeneration(t *testing.T) {
+	t.Parallel()
+	oc, _ := canaryTestOwner(t, 5)
+	live := installCanaryResources(t, oc)
+	oldConfigs, oldRouting := oc.routingSnapshot(nil)
 	cfg := rawCanaryConfig(oc)
 	oc.canaryUpdate = func(ctx context.Context, mutate func(*GlobalConfig) error) error { return mutate(cfg) }
 	original := oc.configs["canary"]
@@ -75,9 +109,7 @@ func TestCanarySnapshotPublicationPreservesOldGeneration(t *testing.T) {
 	if oc.configs["canary"].Priority != oldOwnerConfigs["canary"].Priority {
 		t.Fatal("resource owner config changed")
 	}
-	if oc.Clients["canary"] != client || oc.generations["canary"] != generation || generation.leases != 1 || client.closes.Load() != 0 || oc.limiters["canary"] != limiter || len(limiter) != 1 || oc.CircuitBreaker != breaker || oc.KeyRotator != keys || oc.Backends[0].Model != "Canary" {
-		t.Fatal("promotion replaced or altered provider resources")
-	}
+	assertCanaryResourcesPreserved(t, oc, live)
 }
 
 func TestCanaryEvaluatorRetriesInsufficientEvidence(t *testing.T) {

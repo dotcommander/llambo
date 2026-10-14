@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -60,100 +59,24 @@ func fetchLLMStats(ctx context.Context, opts Options) (sourceSnapshot, error) {
 	if strings.TrimSpace(opts.LLMStatsAPIKey) != "" && opts.IngestLLMBenchmarks {
 		return fetchLLMStatsStatsV1Snapshot(ctx, opts)
 	}
-	var identities []llmIdentity
-	var full []llmFull
-	indexes := map[string]indexEnvelope{}
-	type payload struct {
-		name string
-		data []byte
-		err  error
+	discovery, err := acquireLLMStatsDiscovery(ctx, opts)
+	if err != nil {
+		return sourceSnapshot{}, err
 	}
-	payloads := make(chan payload, 3)
-	for name, endpoint := range map[string]string{"models": opts.LLMModelsURL, "full-results": opts.LLMFullURL, "indexes": opts.LLMIndexURL} {
-		go func() {
-			data, err := getBytes(ctx, opts.Client, endpoint)
-			payloads <- payload{name: name, data: data, err: err}
-		}()
-	}
-	raw := make(map[string][]byte, 3)
-	for range 3 {
-		result := <-payloads
-		if result.err != nil {
-			return sourceSnapshot{}, result.err
-		}
-		raw[result.name] = result.data
-	}
-	if err := json.Unmarshal(raw["models"], &identities); err != nil {
-		return sourceSnapshot{}, fmt.Errorf("decode LLM Stats models: %w", err)
-	}
-	if err := json.Unmarshal(raw["full-results"], &full); err != nil {
-		return sourceSnapshot{}, fmt.Errorf("decode LLM Stats full results: %w", err)
-	}
-	if err := json.Unmarshal(raw["indexes"], &indexes); err != nil {
-		return sourceSnapshot{}, fmt.Errorf("decode LLM Stats indexes: %w", err)
-	}
-	sealedRoot := filepath.Join(opts.CacheDir, "sealed", llmStats)
-	for _, name := range []string{"models", "full-results", "indexes"} {
-		if err := writeSealed(sealedRevisionPath(sealedRoot, name, raw[name], ".json"), raw[name]); err != nil {
-			return sourceSnapshot{}, err
-		}
-	}
-
-	fullByID := make(map[string]llmFull, len(full))
-	for _, row := range full {
-		fullByID[row.ModelID] = row
-	}
-	indexByID := map[string]map[string]Index{}
-	for category, envelope := range indexes {
-		for _, row := range envelope.Models {
-			if indexByID[row.ModelID] == nil {
-				indexByID[row.ModelID] = map[string]Index{}
-			}
-			indexByID[row.ModelID][category] = Index{Conservative: row.Conservative, Mu: row.Mu, Sigma: row.Sigma, Rank: row.Rank, GamesPlayed: row.GamesPlayed}
-		}
-	}
-	models := make([]Model, 0, len(identities))
-	for _, identity := range identities {
-		if identity.ModelType != llm1 {
-			continue
-		}
-		f := fullByID[identity.ModelID]
-		context := identity.Context
-		if context == nil {
-			context = f.Context
-		}
-		input, output := identity.InputPrice, identity.OutputPrice
-		if input == nil {
-			input = f.InputPrice
-		}
-		if output == nil {
-			output = f.OutputPrice
-		}
-		models = append(models, Model{Key: identity.ModelID, Name: identity.Name, Organization: identity.Organization, License: identity.License, Open: boolPtr(identity.IsOpen), Context: context,
-			LLMStats: &LLMStatsMetrics{InputPrice: input, OutputPrice: output, Throughput: f.Throughput, Latency: f.Latency, GPQA: f.GPQA, SWEVerified: f.SWEVerified, SWEPro: f.SWEPro, SciCode: f.SciCode, MCPAtlas: f.MCPAtlas, Indexes: indexByID[identity.ModelID]}})
-	}
+	identities, full, indexes, raw := discovery.identities, discovery.full, discovery.indexes, discovery.raw
+	models := projectLLMStatsDiscovery(identities, full, indexes)
 	observationCount := 0
 	method := "LLM Stats public discovery feeds; published benchmark rows use graded verification evidence"
 	fingerprintInput := append(append(append([]byte(nil), raw["models"]...), raw["full-results"]...), raw["indexes"]...)
 	if opts.IngestLLMBenchmarks {
-		var observations []Observation
-		var err error
-		if strings.TrimSpace(opts.LLMStatsAPIKey) != "" {
-			observations, err = fetchLLMStatsStatsV1BenchmarkLeads(ctx, opts)
-			method = "LLM Stats public discovery feeds plus Stats v1 benchmark scores; published rows use graded verification evidence"
-		} else {
-			observations, err = fetchLLMStatsBenchmarkLeads(ctx, opts)
+		benchmarks, benchmarkErr := acquireLLMStatsDiscoveryBenchmarks(ctx, opts, method)
+		if benchmarkErr != nil {
+			return sourceSnapshot{}, benchmarkErr
 		}
-		if err != nil {
-			return sourceSnapshot{}, err
-		}
-		attachLLMStatsBenchmarkLeads(models, observations)
-		observationCount = len(observations)
-		normalized, err := EncodeObservationsJSONL(observations)
-		if err != nil {
-			return sourceSnapshot{}, err
-		}
-		fingerprintInput = append(fingerprintInput, normalized...)
+		method = benchmarks.method
+		attachLLMStatsBenchmarkLeads(models, benchmarks.observations)
+		observationCount = len(benchmarks.observations)
+		fingerprintInput = append(fingerprintInput, benchmarks.normalized...)
 	}
 	sort.Slice(models, func(i, j int) bool { return models[i].Key < models[j].Key })
 	return sourceSnapshot{Models: models, ContentSHA: SealBytes(fingerprintInput), Method: method, Observations: observationCount, RegistryVersion: SourceRegistryVersion, EvidenceGrade: gradedAggregator}, nil

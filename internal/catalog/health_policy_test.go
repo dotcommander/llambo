@@ -58,9 +58,7 @@ func TestHealthObservationPolicies(t *testing.T) {
 					RecordPrompt(cat, "provider", "model", observation)
 					wantUntil = tt.promptUntil
 				} else {
-					RecordPingWithMetrics(cat, "provider", "model", observation.Success, observation.Latency,
-						observation.TTFB, observation.Generation, observation.SpeedTokensPerSecond,
-						observation.TokensIn, observation.TokensOut, observation.Error, observation.CheckedAt)
+					RecordPingWithMetrics(cat, "provider", "model", observation)
 				}
 				require.Equal(t, wantUntil, entry.QuarantineUntil)
 				require.Equal(t, tt.wantFailures, entry.FailureCount)

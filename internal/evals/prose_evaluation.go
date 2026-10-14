@@ -10,7 +10,6 @@ import (
 	"math"
 	"regexp"
 	"strings"
-	"unicode/utf8"
 )
 
 // Repeated string literals consolidated by goconst.
@@ -220,28 +219,15 @@ func (e ProseEvaluation) Dimensions() []struct {
 		Value ProseDimensionEvaluation
 	}{{depthAndDevelopment, e.DepthAndDevelopment}, {structuralCoherence, e.StructuralCoherence}, {proseCraft, e.ProseCraft}, {antiRepetition, e.AntiRepetition}, {targetReaderFit, e.TargetReaderFit}, {mechanics1, e.Mechanics}}
 }
+
+// Validate checks evaluation structure and citation spans against the source prose.
 func (e ProseEvaluation) Validate(prose string) error {
 	if strings.TrimSpace(prose) == "" {
 		return errors.New("candidate prose is empty")
 	}
 	for _, dimension := range e.Dimensions() {
-		v := dimension.Value
-		if dimension.ID == mechanics1 && !v.Applicable {
-			return errors.New("mechanics must be applicable")
-		}
-		if v.Score < 1 || v.Score > 5 {
-			return fmt.Errorf("%s score must be an integer from 1 through 5, got %d", dimension.ID, v.Score)
-		}
-		if strings.TrimSpace(v.Rationale) != v.Rationale || len(v.Rationale) > 240 || !proseRationalePattern.MatchString(v.Rationale) {
-			return fmt.Errorf("%s rationale must be one concise trimmed sentence", dimension.ID)
-		}
-		if len(v.Evidence) == 0 {
-			return fmt.Errorf("%s requires at least one evidence span", dimension.ID)
-		}
-		for _, span := range v.Evidence {
-			if span.Start < 0 || span.End <= span.Start || span.End > len(prose) || !utf8.ValidString(prose[span.Start:span.End]) {
-				return fmt.Errorf("%s has an invalid evidence span [%d,%d)", dimension.ID, span.Start, span.End)
-			}
+		if err := validateProseDimension(dimension.ID, dimension.Value, prose); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -281,60 +267,6 @@ func rejectDuplicateProseJSONKeys(raw []byte) error {
 			return errors.New("response contains trailing JSON")
 		}
 		return fmt.Errorf("parse JSON tail: %w", err)
-	}
-	return nil
-}
-func walkProseJSONValue(decoder *json.Decoder) error {
-	token, err := decoder.Token()
-	if err != nil {
-		return err
-	}
-	delim, ok := token.(json.Delim)
-	if !ok {
-		return nil
-	}
-	switch delim {
-	case '{':
-		seen := map[string]struct{}{}
-		for decoder.More() {
-			keyToken, err := decoder.Token()
-			if err != nil {
-				return err
-			}
-			key, ok := keyToken.(string)
-			if !ok {
-				return errors.New("object key is not a string")
-			}
-			if _, exists := seen[key]; exists {
-				return fmt.Errorf("duplicate field %q", key)
-			}
-			seen[key] = struct{}{}
-			if err := walkProseJSONValue(decoder); err != nil {
-				return err
-			}
-		}
-		end, err := decoder.Token()
-		if err != nil {
-			return err
-		}
-		if end != json.Delim('}') {
-			return fmt.Errorf("object has invalid closing delimiter %q", end)
-		}
-	case '[':
-		for decoder.More() {
-			if err := walkProseJSONValue(decoder); err != nil {
-				return err
-			}
-		}
-		end, err := decoder.Token()
-		if err != nil {
-			return err
-		}
-		if end != json.Delim(']') {
-			return fmt.Errorf("array has invalid closing delimiter %q", end)
-		}
-	default:
-		return fmt.Errorf("unexpected delimiter %q", delim)
 	}
 	return nil
 }

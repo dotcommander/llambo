@@ -43,21 +43,13 @@ func (c *evalsOMLXCommand) Run(parent *evalsCommand, io *commandIO) error {
 		return err
 	}
 	if !live {
-		var snapshotPath string
-		snapshotPath, err = evals.OMLXScoreSnapshotPath()
-		if err != nil {
-			return err
-		}
-		var snapshot *evals.OMLXScoreSnapshot
-		snapshot, err = evals.LoadOMLXScoreSnapshot(snapshotPath)
-		if err != nil {
-			return err
-		}
-		if snapshot == nil {
-			return errors.New("no cached OMLX score snapshot; run `llambo evals omlx --live`")
-		}
-		return writeOMLXScoreOutput(io, snapshot, format, nil)
+		return writeCachedOMLXScores(io, format)
 	}
+	return writeLiveOMLXScores(parent, io, cacheDir, format)
+}
+
+func writeLiveOMLXScores(parent *evalsCommand, io *commandIO, cacheDir, format string) error {
+	var err error
 	if err = validateOMLXURL(parent.OMLXURL); err != nil {
 		return err
 	}
@@ -86,6 +78,24 @@ func (c *evalsOMLXCommand) Run(parent *evalsCommand, io *commandIO) error {
 		return err
 	}
 	return writeOMLXScoreOutput(io, &pending.snapshot, format, report.OMLX)
+}
+
+func writeCachedOMLXScores(io *commandIO, format string) error {
+	var err error
+	var snapshotPath string
+	snapshotPath, err = evals.OMLXScoreSnapshotPath()
+	if err != nil {
+		return err
+	}
+	var snapshot *evals.OMLXScoreSnapshot
+	snapshot, err = evals.LoadOMLXScoreSnapshot(snapshotPath)
+	if err != nil {
+		return err
+	}
+	if snapshot == nil {
+		return errors.New("no cached OMLX score snapshot; run `llambo evals omlx --live`")
+	}
+	return writeOMLXScoreOutput(io, snapshot, format, nil)
 }
 
 func evaluationCacheDirectory(configured string) (string, error) {

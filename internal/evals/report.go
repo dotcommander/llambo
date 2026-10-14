@@ -129,13 +129,17 @@ func BuildReport(result Result, rankBy string) (Report, error) {
 // BuildReportWithProjectionFile applies reviewed local projections from a
 // projection file after canonical scoring.
 func BuildReportWithProjectionFile(result Result, rankBy, path string) (Report, error) {
+	return buildReportWithScoringLoader(result, rankBy, path, loadScoringContext)
+}
+
+func buildReportWithScoringLoader(result Result, rankBy, path string, loadContext func() (scoringContext, error)) (Report, error) {
 	if rankBy == "" {
 		rankBy = matrix1
 	}
 	if !isSupportedProfile(rankBy) {
 		return Report{}, fmt.Errorf("unsupported ranking profile %q (supported: %s)", rankBy, strings.Join(SupportedRankingProfiles(), ", "))
 	}
-	context, err := loadScoringContext()
+	context, err := loadContext()
 	if err != nil {
 		return Report{}, fmt.Errorf("initialize scoring context: %w", err)
 	}
@@ -202,150 +206,4 @@ func categoryUnresolvedReasonWithContext(model Model, category categorySpec, con
 		}
 	}
 	return "no eligible reviewed frozen benchmark observation"
-}
-
-func compareReportRows(left, right ReportModel, rankBy string) bool {
-	if rankBy == matrix1 {
-		leftScored, rightScored := hasCapabilityScore(left), hasCapabilityScore(right)
-		if leftScored != rightScored {
-			return leftScored
-		}
-		if left.Name == right.Name {
-			return left.Key < right.Key
-		}
-		return left.Name < right.Name
-	}
-	var leftScore, rightScore *float64
-	if validCapabilityCategory(rankBy) {
-		if s := left.LlamboScores[rankBy]; s != nil && !s.Estimated {
-			leftScore = &s.Score
-		}
-		if s := right.LlamboScores[rankBy]; s != nil && !s.Estimated {
-			rightScore = &s.Score
-		}
-	} else {
-		if s := left.Scores[rankBy]; s != nil {
-			leftScore = &s.Score
-		}
-		if s := right.Scores[rankBy]; s != nil {
-			rightScore = &s.Score
-		}
-	}
-	if leftScore == nil {
-		return false
-	}
-	if rightScore == nil {
-		return true
-	}
-	if *leftScore == *rightScore {
-		if left.Name == right.Name {
-			return left.Key < right.Key
-		}
-		return left.Name < right.Name
-	}
-	return *leftScore > *rightScore
-}
-
-func buildCategoryRankings(rows []ReportModel) map[string]CategoryRanking {
-	rankings := make(map[string]CategoryRanking, len(categorySpecs))
-	for _, spec := range categorySpecs {
-		ranking := CategoryRanking{Category: spec.name, Status: "unresolved"}
-		for _, row := range rows {
-			score := row.LlamboScores[spec.name]
-			if score == nil || score.Estimated {
-				continue
-			}
-			identity := 1.0
-			if row.Projection != nil {
-				identity = projectionMultiplier(row.Projection)
-			}
-			ranking.Entries = append(ranking.Entries, CategoryRankedModel{Key: row.Key, Score: score.Score, TrustedCoverage: score.TrustedCoverage, IdentityConfidence: identity})
-		}
-		sort.Slice(ranking.Entries, func(i, j int) bool {
-			left, right := ranking.Entries[i], ranking.Entries[j]
-			if left.Score != right.Score {
-				return left.Score > right.Score
-			}
-			if left.TrustedCoverage != right.TrustedCoverage {
-				return left.TrustedCoverage > right.TrustedCoverage
-			}
-			if left.IdentityConfidence != right.IdentityConfidence {
-				return left.IdentityConfidence > right.IdentityConfidence
-			}
-			return left.Key < right.Key
-		})
-		if len(ranking.Entries) > 0 {
-			leader := ranking.Entries[0]
-			tied := 1
-			for tied < len(ranking.Entries) {
-				candidate := ranking.Entries[tied]
-				if candidate.Score != leader.Score || candidate.TrustedCoverage != leader.TrustedCoverage || candidate.IdentityConfidence != leader.IdentityConfidence {
-					break
-				}
-				tied++
-			}
-			winner := 0
-			official := false
-			for i := 0; i < tied; i++ {
-				if familyCount(rows, spec.name, ranking.Entries[i].Key) >= 2 {
-					winner, official = i, true
-					break
-				}
-			}
-			if official && !ranking.Entries[winner].Estimated {
-				ranking.Status, ranking.Winner = "official", ranking.Entries[winner].Key
-			} else {
-				ranking.Status, ranking.Winner = "provisional", leader.Key
-			}
-			for i := 0; i < tied; i++ {
-				candidate := &ranking.Entries[i]
-				switch {
-				case i == winner:
-					candidate.WinnerStatus = ranking.Status
-				case official && familyCount(rows, spec.name, candidate.Key) >= 2:
-					candidate.WinnerStatus = "official_co_winner"
-				default:
-					candidate.WinnerStatus = "provisional_co_winner"
-				}
-			}
-		}
-		rankings[spec.name] = ranking
-	}
-	return rankings
-}
-
-func familyCount(rows []ReportModel, category, key string) int {
-	for _, row := range rows {
-		if row.Key == key && row.LlamboScores[category] != nil {
-			if row.LlamboScores[category].Estimated {
-				return 0
-			}
-			return len(row.LlamboScores[category].Families)
-		}
-	}
-	return 0
-}
-
-func applyCategoryWinnerStatuses(rows []ReportModel, rankings map[string]CategoryRanking) {
-	for category, ranking := range rankings {
-		for _, entry := range ranking.Entries {
-			if entry.WinnerStatus == "" {
-				continue
-			}
-			for i := range rows {
-				if rows[i].Key == entry.Key && rows[i].LlamboScores[category] != nil {
-					rows[i].LlamboScores[category].WinnerStatus = entry.WinnerStatus
-				}
-			}
-		}
-	}
-}
-
-func hasCapabilityScore(model ReportModel) bool {
-	for _, score := range model.LlamboScores {
-		if score != nil && !score.Estimated {
-			return true
-		}
-	}
-	return false
 }

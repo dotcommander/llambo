@@ -51,35 +51,59 @@ func ParseEQBenchCreativeJS(data []byte) ([]EQBenchCreativeScore, error) {
 	organizationColumn, hasOrganization := headers["organization"]
 	result := make([]EQBenchCreativeScore, 0, len(records)-1)
 	for line, record := range records[1:] {
-		if modelColumn >= len(record) || strings.TrimSpace(record[modelColumn]) == "" {
-			continue
-		}
-		if eloColumn >= len(record) {
-			return nil, fmt.Errorf("EQ-Bench Creative row %d has no elo_score", line+2)
-		}
-		elo, err := eqBenchNumber(record[eloColumn])
+		score, admitted, err := eqBenchCreativeRow(record, line, eqBenchCreativeColumns{headers: headers, model: modelColumn, elo: eloColumn, organization: organizationColumn, hasOrganization: hasOrganization})
 		if err != nil {
-			return nil, fmt.Errorf("EQ-Bench Creative row %d elo_score: %w", line+2, err)
+			return nil, err
 		}
-		details := make(map[string]float64)
-		for header, column := range headers {
-			if header == "model_name" || header == "organization" || header == "elo_score" || column >= len(record) || strings.TrimSpace(record[column]) == "" {
-				continue
-			}
-			if number, err := eqBenchNumber(record[column]); err == nil {
-				details[header] = number
-			}
+		if admitted {
+			result = append(result, score)
 		}
-		organization := ""
-		if hasOrganization && organizationColumn < len(record) {
-			organization = strings.TrimSpace(record[organizationColumn])
-		}
-		result = append(result, EQBenchCreativeScore{Model: strings.TrimSpace(record[modelColumn]), Organization: organization, Result: BenchmarkResult{Score: &elo, Details: details}})
 	}
 	if len(result) == 0 {
 		return nil, errors.New("EQ-Bench Creative CSV has no scored models")
 	}
 	return result, nil
+}
+
+type eqBenchCreativeColumns struct {
+	headers                  map[string]int
+	model, elo, organization int
+	hasOrganization          bool
+}
+
+func eqBenchCreativeRow(record []string, line int, columns eqBenchCreativeColumns) (EQBenchCreativeScore, bool, error) {
+	modelColumn, eloColumn := columns.model, columns.elo
+	organizationColumn, hasOrganization := columns.organization, columns.hasOrganization
+	headers := columns.headers
+	if modelColumn >= len(record) || strings.TrimSpace(record[modelColumn]) == "" {
+		return EQBenchCreativeScore{}, false, nil
+	}
+	if eloColumn >= len(record) {
+		return EQBenchCreativeScore{}, false, fmt.Errorf("EQ-Bench Creative row %d has no elo_score", line+2)
+	}
+	elo, err := eqBenchNumber(record[eloColumn])
+	if err != nil {
+		return EQBenchCreativeScore{}, false, fmt.Errorf("EQ-Bench Creative row %d elo_score: %w", line+2, err)
+	}
+	details := eqBenchCreativeDetails(headers, record)
+	organization := ""
+	if hasOrganization && organizationColumn < len(record) {
+		organization = strings.TrimSpace(record[organizationColumn])
+	}
+	return EQBenchCreativeScore{Model: strings.TrimSpace(record[modelColumn]), Organization: organization, Result: BenchmarkResult{Score: &elo, Details: details}}, true, nil
+}
+
+func eqBenchCreativeDetails(headers map[string]int, record []string) map[string]float64 {
+	details := make(map[string]float64)
+	for header, column := range headers {
+		if header == "model_name" || header == "organization" || header == "elo_score" || column >= len(record) || strings.TrimSpace(record[column]) == "" {
+			continue
+		}
+		if number, err := eqBenchNumber(record[column]); err == nil {
+			details[header] = number
+		}
+	}
+	return details
 }
 
 func eqBenchCreativeCSV(data []byte) ([]byte, error) {

@@ -106,6 +106,7 @@ func TestHandler_ChatCompletionStream_ZeroDeltaRolePrecedesTerminalEvents(t *tes
 		{name: "callback finish", chunks: []providers.ChatStreamChunk{{FinishReason: "stop"}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			server, stream := newHandlerStreamTestServer(t)
 			stream.streamChunks = tc.chunks
 			stream.streamResult = providers.ChatResult{Provider: "routed-backend", Model: "routed-model", FinishReason: "stop"}
@@ -120,24 +121,29 @@ func TestHandler_ChatCompletionStream_ZeroDeltaRolePrecedesTerminalEvents(t *tes
 				t.Fatalf("final event = %q, want data: [DONE]", events[3])
 			}
 
-			var role, finish, metadata map[string]any
-			for i, target := range []*map[string]any{&role, &finish, &metadata} {
-				if err := json.Unmarshal([]byte(strings.TrimPrefix(events[i], "data: ")), target); err != nil {
-					t.Fatalf("decode event %d: %v", i, err)
-				}
-			}
-			roleChoice := role["choices"].([]any)[0].(map[string]any)
-			if got := roleChoice["delta"].(map[string]any)["role"]; got != "assistant" {
-				t.Fatalf("role chunk = %#v, want assistant", roleChoice)
-			}
-			finishChoice := finish["choices"].([]any)[0].(map[string]any)
-			if got := finishChoice["finish_reason"]; got != "stop" {
-				t.Fatalf("finish chunk = %#v, want stop", finishChoice)
-			}
-			if choices := metadata["choices"].([]any); len(choices) != 0 || metadata["x_llambo"] == nil {
-				t.Fatalf("metadata chunk = %#v, want empty choices with x_llambo", metadata)
-			}
+			assertOpenAIStreamTerminalSequence(t, events)
 		})
+	}
+}
+
+func assertOpenAIStreamTerminalSequence(t *testing.T, events []string) {
+	t.Helper()
+	var role, finish, metadata map[string]any
+	for i, target := range []*map[string]any{&role, &finish, &metadata} {
+		if err := json.Unmarshal([]byte(strings.TrimPrefix(events[i], "data: ")), target); err != nil {
+			t.Fatalf("decode event %d: %v", i, err)
+		}
+	}
+	roleChoice := role["choices"].([]any)[0].(map[string]any)
+	if got := roleChoice["delta"].(map[string]any)["role"]; got != "assistant" {
+		t.Fatalf("role chunk = %#v, want assistant", roleChoice)
+	}
+	finishChoice := finish["choices"].([]any)[0].(map[string]any)
+	if got := finishChoice["finish_reason"]; got != "stop" {
+		t.Fatalf("finish chunk = %#v, want stop", finishChoice)
+	}
+	if choices := metadata["choices"].([]any); len(choices) != 0 || metadata["x_llambo"] == nil {
+		t.Fatalf("metadata chunk = %#v, want empty choices with x_llambo", metadata)
 	}
 }
 

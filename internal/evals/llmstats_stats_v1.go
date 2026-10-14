@@ -5,12 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -172,32 +169,9 @@ func fetchLLMStatsStatsV1Models(ctx context.Context, opts Options) ([]Model, [][
 		}
 		cursor = response.NextCursor
 	}
-	models := make([]Model, 0, len(rows))
-	seen := make(map[string]struct{}, len(rows))
-	for _, row := range rows {
-		if strings.TrimSpace(row.ID) == "" || strings.TrimSpace(row.Name) == "" || strings.TrimSpace(row.Organization.Name) == "" {
-			return nil, nil, errors.New("stats v1 model row is malformed")
-		}
-		if row.ModelType != llm1 {
-			continue
-		}
-		if _, duplicate := seen[row.ID]; duplicate {
-			return nil, nil, fmt.Errorf("stats v1 models has duplicate id %q", row.ID)
-		}
-		seen[row.ID] = struct{}{}
-		open := row.OpenWeight
-		var input, output, throughput, latency *float64
-		if len(row.Providers) > 0 {
-			input, output, throughput, latency = row.Providers[0].InputPrice, row.Providers[0].OutputPrice, row.Providers[0].Throughput, row.Providers[0].Latency
-		}
-		models = append(models, Model{
-			Key: row.ID, Name: row.Name, Organization: row.Organization.Name,
-			License: row.License.Name, Open: &open, Context: row.ContextWindow,
-			LLMStats: &LLMStatsMetrics{InputPrice: input, OutputPrice: output, Throughput: throughput, Latency: latency},
-		})
-	}
-	if len(models) == 0 {
-		return nil, nil, errors.New("stats v1 models returned no LLM rows")
+	models, err := projectLLMStatsStatsV1Models(rows)
+	if err != nil {
+		return nil, nil, err
 	}
 	return models, pages, nil
 }
@@ -222,81 +196,20 @@ func fetchLLMStatsStatsV1BenchmarkLeads(ctx context.Context, opts Options) ([]Ob
 		return nil, err
 	}
 
-	reviewed := reviewedBenchmarkSet()
-	eligible := make([]llmStatsStatsV1Benchmark, 0, len(catalog))
-	blocked := make([]map[string]string, 0)
-	seen := make(map[string]struct{}, len(catalog))
-	for _, benchmark := range catalog {
-		if _, ok := seen[benchmark.ID]; ok {
-			return nil, fmt.Errorf("duplicate Stats v1 benchmark id %q", benchmark.ID)
-		}
-		seen[benchmark.ID] = struct{}{}
-		if _, ok := reviewed[benchmark.ID]; !ok {
-			continue
-		}
-		if benchmark.ModelCount < 5 {
-			blocked = append(blocked, map[string]string{
-				benchmark1: benchmark.ID,
-				status1:    blocked1,
-				reason1:    fmt.Sprintf("Stats v1 catalog has %d models, want at least 5", benchmark.ModelCount),
-			})
-			continue
-		}
-		eligible = append(eligible, benchmark)
+	eligible, blocked, err := eligibleLLMStatsStatsV1Benchmarks(catalog)
+	if err != nil {
+		return nil, err
 	}
-	for name := range reviewed {
-		if _, ok := seen[name]; !ok {
-			blocked = append(blocked, map[string]string{
-				benchmark1: name,
-				status1:    blocked1,
-				reason1:    "Stats v1 catalog does not contain this reviewed benchmark",
-			})
-		}
-	}
-	sort.Slice(blocked, func(i, j int) bool { return blocked[i][benchmark1] < blocked[j][benchmark1] })
-	if len(blocked) > 0 {
-		var receipts []byte
-		receipts, err = encodeJSONLMaps(blocked)
-		if err != nil {
-			return nil, err
-		}
-		if err = writeSealed(sealedRevisionPath(root, blocked1, receipts, ".jsonl"), receipts); err != nil {
-			return nil, err
-		}
+	if err = sealLLMStatsBlockedReceipts(root, blocked); err != nil {
+		return nil, err
 	}
 
-	type result struct {
-		benchmark    string
-		observations []Observation
-		err          error
-	}
-	jobs := make(chan llmStatsStatsV1Benchmark)
-	results := make(chan result, len(eligible))
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	workers := min(8, max(1, len(eligible)))
-	var wg sync.WaitGroup
-	for range workers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for benchmark := range jobs {
-				observations, err := fetchLLMStatsStatsV1BenchmarkScores(ctx, opts, root, benchmark) //nolint:govet // worker goroutine must not race the outer err
-				results <- result{benchmark: benchmark.ID, observations: observations, err: err}
-			}
-		}()
-	}
-	go func() {
-		defer close(jobs)
-		for _, benchmark := range eligible {
-			select {
-			case jobs <- benchmark:
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
-	go func() { wg.Wait(); close(results) }()
+	results := startLLMStatsBenchmarkJobs(ctx, eligible, func(benchmark llmStatsStatsV1Benchmark) llmStatsBenchmarkJobResult {
+		observations, fetchErr := fetchLLMStatsStatsV1BenchmarkScores(ctx, opts, root, benchmark)
+		return llmStatsBenchmarkJobResult{benchmark: benchmark.ID, observations: observations, err: fetchErr}
+	})
 
 	all := make([]Observation, 0)
 	var firstErr error
@@ -344,150 +257,6 @@ func decodeLLMStatsStatsV1Benchmarks(data []byte) ([]llmStatsStatsV1Benchmark, e
 		return response.Benchmarks[i].ID < response.Benchmarks[j].ID
 	})
 	return response.Benchmarks, nil
-}
-
-func fetchLLMStatsStatsV1BenchmarkScores(ctx context.Context, opts Options, root string, benchmark llmStatsStatsV1Benchmark) ([]Observation, error) {
-	observations := make([]Observation, 0, benchmark.ModelCount)
-	seenRows := make(map[string]float64, benchmark.ModelCount)
-	seenCursors := make(map[string]struct{})
-	cursor := ""
-	for page := 1; ; page++ {
-		endpoint, err := llmStatsStatsV1ScoresEndpoint(opts.LLMStatsStatsV1ScoresURL, benchmark.ID, cursor)
-		if err != nil {
-			return nil, err
-		}
-		if _, duplicate := seenCursors[cursor]; duplicate {
-			return nil, fmt.Errorf("stats v1 benchmark %s repeated cursor %q", benchmark.ID, cursor)
-		}
-		seenCursors[cursor] = struct{}{}
-		data, err := getBytesWithBearer(ctx, opts.Client, endpoint, opts.LLMStatsAPIKey)
-		if err != nil {
-			return nil, fmt.Errorf("fetch Stats v1 benchmark %s page %d: %w", benchmark.ID, page, err)
-		}
-		var response llmStatsStatsV1ScoresResponse
-		if err := json.Unmarshal(data, &response); err != nil {
-			return nil, fmt.Errorf("decode Stats v1 benchmark %s page %d: %w", benchmark.ID, page, err)
-		}
-		if response.Total < 0 {
-			return nil, fmt.Errorf("stats v1 benchmark %s page %d has invalid total", benchmark.ID, page)
-		}
-		digest := SealBytes(data)
-		pagePath := filepath.Join(root, SealBytes([]byte(benchmark.ID))[:16], fmt.Sprintf("%04d-%s.json", page, digest))
-		if err := writeSealed(pagePath, data); err != nil {
-			return nil, err
-		}
-		for index, row := range response.Scores {
-			observation, err := llmStatsStatsV1Observation(row, benchmark, digest, endpoint, index, opts.Now)
-			if err != nil {
-				return nil, fmt.Errorf("stats v1 benchmark %s page %d row %d: %w", benchmark.ID, page, index+1, err)
-			}
-			if prior, duplicate := seenRows[observation.ModelID]; duplicate {
-				if prior != observation.RawScore {
-					return nil, fmt.Errorf("stats v1 benchmark %s has conflicting scores for model %q", benchmark.ID, observation.ModelID)
-				}
-				continue
-			}
-			seenRows[observation.ModelID] = observation.RawScore
-			observations = append(observations, observation)
-		}
-		if response.NextCursor == "" {
-			break
-		}
-		if page >= llmStatsStatsV1MaximumScorePagesPerBenchmark {
-			return nil, fmt.Errorf("stats v1 benchmark %s pagination exceeded %d pages", benchmark.ID, llmStatsStatsV1MaximumScorePagesPerBenchmark)
-		}
-		cursor = response.NextCursor
-	}
-	if len(observations) == 0 {
-		return nil, fmt.Errorf("stats v1 benchmark %s returned no unique score rows", benchmark.ID)
-	}
-	if len(observations) != benchmark.ModelCount {
-		observed := make([]string, 0, len(observations))
-		for _, observation := range observations {
-			observed = append(observed, observation.ModelID)
-		}
-		return nil, fmt.Errorf("stats v1 benchmark %s returned %d unique models, catalog declared %d (observed: %s)", benchmark.ID, len(observations), benchmark.ModelCount, strings.Join(observed, ", "))
-	}
-	return observations, nil
-}
-
-func llmStatsStatsV1ScoresEndpoint(base, benchmark, cursor string) (string, error) {
-	parsed, err := url.Parse(strings.TrimSpace(base))
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-		return "", fmt.Errorf("invalid LLM Stats Stats v1 scores URL %q", base)
-	}
-	query := parsed.Query()
-	query.Set(benchmark1, benchmark)
-	query.Set("limit", strconv.Itoa(llmStatsStatsV1ScoresPageLimit))
-	if cursor != "" {
-		query.Set("cursor", cursor)
-	}
-	parsed.RawQuery = query.Encode()
-	return parsed.String(), nil
-}
-
-func llmStatsStatsV1Endpoint(base string, limit int, cursor string) (string, error) {
-	parsed, err := url.Parse(strings.TrimSpace(base))
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-		return "", fmt.Errorf("invalid LLM Stats Stats v1 URL %q", base)
-	}
-	query := parsed.Query()
-	query.Set("limit", strconv.Itoa(limit))
-	if cursor != "" {
-		query.Set("cursor", cursor)
-	}
-	parsed.RawQuery = query.Encode()
-	return parsed.String(), nil
-}
-
-func llmStatsStatsV1Observation(row llmStatsStatsV1ScoreRow, benchmark llmStatsStatsV1Benchmark, digest, endpoint string, index int, now func() time.Time) (Observation, error) {
-	if strings.TrimSpace(row.ModelID) == "" || strings.TrimSpace(row.ModelName) == "" || strings.TrimSpace(row.Organization) == "" ||
-		strings.TrimSpace(row.BenchmarkName) == "" || strings.TrimSpace(row.Source) == "" || strings.TrimSpace(row.URL) == "" {
-		return Observation{}, errors.New("required identity or provenance field is missing")
-	}
-	if row.BenchmarkID != benchmark.ID {
-		return Observation{}, fmt.Errorf("benchmark id %q does not match requested %q", row.BenchmarkID, benchmark.ID)
-	}
-	if row.ScoredAt.IsZero() || now == nil {
-		return Observation{}, errors.New("score timestamp or collection clock is missing")
-	}
-	var score float64
-	if row.NormalizedScore != nil {
-		score = *row.NormalizedScore
-	} else {
-		if row.MaxScore == 0 {
-			return Observation{}, errors.New("max_score is zero and normalized_score is missing")
-		}
-		score = row.Score / row.MaxScore
-	}
-	score *= 100
-	if !finite(score) || score < 0 || score > 100 {
-		return Observation{}, fmt.Errorf("normalized score %v is outside 0..100", score)
-	}
-	grade := aggregatorUnspecified
-	if row.Verified {
-		grade = aggregatorVerified
-	} else if row.IsSelfReported {
-		grade = aggregatorSelfReported
-	}
-	return Observation{
-		SourceID:         llmStatsStatsV1SourceID,
-		SourceRevision:   digest,
-		SourceSHA256:     digest,
-		Benchmark:        benchmark.ID,
-		BenchmarkVersion: llmStatsStatsV1BenchmarkVersion,
-		Cohort:           llmStatsStatsV1Cohort,
-		ModelID:          row.ModelID,
-		OrganizationID:   row.Organization,
-		RawScore:         score,
-		Unit:             "percent",
-		Direction:        higher1,
-		Methodology:      llmStatsStatsV1Methodology,
-		EvidenceGrade:    grade,
-		FetchedAt:        now().UTC(),
-		Locator:          fmt.Sprintf("%s#row=%d&model=%s", endpoint, index, url.QueryEscape(row.ModelID)),
-		SourceClass:      SourceAggregatorResult,
-	}, nil
 }
 
 func reviewedBenchmarkSet() map[string]struct{} {

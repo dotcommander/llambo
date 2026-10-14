@@ -209,7 +209,7 @@ func TestClientResponsePolicy(t *testing.T) {
 				},
 			}
 
-			result := client.Execute(context.Background(), tt.model, "system", "source", 128, 1)
+			result := client.Execute(context.Background(), GenerationRequest{Model: tt.model, SystemPrompt: "system", Source: "source", MaxTokens: 128, Attempt: 1})
 			require.Equal(t, tt.wantError, result.Error)
 			require.Equal(t, tt.wantServed, result.ServedModel)
 			require.Equal(t, tt.wantProvider, result.ServedProvider)

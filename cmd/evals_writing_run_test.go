@@ -242,12 +242,12 @@ func TestWritingExternalEvidenceDoesNotPromoteLocalPerformanceOrQuality(t *testi
 			},
 		}},
 	}}
-	class, _, _, err := writingExternalEvidence(cat, "omlx", "local-only")
+	evidence, err := writingExternalEvidence(cat, "omlx", "local-only")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if class != "missing" {
-		t.Fatalf("local-only evidence class = %q, want missing", class)
+	if evidence.class != "missing" {
+		t.Fatalf("local-only evidence class = %q, want missing", evidence.class)
 	}
 }
 
@@ -258,11 +258,11 @@ func TestWritingExternalEvidenceAcceptsKnownExternalQualitySource(t *testing.T) 
 			"model": {Quality: map[string]catalog.QualityEvidence{"overall": {Score: 0.8, Source: "artificial_analysis,llm_stats"}}},
 		}},
 	}}
-	class, source, note, err := writingExternalEvidence(cat, "gemini", "model")
+	evidence, err := writingExternalEvidence(cat, "gemini", "model")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if class != "exact" || source != "artificial_analysis,llm_stats" || note != "overall" {
-		t.Fatalf("external evidence = %q, %q, %q", class, source, note)
+	if evidence.class != "exact" || evidence.source != "artificial_analysis,llm_stats" || evidence.note != "overall" {
+		t.Fatalf("external evidence = %q, %q, %q", evidence.class, evidence.source, evidence.note)
 	}
 }

@@ -51,7 +51,7 @@ func TestRunRetriesOnlyLengthAndWritesReceipt(t *testing.T) {
 	dir := t.TempDir()
 	campaignClient := &Client{HTTPClient: client, BaseURL: "https://example.test/api", APIKey: "test-key"}
 	options := RunOptions{OutputDir: dir, InitialTokens: 128, RetryTokens: 512, Concurrency: 1, Execute: true}
-	receipts, _, err := Run(context.Background(), campaignClient, roster, "source", "system", options)
+	receipts, _, err := Run(context.Background(), campaignClient, roster, RunInput{Source: "source", SystemPrompt: "system", Options: options})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,10 +67,15 @@ func TestRunRetriesOnlyLengthAndWritesReceipt(t *testing.T) {
 	if got, want := requestedTokens, []int{128, 512}; !equalInts(got, want) {
 		t.Fatalf("max_tokens = %v, want %v", got, want)
 	}
-	if receipts[0].Attempts[1].ResponseHeaders["X-Trace-Id"][0] != "trace" {
-		t.Fatalf("headers = %#v", receipts[0].Attempts[1].ResponseHeaders)
+	assertCampaignReceiptPersistence(t, dir, receipts[0])
+}
+
+func assertCampaignReceiptPersistence(t *testing.T, dir string, receipt Receipt) {
+	t.Helper()
+	if receipt.Attempts[1].ResponseHeaders["X-Trace-Id"][0] != "trace" {
+		t.Fatalf("headers = %#v", receipt.Attempts[1].ResponseHeaders)
 	}
-	if _, ok := receipts[0].Attempts[1].ResponseHeaders["Set-Cookie"]; ok {
+	if _, ok := receipt.Attempts[1].ResponseHeaders["Set-Cookie"]; ok {
 		t.Fatal("sensitive Set-Cookie header was persisted")
 	}
 	data, err := os.ReadFile(filepath.Join(dir, "acme-writer.json"))
@@ -88,7 +93,7 @@ func TestRunDoesNotRetryStop(t *testing.T) {
 		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
 	})}
 	options := RunOptions{OutputDir: t.TempDir(), InitialTokens: 128, RetryTokens: 512, Concurrency: 1, Execute: true}
-	_, _, err := Run(context.Background(), &Client{HTTPClient: client, BaseURL: "https://example.test/api", APIKey: "key"}, testRoster(), "source", "system", options)
+	_, _, err := Run(context.Background(), &Client{HTTPClient: client, BaseURL: "https://example.test/api", APIKey: "key"}, testRoster(), RunInput{Source: "source", SystemPrompt: "system", Options: options})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +114,7 @@ func TestRunAppliesTimeoutAcrossLengthRetry(t *testing.T) {
 		return nil, r.Context().Err()
 	})}
 	options := RunOptions{OutputDir: t.TempDir(), InitialTokens: 128, RetryTokens: 512, Concurrency: 1, ModelTimeout: 20 * time.Millisecond, Execute: true}
-	receipts, _, err := Run(context.Background(), &Client{HTTPClient: client, BaseURL: "https://example.test/api", APIKey: "key"}, testRoster(), "source", "system", options)
+	receipts, _, err := Run(context.Background(), &Client{HTTPClient: client, BaseURL: "https://example.test/api", APIKey: "key"}, testRoster(), RunInput{Source: "source", SystemPrompt: "system", Options: options})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +142,7 @@ func TestAutoRouterCapturesRoutedModelAndEnforcesPriceCeiling(t *testing.T) {
 	roster := testRoster()
 	roster.Models[0] = Model{OpenRouterModelID: "openrouter/auto", LlamboSelector: "openrouter/openrouter/auto", DynamicRouting: true, RoutingMaxInputPer1M: 10, RoutingMaxOutputPer1M: 10, MaxCompletionTokens: 1024}
 	options := RunOptions{OutputDir: t.TempDir(), InitialTokens: 128, RetryTokens: 512, Concurrency: 1, Execute: true}
-	receipts, _, err := Run(context.Background(), &Client{HTTPClient: client, BaseURL: "https://example.test/api", APIKey: "key"}, roster, "source", "system", options)
+	receipts, _, err := Run(context.Background(), &Client{HTTPClient: client, BaseURL: "https://example.test/api", APIKey: "key"}, roster, RunInput{Source: "source", SystemPrompt: "system", Options: options})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +161,7 @@ func TestAutoRouterRequiresReportedCost(t *testing.T) {
 		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
 	})}
 	model := Model{OpenRouterModelID: "openrouter/auto", DynamicRouting: true, RoutingMaxInputPer1M: 10, RoutingMaxOutputPer1M: 10}
-	attempt := (&Client{HTTPClient: client, BaseURL: "https://example.test/api", APIKey: "key"}).Execute(context.Background(), model, "system", "source", 128, 1)
+	attempt := (&Client{HTTPClient: client, BaseURL: "https://example.test/api", APIKey: "key"}).Execute(context.Background(), GenerationRequest{Model: model, SystemPrompt: "system", Source: "source", MaxTokens: 128, Attempt: 1})
 	if !strings.Contains(attempt.Error, "omitted usage.cost") {
 		t.Fatalf("error = %q", attempt.Error)
 	}

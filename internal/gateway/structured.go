@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 
 	"github.com/dotcommander/llambo/providers"
@@ -47,43 +46,14 @@ func structuredRequest(req ChatCompletionRequest) (providers.StructuredChatReque
 	if len(req.Messages) == 0 {
 		return out, errors.New("messages is required")
 	}
-	for i, m := range req.Messages {
-		switch m.Role {
-		case system3:
-			out.Messages = append(out.Messages, whtypes.NewSystemMessage(m.Content))
-		case user4:
-			out.Messages = append(out.Messages, whtypes.NewUserMessage(m.Content))
-		case assistant1:
-			calls := make([]whtypes.ToolCall, 0, len(m.ToolCalls))
-			for _, call := range m.ToolCalls {
-				if call.ID == "" || (call.Name == "" && (call.Function == nil || call.Function.Name == "")) || (call.Type != "" && call.Type != function1) {
-					return out, fmt.Errorf("messages[%d]: invalid tool call", i)
-				}
-				normalized, err := whtypes.NormalizeToolCall(call)
-				if err != nil {
-					return out, fmt.Errorf("messages[%d]: %w", i, err)
-				}
-				calls = append(calls, normalized)
-			}
-			out.Messages = append(out.Messages, &whtypes.AssistantMessage{Content: m.Content, ToolCalls: calls})
-		case tool2:
-			if m.ToolCallID == "" {
-				return out, fmt.Errorf("messages[%d].tool_call_id is required", i)
-			}
-			out.Messages = append(out.Messages, &whtypes.ToolResultMessage{Content: m.Content, ToolCallID: m.ToolCallID})
-		default:
-			return out, fmt.Errorf("messages[%d].role is unsupported", i)
-		}
-		if m.Role != assistant1 && len(m.ToolCalls) > 0 {
-			return out, errors.New("tool_calls requires assistant role")
-		}
+	messages, err := structuredMessages(req.Messages)
+	out.Messages = messages
+	if err != nil {
+		return out, err
 	}
 	for _, tool := range req.Tools {
-		if tool.Type != "" && tool.Type != function1 {
-			return out, errors.New("unsupported tool type")
-		}
-		if tool.Name == "" && (tool.Function == nil || tool.Function.Name == "") {
-			return out, errors.New("tool name is required")
+		if err := validateStructuredTool(tool); err != nil {
+			return out, err
 		}
 	}
 	if !isRawNull(req.Stop) {

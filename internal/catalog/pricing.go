@@ -14,6 +14,15 @@ const (
 	free1 = "free"
 )
 
+// costQuote is a resolved pricing classification with per-1M token rates.
+// known distinguishes a resolved quote from an unknown-cost fallback.
+type costQuote struct {
+	status      CostStatus
+	inputPer1M  float64
+	outputPer1M float64
+	known       bool
+}
+
 // PriceLabel renders a human-readable price description for a model.
 func PriceLabel(status CostStatus, input, output float64) string {
 	switch status {
@@ -30,12 +39,17 @@ func PriceLabel(status CostStatus, input, output float64) string {
 
 // CostForModel returns the pricing status and per-million rates for a model.
 func CostForModel(costMap map[string]costs.ModelCost, providerName, modelID string) (status CostStatus, inputPer1M, outputPer1M float64) {
-	return modelCostStatus(costMap, providerName, modelID)
+	return modelCostStatusForEntry(costMap, providerName, modelID, nil).scalars()
 }
 
 // CostForEntry is CostForModel honoring a catalog entry's pinned pricing.
 func CostForEntry(costMap map[string]costs.ModelCost, providerName, modelID string, entry *ModelEntry) (status CostStatus, inputPer1M, outputPer1M float64) {
-	return modelCostStatusForEntry(costMap, providerName, modelID, entry)
+	return modelCostStatusForEntry(costMap, providerName, modelID, entry).scalars()
+}
+
+// scalars unpacks the quote for the exported scalar-returning API.
+func (q costQuote) scalars() (status CostStatus, inputPer1M, outputPer1M float64) {
+	return q.status, q.inputPer1M, q.outputPer1M
 }
 
 // CostWithinCap reports whether a model's output cost is within maxOutputCost
@@ -51,44 +65,55 @@ func CostWithinCap(status CostStatus, output, maxOutputCost float64, includeUnkn
 	return !(status == CostPaid && output > maxOutputCost)
 }
 
-func costAllowed(status CostStatus, output float64, opts SelectorOptions) bool {
-	if opts.FreeOnly && status != CostFree {
+// costAllowed applies the selector's free-only and output-cost budget bounds.
+func costAllowed(quote costQuote, opts SelectorOptions) bool {
+	if opts.FreeOnly && quote.status != CostFree {
 		return false
 	}
-	return CostWithinCap(status, output, opts.MaxOutputCost, opts.IncludeUnknownCost)
+	return CostWithinCap(quote.status, quote.outputPer1M, opts.MaxOutputCost, opts.IncludeUnknownCost)
 }
 
-func modelCostStatus(costMap map[string]costs.ModelCost, providerName, modelID string) (status CostStatus, inputPer1M, outputPer1M float64) {
-	return modelCostStatusForEntry(costMap, providerName, modelID, nil)
-}
-
-func modelCostStatusForEntry(costMap map[string]costs.ModelCost, providerName, modelID string, entry *ModelEntry) (status CostStatus, inputPer1M, outputPer1M float64) {
-	mc, ok := costMap[costs.Key(providerName, modelID)]
-	if ok && mc.InputExplicit && mc.OutputExplicit && validPrice(mc.InputPer1M) && validPrice(mc.OutputPer1M) {
-		if mc.InputPer1M == 0 && mc.OutputPer1M == 0 {
-			return CostFree, mc.InputPer1M, mc.OutputPer1M
-		}
-		return CostPaid, mc.InputPer1M, mc.OutputPer1M
+// modelCostStatusForEntry resolves pricing from the explicit cost map first,
+// then from catalog metadata pricing.
+func modelCostStatusForEntry(costMap map[string]costs.ModelCost, providerName, modelID string, entry *ModelEntry) costQuote {
+	mc, known := costMap[costs.Key(providerName, modelID)]
+	if quote, ok := explicitCostQuote(mc, known); ok {
+		return quote
 	}
-	if status, input, output, ok := metadataCostStatus(entry); ok {
-		return status, input, output
+	if quote := metadataCostQuote(entry); quote.known {
+		return quote
 	}
-	return CostUnknown, 0, 0
+	return costQuote{status: CostUnknown}
 }
 
-func metadataCostStatus(entry *ModelEntry) (CostStatus, float64, float64, bool) {
+// explicitCostQuote converts a cost-map row when both sides are explicitly and
+// validly priced.
+func explicitCostQuote(mc costs.ModelCost, ok bool) (costQuote, bool) {
+	if !ok || !mc.InputExplicit || !mc.OutputExplicit || !validPrice(mc.InputPer1M) || !validPrice(mc.OutputPer1M) {
+		return costQuote{}, false
+	}
+	status := CostPaid
+	if mc.InputPer1M == 0 && mc.OutputPer1M == 0 {
+		status = CostFree
+	}
+	return costQuote{status: status, inputPer1M: mc.InputPer1M, outputPer1M: mc.OutputPer1M, known: true}, true
+}
+
+// metadataCostQuote resolves pricing from catalog metadata price labels.
+func metadataCostQuote(entry *ModelEntry) costQuote {
 	if entry == nil {
-		return CostUnknown, 0, 0, false
+		return costQuote{}
 	}
 	input, inputOK := pricePer1M(entry.Metadata.Pricing.Prompt)
 	output, outputOK := pricePer1M(entry.Metadata.Pricing.Completion)
 	if !inputOK || !outputOK {
-		return CostUnknown, 0, 0, false
+		return costQuote{}
 	}
+	status := CostPaid
 	if input == 0 && output == 0 {
-		return CostFree, input, output, true
+		status = CostFree
 	}
-	return CostPaid, input, output, true
+	return costQuote{status: status, inputPer1M: input, outputPer1M: output, known: true}
 }
 
 func pricePer1M(raw string) (float64, bool) {

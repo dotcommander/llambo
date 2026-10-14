@@ -120,13 +120,12 @@ func WritingBenchSnapshotProvesNoCampaignMatches(snapshot WritingBenchIdentitySn
 }
 
 func validateWritingBenchIdentitySnapshot(snapshot WritingBenchIdentitySnapshot) error {
-	if snapshot.SchemaVersion != "writingbench-identity-snapshot-v1" || snapshot.FetchedAt.IsZero() || !validLedgerURL(snapshot.Locator) || !validLedgerRevision(snapshot.Revision) || !validLedgerRevision(snapshot.CommitSHA) || !sourceLedgerHash.MatchString(snapshot.ContentSHA256) || !validLedgerText(snapshot.Methodology) || snapshot.RowCount != 54 || len(snapshot.Rows) != snapshot.RowCount {
+	if !validWritingBenchSnapshotMetadata(snapshot) {
 		return errors.New("WritingBench identity snapshot is incomplete or invalid")
 	}
 	keys, identities := make(map[string]struct{}, len(snapshot.Rows)), make(map[string]struct{}, len(snapshot.Rows))
 	for i, row := range snapshot.Rows {
-		identity, ok := externalIdentity(Model{Name: row.Name, Organization: row.Organization})
-		if !ok || row.Key != "writingbench:"+canonicalKey(row.Name) || row.NormalizedName != normalizeIdentityText(row.Name, true) || row.OrganizationFamily != canonicalOrganizationFamily(row.Organization) || row.NormalizedIdentity != identity {
+		if !validWritingBenchSnapshotRow(row) {
 			return fmt.Errorf("WritingBench identity snapshot row %d is invalid", i+1)
 		}
 		if _, exists := keys[row.Key]; exists {
@@ -146,4 +145,13 @@ func validateWritingBenchIdentitySnapshot(snapshot WritingBenchIdentitySnapshot)
 func writingBenchIdentitySnapshotBytesDigest(data []byte) string {
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
+}
+
+func validWritingBenchSnapshotMetadata(snapshot WritingBenchIdentitySnapshot) bool {
+	return snapshot.SchemaVersion == "writingbench-identity-snapshot-v1" && !snapshot.FetchedAt.IsZero() && validLedgerURL(snapshot.Locator) && validLedgerRevision(snapshot.Revision) && validLedgerRevision(snapshot.CommitSHA) && sourceLedgerHash.MatchString(snapshot.ContentSHA256) && validLedgerText(snapshot.Methodology) && snapshot.RowCount == 54 && len(snapshot.Rows) == snapshot.RowCount
+}
+
+func validWritingBenchSnapshotRow(row WritingBenchIdentitySnapshotRow) bool {
+	identity, ok := externalIdentity(Model{Name: row.Name, Organization: row.Organization})
+	return ok && row.Key == "writingbench:"+canonicalKey(row.Name) && row.NormalizedName == normalizeIdentityText(row.Name, true) && row.OrganizationFamily == canonicalOrganizationFamily(row.Organization) && row.NormalizedIdentity == identity
 }

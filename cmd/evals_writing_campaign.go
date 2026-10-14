@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -38,32 +37,8 @@ func (c *evalsWritingCampaignCommand) Run(_ *evalsCommand, io *commandIO) error 
 	if err != nil {
 		return err
 	}
-	if strings.TrimSpace(c.Model) != "" {
-		selected := make([]writingcampaign.Model, 0, 1)
-		for _, model := range roster.Models {
-			if model.OpenRouterModelID == c.Model {
-				if model.Disabled {
-					return fmt.Errorf("model %q is disabled: %s", c.Model, model.DisabledReason)
-				}
-				selected = append(selected, model)
-				break
-			}
-		}
-		if len(selected) == 0 {
-			return fmt.Errorf("model %q is not in the locked writing roster", c.Model)
-		}
-		roster.Models = selected
-	} else {
-		active := roster.Models[:0]
-		for _, model := range roster.Models {
-			if !model.Disabled {
-				active = append(active, model)
-			}
-		}
-		if len(active) == 0 {
-			return errors.New("locked writing roster has no enabled models")
-		}
-		roster.Models = active
+	if err = selectCampaignRoster(&roster, c.Model); err != nil {
+		return err
 	}
 	root := filepath.Dir(c.Roster)
 	options := writingcampaign.RunOptions{
@@ -98,7 +73,7 @@ func (c *evalsWritingCampaignCommand) Run(_ *evalsCommand, io *commandIO) error 
 		client.Headers = cfg.ExtraHeaders
 		client.HTTPClient = &http.Client{Timeout: c.Timeout}
 	}
-	receipts, plan, runErr := writingcampaign.Run(io.Context(), client, roster, string(source), string(systemPrompt), options)
+	receipts, plan, runErr := writingcampaign.Run(io.Context(), client, roster, writingcampaign.RunInput{Source: string(source), SystemPrompt: string(systemPrompt), Options: options})
 	if err = writingcampaign.WriteHTML(options.HTMLPath, roster, receipts, time.Now()); err != nil {
 		return fmt.Errorf("write comparison HTML: %w", err)
 	}
@@ -113,15 +88,7 @@ func (c *evalsWritingCampaignCommand) Run(_ *evalsCommand, io *commandIO) error 
 		return runErr
 	}
 	if c.Execute {
-		failed := 0
-		for _, receipt := range receipts {
-			if receipt.Status != "complete" {
-				failed++
-			}
-		}
-		if failed > 0 {
-			return fmt.Errorf("campaign completed with %d failed model receipts; see %s", failed, options.OutputDir)
-		}
+		return campaignReceiptError(receipts, options.OutputDir)
 	}
 	return nil
 }

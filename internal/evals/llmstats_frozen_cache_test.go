@@ -11,6 +11,7 @@ import (
 )
 
 func TestReadFrozenLLMStatsObservationArtifactValidatesAndAttachesTargets(t *testing.T) {
+	t.Parallel()
 	data, modelID := frozenLLMStatsObservationFixture(t)
 	path := filepath.Join(t.TempDir(), "observations.jsonl")
 	if err := os.WriteFile(path, data, 0o600); err != nil {
@@ -32,6 +33,7 @@ func TestReadFrozenLLMStatsObservationArtifactValidatesAndAttachesTargets(t *tes
 }
 
 func TestReadFrozenLLMStatsObservationArtifactRejectsDigestMismatch(t *testing.T) {
+	t.Parallel()
 	data, _ := frozenLLMStatsObservationFixture(t)
 	path := filepath.Join(t.TempDir(), "observations.jsonl")
 	if err := os.WriteFile(path, data, 0o600); err != nil {
@@ -43,6 +45,7 @@ func TestReadFrozenLLMStatsObservationArtifactRejectsDigestMismatch(t *testing.T
 }
 
 func TestFrozenLLMStatsObservationValidationRejectsChangedPopulation(t *testing.T) {
+	t.Parallel()
 	data, _ := frozenLLMStatsObservationFixture(t)
 	observations, err := DecodeObservationsJSONL(strings.NewReader(string(data)), maxSourceBody)
 	if err != nil {
@@ -60,6 +63,7 @@ func TestFrozenLLMStatsObservationValidationRejectsChangedPopulation(t *testing.
 }
 
 func TestFrozenLLMStatsObservationValidationRejectsDuplicateTargetModelID(t *testing.T) {
+	t.Parallel()
 	data, _ := frozenLLMStatsObservationFixture(t)
 	observations, err := DecodeObservationsJSONL(strings.NewReader(string(data)), maxSourceBody)
 	if err != nil {
@@ -83,6 +87,7 @@ func TestFrozenLLMStatsObservationValidationRejectsDuplicateTargetModelID(t *tes
 }
 
 func TestPrepareFrozenLLMStatsCohortResultsStripsRefreshedTargetWithoutPinnedArtifact(t *testing.T) {
+	t.Parallel()
 	cohorts, err := loadFrozenLLMStatsCohorts()
 	if err != nil {
 		t.Fatal(err)
@@ -98,6 +103,7 @@ func TestPrepareFrozenLLMStatsCohortResultsStripsRefreshedTargetWithoutPinnedArt
 }
 
 func TestRemoveFrozenLLMStatsCohortResultsRetainsStatsV1Replacement(t *testing.T) {
+	t.Parallel()
 	cohorts, err := loadFrozenLLMStatsCohorts()
 	if err != nil {
 		t.Fatal(err)
@@ -116,6 +122,7 @@ func TestRemoveFrozenLLMStatsCohortResultsRetainsStatsV1Replacement(t *testing.T
 }
 
 func TestFetchCachedOnlyAttachesFrozenTargetsAndReportsMissingArtifact(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	now := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
 	cohorts, err := loadFrozenLLMStatsCohorts()
@@ -130,28 +137,7 @@ func TestFetchCachedOnlyAttachesFrozenTargetsAndReportsMissingArtifact(t *testin
 		t.Fatal(err)
 	}
 	opts := Options{CacheDir: dir, Now: func() time.Time { return now }}
-	result, err := fetchCachedOnly(opts, sourceSnapshot{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	status := sourceStatusNamed(t, result.Sources, "LLM Stats frozen cohorts")
-	if _, ok := result.Models[0].Benchmarks["longbench-v2"]; ok || status.Cache != "unavailable" || !strings.Contains(status.Error, "frozen LLM Stats cohorts unavailable") || len(result.Models) != 1 {
-		t.Fatalf("missing sealed artifact did not fail closed while preserving cached models: %#v %#v", status, result.Models)
-	}
-	artifactPath := llmStatsFrozenCohortArtifactPath(dir)
-	if err = os.MkdirAll(filepath.Dir(artifactPath), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err = os.WriteFile(artifactPath, []byte("corrupt"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	result, err = fetchCachedOnly(opts, sourceSnapshot{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := result.Models[0].Benchmarks["longbench-v2"]; ok || !strings.Contains(sourceStatusNamed(t, result.Sources, "LLM Stats frozen cohorts").Error, "digest") {
-		t.Fatalf("corrupt sealed artifact did not fail closed: %#v", result)
-	}
+	assertFrozenCacheRejectsMissingAndCorruptArtifact(t, opts, dir)
 
 	data, _ := frozenLLMStatsObservationFixture(t)
 	observations, err := DecodeObservationsJSONL(strings.NewReader(string(data)), maxSourceBody)
@@ -162,10 +148,7 @@ func TestFetchCachedOnlyAttachesFrozenTargetsAndReportsMissingArtifact(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	previous := loadFrozenLLMStatsCachedObservationsSource
-	loadFrozenLLMStatsCachedObservationsSource = func(string) ([]Observation, error) { return targets, nil }
-	t.Cleanup(func() { loadFrozenLLMStatsCachedObservationsSource = previous })
-	result, err = fetchCachedOnly(opts, sourceSnapshot{})
+	result, err := fetchCachedOnlyWithFrozenLoader(opts, sourceSnapshot{}, func(string) ([]Observation, error) { return targets, nil })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,6 +161,7 @@ func TestFetchCachedOnlyAttachesFrozenTargetsAndReportsMissingArtifact(t *testin
 }
 
 func TestFrozenLLMStatsCohortStatusChangesReportFingerprint(t *testing.T) {
+	t.Parallel()
 	sealed := Report{Sources: []SourceStatus{frozenLLMStatsCohortStatus(nil)}}
 	unavailable := Report{Sources: []SourceStatus{frozenLLMStatsCohortStatus(errors.New("missing"))}}
 	if reportCacheFingerprint(sealed) == reportCacheFingerprint(unavailable) {
@@ -186,6 +170,7 @@ func TestFrozenLLMStatsCohortStatusChangesReportFingerprint(t *testing.T) {
 }
 
 func TestFrozenLLMStatsCohortAdmissionReasonsAreSpecific(t *testing.T) {
+	t.Parallel()
 	cohorts, err := loadFrozenLLMStatsCohorts()
 	if err != nil {
 		t.Fatal(err)
@@ -208,6 +193,7 @@ func TestFrozenLLMStatsCohortAdmissionReasonsAreSpecific(t *testing.T) {
 }
 
 func TestBuildReportCommonCohortSupersedesSourceNativeScale(t *testing.T) {
+	t.Parallel()
 	cohorts, err := loadFrozenLLMStatsCohorts()
 	if err != nil {
 		t.Fatal(err)

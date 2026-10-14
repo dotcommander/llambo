@@ -7,17 +7,17 @@ import (
 )
 
 func TestBuildReportFailsClosedOnCorruptFrozenStatsV1Cohort(t *testing.T) {
-	original := llmStatsStatsV1FrozenCohortsJSON
-	llmStatsStatsV1FrozenCohortsJSON = []byte(`{"schema_version":"corrupt"}`)
-	t.Cleanup(func() { llmStatsStatsV1FrozenCohortsJSON = original })
-
-	_, err := BuildReport(Result{}, "matrix")
+	t.Parallel()
+	_, err := buildReportWithScoringLoader(Result{}, "matrix", "", func() (scoringContext, error) {
+		return loadScoringContextWithStatsV1([]byte(`{"schema_version":"corrupt"}`))
+	})
 	if err == nil || !strings.Contains(err.Error(), "initialize scoring context: load frozen Stats v1 cohorts:") {
 		t.Fatalf("corrupt authoritative cohort did not fail report construction: %v", err)
 	}
 }
 
 func TestLLAMBO2OrderedPrimaryFallback(t *testing.T) {
+	t.Parallel()
 	low, high := 10.0, 90.0
 	models := []Model{{Key: "low", Name: "low", IdentityMatch: IdentityMatchExact, LLMStats: &LLMStatsMetrics{SWEVerified: &low, SWEPro: &high, Indexes: map[string]Index{}}}, {Key: "missing", Name: "missing", IdentityMatch: IdentityMatchExact, Benchmarks: map[string]BenchmarkResult{"swe-bench-pro": sealedBenchmark(high)}}}
 	reference := FormulaReference{Metrics: map[string][]float64{"llm_swe_bench_verified": {0, 50, 100}, "llm_swe_bench_pro": {0, 25, 50, 75, 100}, "llm_code_index": {0, 50, 100}, "aa_coding_index": {0, 50, 100}}}
@@ -32,6 +32,7 @@ func TestLLAMBO2OrderedPrimaryFallback(t *testing.T) {
 }
 
 func TestOrderedPrimaryRequiresIndependentCohort(t *testing.T) {
+	t.Parallel()
 	value := 80.0
 	model := Model{Benchmarks: map[string]BenchmarkResult{"bfcl-v4": sealedBenchmark(value), "tau2-bench": sealedBenchmark(value)}}
 	spec := categorySpecs[0]
@@ -47,6 +48,7 @@ func TestOrderedPrimaryRequiresIndependentCohort(t *testing.T) {
 }
 
 func TestOrderedPrimaryRejectsUnsealedEvidence(t *testing.T) {
+	t.Parallel()
 	value := 80.0
 	cohort := []float64{10, 40, 60, 80, 90}
 	for _, test := range []struct {
@@ -62,6 +64,7 @@ func TestOrderedPrimaryRejectsUnsealedEvidence(t *testing.T) {
 		{"cohort too small", sealedBenchmark(value), cohort[:4]},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			model := Model{Benchmarks: map[string]BenchmarkResult{"bfcl-v4": test.result}}
 			if score := scoreCategory(model, categorySpecs[0], FormulaReference{Metrics: map[string][]float64{"bfcl_v4": test.cohort}}); score != nil {
 				t.Fatalf("unsealed later primary became a score: %#v", score)
@@ -75,6 +78,7 @@ func sealedBenchmark(value float64) BenchmarkResult {
 }
 
 func TestLLAMBO1UsesPrimarySourceIdentityForConfidence(t *testing.T) {
+	t.Parallel()
 	primary, checkA, checkB := 90.0, 90.0, 90.0
 	model := Model{IdentityMatch: IdentityMatchUnmatched, LLMStats: &LLMStatsMetrics{
 		SWEVerified: &primary, SWEPro: &checkA, SciCode: &checkB, Indexes: map[string]Index{},
@@ -90,6 +94,7 @@ func TestLLAMBO1UsesPrimarySourceIdentityForConfidence(t *testing.T) {
 }
 
 func TestLLAMBO1WritingUsesOfficialPrimaryAndEQOnlyAsCheck(t *testing.T) {
+	t.Parallel()
 	primary, corroborator := 78.0, 1800.0
 	model := Model{Key: "writer", Name: "Writer", Benchmarks: map[string]BenchmarkResult{
 		"writingbench":        {Score: &primary, Identity: IdentityMatchExact, Version: "wb-v1", ContentSHA: strings.Repeat("a", 64), Judge: "Claude-Sonnet-4-5"},
@@ -108,6 +113,7 @@ func TestLLAMBO1WritingUsesOfficialPrimaryAndEQOnlyAsCheck(t *testing.T) {
 }
 
 func TestLLAMBO1WritingIncludesWritingBenchDomainAndRequirementChecks(t *testing.T) {
+	t.Parallel()
 	primary := 78.0
 	model := Model{Benchmarks: map[string]BenchmarkResult{"writingbench": {
 		Score: &primary, Identity: IdentityMatchExact, Details: map[string]float64{
@@ -125,6 +131,7 @@ func TestLLAMBO1WritingIncludesWritingBenchDomainAndRequirementChecks(t *testing
 }
 
 func TestLLAMBO1InstructionFollowingUsesWritingBenchRequirementChecks(t *testing.T) {
+	t.Parallel()
 	primary := 50.0
 	model := Model{LLMStats: &LLMStatsMetrics{Indexes: map[string]Index{
 		"instruction_following": {Conservative: primary},
@@ -147,6 +154,7 @@ func TestLLAMBO1InstructionFollowingUsesWritingBenchRequirementChecks(t *testing
 }
 
 func TestLLAMBO2InstructionFollowingFallsBackToOfficialIFEval(t *testing.T) {
+	t.Parallel()
 	ifeval := 91.84
 	model := Model{Benchmarks: map[string]BenchmarkResult{"ifeval-official": {
 		Score: &ifeval, Identity: IdentityMatchExact, Version: "commit", ContentSHA: strings.Repeat("a", 64), Method: "official methodology",
@@ -161,12 +169,14 @@ func TestLLAMBO2InstructionFollowingFallsBackToOfficialIFEval(t *testing.T) {
 }
 
 func TestEmpiricalPercentileUsesMidranks(t *testing.T) {
+	t.Parallel()
 	if got := empiricalPercentile([]float64{1, 2, 2, 3}, 2, true); got != 50 {
 		t.Fatalf("got %v, want 50", got)
 	}
 }
 
 func TestLLAMBO1AgreementAndConfidenceThresholds(t *testing.T) {
+	t.Parallel()
 	primary, checkA, checkB := 50.0, 60.0, 40.0
 	model := Model{LLMStats: &LLMStatsMetrics{
 		SWEVerified: &primary, SWEPro: &checkA, SciCode: &checkB, Indexes: map[string]Index{},
@@ -198,6 +208,7 @@ func TestLLAMBO1AgreementAndConfidenceThresholds(t *testing.T) {
 		{"projected", IdentityMatchProjected, false, float64Ptr(100), 2, "low"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			if got := categoryConfidence(test.identity, test.stale, test.agreement, test.checks); got != test.want {
 				t.Fatalf("got %q, want %q", got, test.want)
 			}
@@ -206,6 +217,7 @@ func TestLLAMBO1AgreementAndConfidenceThresholds(t *testing.T) {
 }
 
 func TestLLAMBO1RenderMatrix(t *testing.T) {
+	t.Parallel()
 	primary := &benchmarkEvidence{Benchmark: "swe-bench-verified"}
 	report := Report{FormulaVersion: FormulaVersion, RankingProfile: "coding", Models: []ReportModel{{Name: "model", LlamboScores: map[string]*LlamboScore{"coding": {Score: 50, Primary: primary, Confidence: "medium"}}, Scores: map[string]*ExternalScore{}}}}
 	for _, want := range []string{"Llambo Score Matrix", "Instruction Following", "swe-bench-verified"} {
@@ -223,6 +235,7 @@ func TestLLAMBO1RenderMatrix(t *testing.T) {
 }
 
 func TestLLAMBO1RejectsRemovedRankingProfiles(t *testing.T) {
+	t.Parallel()
 	for _, profile := range []string{"overall", "general", "value"} {
 		if _, err := BuildReport(Result{}, profile); err == nil || !strings.Contains(err.Error(), "unsupported ranking profile") {
 			t.Fatalf("removed profile %q accepted: %v", profile, err)
@@ -230,8 +243,8 @@ func TestLLAMBO1RejectsRemovedRankingProfiles(t *testing.T) {
 	}
 }
 
-func externalTestModel(key string, intelligence, coding, agentic, general, code float64) Model {
-	return Model{Key: key, Name: key, IdentityMatch: IdentityMatchExact, Benchmarks: map[string]BenchmarkResult{"swe-bench-verified": sealedBenchmark(code)}, AA: &ArtificialMetrics{Intelligence: float64Ptr(intelligence), Coding: float64Ptr(coding), Agentic: float64Ptr(agentic)}, LLMStats: &LLMStatsMetrics{GPQA: float64Ptr(general / 100), SWEVerified: float64Ptr(code / 100), SWEPro: float64Ptr(code / 100), MCPAtlas: float64Ptr(agentic), Indexes: map[string]Index{"general": {Conservative: general}, "reasoning": {Conservative: general}, "instruction_following": {Conservative: general}, "factuality": {Conservative: general}, "code": {Conservative: code}, "agents": {Conservative: general}, "tool_calling": {Conservative: general}, "structured_output": {Conservative: general}, "writing": {Conservative: general}, "long_context": {Conservative: general}, "grounding": {Conservative: general}}}}
+func externalTestModel(key string, metrics externalModelMetrics) Model {
+	return Model{Key: key, Name: key, IdentityMatch: IdentityMatchExact, Benchmarks: map[string]BenchmarkResult{"swe-bench-verified": sealedBenchmark(metrics.code)}, AA: &ArtificialMetrics{Intelligence: float64Ptr(metrics.intelligence), Coding: float64Ptr(metrics.coding), Agentic: float64Ptr(metrics.agentic)}, LLMStats: &LLMStatsMetrics{GPQA: float64Ptr(metrics.general / 100), SWEVerified: float64Ptr(metrics.code / 100), SWEPro: float64Ptr(metrics.code / 100), MCPAtlas: float64Ptr(metrics.agentic), Indexes: map[string]Index{"general": {Conservative: metrics.general}, "reasoning": {Conservative: metrics.general}, "instruction_following": {Conservative: metrics.general}, "factuality": {Conservative: metrics.general}, "code": {Conservative: metrics.code}, "agents": {Conservative: metrics.general}, "tool_calling": {Conservative: metrics.general}, "structured_output": {Conservative: metrics.general}, "writing": {Conservative: metrics.general}, "long_context": {Conservative: metrics.general}, "grounding": {Conservative: metrics.general}}}}
 }
 func float64Ptr(value float64) *float64 { return &value }
 func closeTo(t *testing.T, got, want float64) {
@@ -240,3 +253,5 @@ func closeTo(t *testing.T, got, want float64) {
 		t.Fatalf("got %v want %v", got, want)
 	}
 }
+
+type externalModelMetrics struct{ intelligence, coding, agentic, general, code float64 }

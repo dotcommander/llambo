@@ -25,7 +25,7 @@ func TestEvaluateAccelerationConditionCapturesPairedMetrics(t *testing.T) {
 			t.Fatal("wrong model")
 		}
 		return AccelerationChatResponse{Provider: "omlx", Model: "parent", Content: "42", OutputTokens: 2}, nil
-	}), AccelerationChatRequest{Model: "omlx/parent", Prompt: "answer", MaxOutputTokens: 32}, AccelerationCase{ID: "trace", Oracle: "42"}, true, false, "")
+	}), AccelerationObservation{Request: AccelerationChatRequest{Model: "omlx/parent", Prompt: "answer", MaxOutputTokens: 32}, Case: AccelerationCase{ID: "trace", Oracle: "42"}, MTPEnabled: true, Warmup: false, VerifiedServedModel: ""})
 	if err != nil || !record.Result.AnswerCorrect || record.Result.TokensPerSecond <= 0 || !record.MTPEnabled {
 		t.Fatalf("record %#v, err %v", record, err)
 	}

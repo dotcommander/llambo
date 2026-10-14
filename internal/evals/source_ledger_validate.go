@@ -31,10 +31,10 @@ func ValidateSourceResearchLedger(ledger *SourceResearchLedger, manifest coverag
 		return errors.New("source research ledger is nil")
 	}
 	normalizeSourceResearchLedger(ledger)
-	return validateSourceResearchLedger(*ledger, &manifest)
+	return validateResearchLedgerContent(*ledger, &manifest)
 }
 
-func validateSourceResearchLedger(ledger SourceResearchLedger, manifest *coverageCampaignManifest) error {
+func validateResearchLedgerContent(ledger SourceResearchLedger, manifest *coverageCampaignManifest) error {
 	if ledger.SchemaVersion != "llambo-source-ledger-v1" {
 		return fmt.Errorf("source research ledger has unsupported schema version %q", ledger.SchemaVersion)
 	}
@@ -44,35 +44,9 @@ func validateSourceResearchLedger(ledger SourceResearchLedger, manifest *coverag
 	if len(ledger.Sources) == 0 || len(ledger.Claims) == 0 || len(ledger.Searches) == 0 || len(ledger.ScopedNulls) == 0 {
 		return errors.New("source research ledger requires sources, searches, and scoped-null receipts")
 	}
-	sourceIDs := make(map[string]struct{}, len(ledger.Sources))
-	for i, source := range ledger.Sources {
-		if err := validateResearchSource(source); err != nil {
-			return fmt.Errorf("source %d: %w", i+1, err)
-		}
-		if _, exists := sourceIDs[source.ID]; exists {
-			return fmt.Errorf("source research ledger has duplicate source %q", source.ID)
-		}
-		sourceIDs[source.ID] = struct{}{}
-	}
-	claimIDs := make(map[string]struct{}, len(ledger.Claims))
-	for i, claim := range ledger.Claims {
-		if _, exists := claimIDs[claim.ID]; exists {
-			return fmt.Errorf("source research ledger has duplicate claim %q", claim.ID)
-		}
-		claimIDs[claim.ID] = struct{}{}
-		if err := validateResearchClaim(claim, sourceIDs); err != nil {
-			return fmt.Errorf("claim %d: %w", i+1, err)
-		}
-	}
-	searchIDs := make(map[string]struct{}, len(ledger.Searches))
-	for i, search := range ledger.Searches {
-		if _, exists := searchIDs[search.ID]; exists {
-			return fmt.Errorf("source research ledger has duplicate search %q", search.ID)
-		}
-		searchIDs[search.ID] = struct{}{}
-		if err := validateResearchSearch(search, sourceIDs); err != nil {
-			return fmt.Errorf("search %d: %w", i+1, err)
-		}
+	sourceIDs, err := validateSourceLedgerIdentities(ledger)
+	if err != nil {
+		return err
 	}
 	if manifest == nil {
 		return nil
@@ -84,13 +58,6 @@ func validateSourceResearchLedger(ledger SourceResearchLedger, manifest *coverag
 		return err
 	}
 	return validateWritingBenchCampaignBlock(ledger, *manifest)
-}
-
-func validateResearchSource(source ResearchSource) error {
-	if !validLedgerID(source.ID) || !validLedgerURL(source.Locator) || !validLedgerText(source.Owner) || !validLedgerText(source.Title) || !validLedgerRevision(source.Revision) || !sourceLedgerHash.MatchString(source.ContentSHA256) || !validLedgerText(source.Methodology) || source.AccessedAt.IsZero() || !validArtifactVerification(source.ArtifactKind, source.Verification, source.Status) || !validLedgerClass(source.SourceClass) || !validIndependence(source.Independence) || !validSourceStatus(source.Status) {
-		return errors.New("is incomplete or invalid")
-	}
-	return nil
 }
 
 func validateResearchClaim(claim ResearchClaim, sourceIDs map[string]struct{}) error {
@@ -143,17 +110,8 @@ func validateScopedNullReceipts(receipts []ScopedNullReceipt, manifest coverageC
 		if !expected {
 			return fmt.Errorf("scoped-null receipt %d is not a non-present campaign cell: %s", i+1, key)
 		}
-		if receipt.Status != cell.Status || receipt.Reason != cell.Reason || receipt.LastCheckedRevision != cell.LastCheckedRevision {
-			return fmt.Errorf("scoped-null receipt %s does not match frozen campaign status, reason, or revision", key)
-		}
-		if !validCoverageStatus(receipt.Status) || receipt.Status == present1 || !validLedgerText(receipt.NextCheck) {
-			return fmt.Errorf("scoped-null receipt %s is incomplete or invalid", key)
-		}
-		if !equalStringSlices(receipt.OrderedSourceClasses, orderedPrimaryClasses(receipt.Category)) {
-			return fmt.Errorf("scoped-null receipt %s has an incomplete or reordered source ladder", key)
-		}
-		if err := validateRequiredLedgerReferences(receipt.SourceIDs, sourceIDs, "receipt source"); err != nil {
-			return fmt.Errorf("scoped-null receipt %s: %w", key, err)
+		if err := validateScopedNullCellReceipt(receipt, cell, sourceIDs); err != nil {
+			return err
 		}
 	}
 	for key := range want {
@@ -220,51 +178,6 @@ func validArtifactVerification(kind, verification, status string) bool {
 	default:
 		return false
 	}
-}
-
-func validateWritingBenchCampaignBlock(ledger SourceResearchLedger, manifest coverageCampaignManifest) error {
-	snapshot, err := loadWritingBenchIdentitySnapshot()
-	if err != nil {
-		return fmt.Errorf("load WritingBench identity snapshot: %w", err)
-	}
-	if err := WritingBenchSnapshotProvesNoCampaignMatches(snapshot, manifest); err != nil {
-		return err
-	}
-	var source *ResearchSource
-	for i := range ledger.Sources {
-		if ledger.Sources[i].ID == "writingbench-score-xlsx" {
-			source = &ledger.Sources[i]
-			break
-		}
-	}
-	if source == nil || source.ArtifactKind != "normalized-identity-snapshot" || source.Verification != sha256Verified || source.Status != normalizedFrozen || source.Locator != snapshot.Locator || source.Revision != snapshot.Revision || source.ContentSHA256 != snapshot.ContentSHA256 || !strings.Contains(source.Methodology, snapshot.Methodology) {
-		return errors.New("WritingBench ledger source is not bound to the verified identity snapshot")
-	}
-	claimFound, searchFound := false, false
-	for _, claim := range ledger.Claims {
-		if claim.ID == "writingbench-target-boundary" && claim.Kind == "direct" && containsString(claim.SupportingIDs, source.ID) && strings.Contains(claim.Claim, "no matching target-family row") {
-			claimFound = true
-		}
-	}
-	for _, search := range ledger.Searches {
-		if search.ID == "writing-primary-ladder" && search.Revision == snapshot.Revision && containsString(search.SourceIDs, source.ID) {
-			searchFound = true
-		}
-	}
-	if !claimFound || !searchFound {
-		return errors.New("WritingBench no-match claim or search is not bound to the verified identity snapshot")
-	}
-	for _, target := range manifest.Targets {
-		for _, receipt := range ledger.ScopedNulls {
-			if receipt.ModelKey != target.Key || receipt.Category != writing1 {
-				continue
-			}
-			if receipt.Status != "externally-blocked" || receipt.LastCheckedRevision != snapshot.Revision || !containsString(receipt.SourceIDs, source.ID) {
-				return fmt.Errorf("WritingBench receipt for %q is not bound to the verified no-match snapshot", target.Key)
-			}
-		}
-	}
-	return nil
 }
 
 func containsString(values []string, want string) bool {

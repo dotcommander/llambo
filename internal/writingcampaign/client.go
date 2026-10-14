@@ -43,7 +43,19 @@ type chatMessage struct {
 	Content string `json:"content"`
 }
 
-func (c *Client) Execute(ctx context.Context, model Model, systemPrompt, source string, maxTokens, attempt int) Attempt {
+// GenerationRequest binds one priced model and immutable content to an attempt.
+type GenerationRequest struct {
+	Model        Model
+	SystemPrompt string
+	Source       string
+	MaxTokens    int
+	Attempt      int
+}
+
+// Execute records one generation attempt against the selected exact model.
+func (c *Client) Execute(ctx context.Context, input GenerationRequest) Attempt {
+	model, systemPrompt, source := input.Model, input.SystemPrompt, input.Source
+	maxTokens, attempt := input.MaxTokens, input.Attempt
 	started := c.now()
 	result := Attempt{Attempt: attempt, MaxCompletionTokens: maxTokens, StartedAt: started, RequestedModel: model.OpenRouterModelID}
 	requestBody := chatRequest{Model: model.OpenRouterModelID, Messages: []chatMessage{{Role: "system", Content: systemPrompt}, {Role: "user", Content: source}}, MaxTokens: maxTokens}

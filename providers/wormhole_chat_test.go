@@ -11,25 +11,42 @@ import (
 	"time"
 )
 
-func TestWormholeChat_ProviderOptionsReachWire(t *testing.T) {
-	t.Parallel()
-
+// newProviderOptionsWireServer serves one canned chat completion and captures
+// the decoded request body for wire assertions. The returned accessor blocks
+// until the handler has stored the request.
+func newProviderOptionsWireServer(t *testing.T) (*httptest.Server, func() map[string]any) {
+	t.Helper()
+	var mu sync.Mutex
 	var got map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/chat/completions" {
 			t.Fatalf("unexpected path %q", r.URL.Path)
 		}
-		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+		var request map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 			t.Fatalf("decode request: %v", err)
 		}
+		mu.Lock()
+		got = request
+		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"id":"chatcmpl-test","created":1,"provider":"wire-provider","model":"served-gpt-5-mini","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":4,"total_tokens":7}}`))
 	}))
 	t.Cleanup(srv.Close)
+	return srv, func() map[string]any {
+		mu.Lock()
+		defer mu.Unlock()
+		return got
+	}
+}
 
+// newExtraBodyProvider builds the single-backend owner carrying layered
+// provider options: base extra body, per-model overrides, and routing controls.
+func newExtraBodyProvider(t *testing.T, srvURL string) *OpenAIProvider {
+	t.Helper()
 	provider, err := NewOpenAI(map[string]Config{
 		"omlx": {
-			BaseURL: srv.URL,
+			BaseURL: srvURL,
 			Model:   "gpt-5-mini",
 			Enabled: true,
 			APIKey:  "key",
@@ -52,6 +69,63 @@ func TestWormholeChat_ProviderOptionsReachWire(t *testing.T) {
 		t.Fatalf("NewOpenAI: %v", err)
 	}
 	t.Cleanup(provider.Shutdown)
+	return provider
+}
+
+// assertWireRequest verifies the layered option contract on the captured
+// request: no implicit token cap, the context override, per-model reasoning,
+// routing controls, and request metadata.
+func assertWireRequest(t *testing.T, got map[string]any) {
+	t.Helper()
+	if maxTokens := got["max_completion_tokens"]; maxTokens != nil {
+		t.Fatalf("did not expect max tokens without config, got %+v", maxTokens)
+	}
+	if got["top_k"] != float64(50) {
+		t.Fatalf("expected context top_k override 50, got %+v", got["top_k"])
+	}
+	assertWireReasoning(t, got)
+	assertWireOpenRouterControls(t, got)
+	assertWireMetadata(t, got)
+}
+
+// assertWireReasoning verifies the per-model extra-body override replaced the
+// base reasoning effort on the wire.
+func assertWireReasoning(t *testing.T, got map[string]any) {
+	t.Helper()
+	reasoning, ok := got["reasoning"].(map[string]any)
+	if !ok || reasoning["effort"] != "minimal" {
+		t.Fatalf("expected per-model reasoning effort, got %+v", got["reasoning"])
+	}
+}
+
+// assertWireOpenRouterControls verifies the nested provider controls reached
+// the wire unchanged.
+func assertWireOpenRouterControls(t *testing.T, got map[string]any) {
+	t.Helper()
+	openRouterProvider, ok := got["provider"].(map[string]any)
+	if !ok ||
+		openRouterProvider["sort"] != "throughput" ||
+		openRouterProvider["allow_fallbacks"] != false ||
+		openRouterProvider["require_parameters"] != true ||
+		openRouterProvider["data_collection"] != "deny" {
+		t.Fatalf("expected OpenRouter provider controls on wire, got %+v", got["provider"])
+	}
+}
+
+// assertWireMetadata verifies request metadata reached the wire.
+func assertWireMetadata(t *testing.T, got map[string]any) {
+	t.Helper()
+	metadata, ok := got["metadata"].(map[string]any)
+	if !ok || metadata["trace_id"] != "abc123" {
+		t.Fatalf("expected metadata on wire, got %+v", got["metadata"])
+	}
+}
+
+func TestWormholeChat_ProviderOptionsReachWire(t *testing.T) {
+	t.Parallel()
+
+	srv, wireRequest := newProviderOptionsWireServer(t)
+	provider := newExtraBodyProvider(t, srv.URL)
 
 	ctx := WithRequestMetadata(context.Background(), map[string]string{"trace_id": "abc123"})
 	ctx = WithJSONOverrides(ctx, map[string]any{"top_k": 50})
@@ -66,28 +140,7 @@ func TestWormholeChat_ProviderOptionsReachWire(t *testing.T) {
 		t.Fatalf("served response identity = %s/%s", result.Provider, result.Model)
 	}
 
-	if got["max_completion_tokens"] != nil {
-		t.Fatalf("did not expect max tokens without config, got %+v", got["max_completion_tokens"])
-	}
-	if got["top_k"] != float64(50) {
-		t.Fatalf("expected context top_k override 50, got %+v", got["top_k"])
-	}
-	reasoning, ok := got["reasoning"].(map[string]any)
-	if !ok || reasoning["effort"] != "minimal" {
-		t.Fatalf("expected per-model reasoning effort, got %+v", got["reasoning"])
-	}
-	openRouterProvider, ok := got["provider"].(map[string]any)
-	if !ok ||
-		openRouterProvider["sort"] != "throughput" ||
-		openRouterProvider["allow_fallbacks"] != false ||
-		openRouterProvider["require_parameters"] != true ||
-		openRouterProvider["data_collection"] != "deny" {
-		t.Fatalf("expected OpenRouter provider controls on wire, got %+v", got["provider"])
-	}
-	metadata, ok := got["metadata"].(map[string]any)
-	if !ok || metadata["trace_id"] != "abc123" {
-		t.Fatalf("expected metadata on wire, got %+v", got["metadata"])
-	}
+	assertWireRequest(t, wireRequest())
 }
 
 func TestWormholeChat_RateLimitRotatesKeyOnce(t *testing.T) {

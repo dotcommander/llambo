@@ -14,6 +14,21 @@ const (
 	configured1 = "configured"
 )
 
+// matchContext bundles one candidate's identity and evaluation state so selector
+// and category predicates share a single argument.
+type matchContext struct {
+	provider string
+	model    string
+	entry    *ModelEntry
+	costMap  map[string]costs.ModelCost
+	now      time.Time
+}
+
+// costStatus classifies the candidate's pricing.
+func (c matchContext) costStatus() CostStatus {
+	return modelCostStatusForEntry(c.costMap, c.provider, c.model, c.entry).status
+}
+
 func candidateModels(cat *Catalog, providerName string, cfg providers.Config, selectorRaw, selector string) []string {
 	if provider, model, ok := splitDirectSelector(selectorRaw); ok {
 		if !strings.EqualFold(provider, providerName) {
@@ -49,26 +64,31 @@ func candidateModels(cat *Catalog, providerName string, cfg providers.Config, se
 	return models
 }
 
-func matchesSelector(selector, providerName, modelID string, m *ModelEntry, costMap map[string]costs.ModelCost, now time.Time) bool {
+// matchesSelector reports whether the candidate satisfies the selector.
+func matchesSelector(selector string, ctx matchContext) bool {
 	switch {
-	case directSelectorMatches(selector, providerName, modelID):
+	case directSelectorMatches(selector, ctx.provider, ctx.model):
 		return true
 	case selector == configured1 || selector == "all":
 		return true
 	case selector == free1:
-		status, _, _ := modelCostStatusForEntry(costMap, providerName, modelID, m)
-		return status == CostFree
+		return ctx.costStatus() == CostFree
 	case selector == "pinned":
-		return m != nil && m.Pinned
+		return ctx.entry != nil && ctx.entry.Pinned
 	case selector == "healthy":
-		return m != nil && m.LastPing.Success && !m.QuarantineUntil.After(now)
+		return healthyPingSelection(ctx.entry, ctx.now)
 	case strings.HasPrefix(selector, "tag:"):
-		return HasTag(m, strings.TrimPrefix(selector, "tag:"))
+		return HasTag(ctx.entry, strings.TrimPrefix(selector, "tag:"))
 	case strings.HasPrefix(selector, "category:"):
-		return matchesCategory(strings.TrimPrefix(selector, "category:"), providerName, modelID, m, costMap, now)
+		return matchesCategory(strings.TrimPrefix(selector, "category:"), ctx)
 	default:
 		return false
 	}
+}
+
+// healthyPingSelection reports a successful, unquarantined last ping.
+func healthyPingSelection(entry *ModelEntry, now time.Time) bool {
+	return entry != nil && entry.LastPing.Success && !entry.QuarantineUntil.After(now)
 }
 
 func splitDirectSelector(selector string) (provider, model string, direct bool) {
@@ -106,8 +126,9 @@ func directSelectorMatches(selector, providerName, modelID string) bool {
 	return ok && strings.EqualFold(provider, providerName) && strings.EqualFold(model, modelID)
 }
 
-func matchesCategory(category, providerName, modelID string, m *ModelEntry, costMap map[string]costs.ModelCost, now time.Time) bool {
-	return categoryPolicyFor(category).matches(providerName, modelID, m, costMap, now)
+// matchesCategory applies the category's matching policy to the candidate.
+func matchesCategory(category string, ctx matchContext) bool {
+	return categoryPolicyFor(category).matches(ctx)
 }
 
 func hasSpeedMeasurement(m *ModelEntry) bool {

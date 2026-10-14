@@ -72,7 +72,7 @@ func (c executionCoordinator) collectEnabledProvidersForPrompt(systemPrompt, use
 	if c.oc.RoutingMetrics != nil {
 		metrics = c.oc.RoutingMetrics.Snapshot()
 	}
-	scored := scoreCandidates(c.configs, healthy, c.routing, metrics, intent, estimatedTokens)
+	scored := scoreCandidates(c.configs, healthy, newCandidateScoring(c.routing, metrics, intent, estimatedTokens))
 	decision := &RouteDecision{Mode: c.routing.Mode, Intent: intent, Candidates: scored}
 
 	if len(scored) > 0 {

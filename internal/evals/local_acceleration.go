@@ -3,14 +3,10 @@ package evals
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -120,10 +116,20 @@ type AccelerationConditionRecord struct {
 	Result      PairedResult `json:"result"`
 }
 
+// AccelerationObservation binds one exact-model probe to its paired condition.
+type AccelerationObservation struct {
+	Request             AccelerationChatRequest
+	Case                AccelerationCase
+	MTPEnabled          bool
+	Warmup              bool
+	VerifiedServedModel string
+}
+
 // EvaluateAccelerationCondition issues one direct exact-model chat call. The
 // caller performs the guarded settings transition; this method deliberately
 // does not mutate OMLX state itself.
-func EvaluateAccelerationCondition(ctx context.Context, client AccelerationChatClient, request AccelerationChatRequest, c AccelerationCase, enabled, warmup bool, verifiedServedModel string) (AccelerationConditionRecord, error) {
+func EvaluateAccelerationCondition(ctx context.Context, client AccelerationChatClient, observation AccelerationObservation) (AccelerationConditionRecord, error) {
+	request, c := observation.Request, observation.Case
 	if client == nil || strings.TrimSpace(request.Model) == "" || strings.TrimSpace(request.Prompt) == "" || strings.TrimSpace(c.ID) == "" || strings.TrimSpace(c.Oracle) == "" {
 		return AccelerationConditionRecord{}, errors.New("client, model, prompt, case id, and oracle are required")
 	}
@@ -136,113 +142,14 @@ func EvaluateAccelerationCondition(ctx context.Context, client AccelerationChatC
 	if err != nil {
 		return AccelerationConditionRecord{}, fmt.Errorf("acceleration chat: %w", err)
 	}
-	served, err := localServedIdentity(request.Model, response.Provider, response.Model, verifiedServedModel)
+	served, err := localServedIdentity(request.Model, response.Provider, response.Model, observation.VerifiedServedModel)
 	if err != nil {
 		return AccelerationConditionRecord{}, err
 	}
 	if response.OutputTokens < 1 || latency <= 0 {
 		return AccelerationConditionRecord{}, errors.New("acceleration response requires positive output tokens and latency")
 	}
-	return AccelerationConditionRecord{CaseID: c.ID, MTPEnabled: enabled, Warmup: warmup, ServedModel: served, Result: PairedResult{AnswerCorrect: strings.TrimSpace(response.Content) == strings.TrimSpace(c.Oracle), LatencyMS: float64(latency) / float64(time.Millisecond), TokensPerSecond: float64(response.OutputTokens) / latency.Seconds()}}, nil
-}
-
-// OMLXSettingsGuard owns the only permitted persistent mutation in paired MTP
-// evaluation. It restores the original bytes, hash, reload state, and health
-// after both success and failure. Any third-party change while enabled fails
-// closed without overwriting that actor's state.
-type OMLXSettingsGuard struct {
-	Path        string
-	ParentModel string
-	Reload      func(context.Context) error
-	Health      func(context.Context) error
-}
-
-func (g OMLXSettingsGuard) WithMTPEnabled(ctx context.Context, enabled bool, run func(context.Context) error) (err error) {
-	if strings.TrimSpace(g.Path) == "" || strings.TrimSpace(g.ParentModel) == "" || g.Reload == nil || g.Health == nil || run == nil {
-		return errors.New("settings path, parent model, reload, health, and run are required")
-	}
-	original, err := os.ReadFile(g.Path)
-	if err != nil {
-		return fmt.Errorf("read model settings: %w", err)
-	}
-	info, err := os.Stat(g.Path)
-	if err != nil {
-		return fmt.Errorf("stat model settings: %w", err)
-	}
-	originalHash := bytesSHA256(original)
-	changed, err := setMTPEnabled(original, g.ParentModel, enabled)
-	if err != nil {
-		return err
-	}
-	if bytesSHA256(changed) == originalHash {
-		if err = g.Reload(ctx); err != nil {
-			return fmt.Errorf("reload unchanged model settings: %w", err)
-		}
-		if err = g.Health(ctx); err != nil {
-			return fmt.Errorf("verify OMLX health with unchanged MTP settings: %w", err)
-		}
-		if err = run(ctx); err != nil {
-			return err
-		}
-		var current []byte
-		current, err = os.ReadFile(g.Path)
-		if err != nil {
-			return fmt.Errorf("read unchanged model settings after run: %w", err)
-		}
-		if bytesSHA256(current) != originalHash {
-			return errors.New("model settings changed concurrently during guarded run")
-		}
-		return nil
-	}
-	current, err := os.ReadFile(g.Path)
-	if err != nil {
-		return fmt.Errorf("re-read model settings before mutation: %w", err)
-	}
-	if bytesSHA256(current) != originalHash {
-		return errors.New("model settings changed concurrently before mutation")
-	}
-	if err = os.WriteFile(g.Path, changed, info.Mode().Perm()); err != nil {
-		return fmt.Errorf("write guarded model settings: %w", err)
-	}
-	changedHash := bytesSHA256(changed)
-	defer func() {
-		restoreCtx := context.WithoutCancel(ctx)
-		current, readErr := os.ReadFile(g.Path)
-		if readErr != nil {
-			err = errors.Join(err, fmt.Errorf("read model settings for restore: %w", readErr))
-			return
-		}
-		if bytesSHA256(current) != changedHash {
-			err = errors.Join(err, errors.New("model settings changed concurrently during guarded run; refusing overwrite"))
-			return
-		}
-		if writeErr := os.WriteFile(g.Path, original, info.Mode().Perm()); writeErr != nil { //nolint:gosec // user-supplied local CLI path by design
-			err = errors.Join(err, fmt.Errorf("restore model settings: %w", writeErr))
-			return
-		}
-		restored, verifyErr := os.ReadFile(g.Path)
-		if verifyErr != nil || bytesSHA256(restored) != originalHash {
-			if verifyErr != nil {
-				err = errors.Join(err, fmt.Errorf("verify restored model settings: %w", verifyErr))
-			} else {
-				err = errors.Join(err, errors.New("restored model settings hash mismatch"))
-			}
-			return
-		}
-		if reloadErr := g.Reload(restoreCtx); reloadErr != nil {
-			err = errors.Join(err, fmt.Errorf("reload restored model settings: %w", reloadErr))
-		}
-		if healthErr := g.Health(restoreCtx); healthErr != nil {
-			err = errors.Join(err, fmt.Errorf("verify OMLX health after restore: %w", healthErr))
-		}
-	}()
-	if err := g.Reload(ctx); err != nil {
-		return fmt.Errorf("reload guarded model settings: %w", err)
-	}
-	if err := g.Health(ctx); err != nil {
-		return fmt.Errorf("verify OMLX health after MTP change: %w", err)
-	}
-	return run(ctx)
+	return AccelerationConditionRecord{CaseID: c.ID, MTPEnabled: observation.MTPEnabled, Warmup: observation.Warmup, ServedModel: served, Result: PairedResult{AnswerCorrect: strings.TrimSpace(response.Content) == strings.TrimSpace(c.Oracle), LatencyMS: float64(latency) / float64(time.Millisecond), TokensPerSecond: float64(response.OutputTokens) / latency.Seconds()}}, nil
 }
 
 // AccelerationLocalExecutor runs one excluded warm-up for each off/on condition,
@@ -277,12 +184,12 @@ func (e *AccelerationLocalExecutor) ExecuteLocal(ctx context.Context, _ LocalRun
 		err := e.Guard.WithMTPEnabled(ctx, enabled, func(runCtx context.Context) error {
 			request := AccelerationChatRequest{Model: e.Model, Prompt: c.Prompt, MaxOutputTokens: e.MaxTokens}
 			if !e.warmed[enabled] {
-				if _, err := EvaluateAccelerationCondition(runCtx, e.Client, request, c, enabled, true, e.VerifiedModel); err != nil {
+				if _, err := EvaluateAccelerationCondition(runCtx, e.Client, AccelerationObservation{Request: request, Case: c, MTPEnabled: enabled, Warmup: true, VerifiedServedModel: e.VerifiedModel}); err != nil {
 					return fmt.Errorf("excluded warm-up: %w", err)
 				}
 				e.warmed[enabled] = true
 			}
-			record, err := EvaluateAccelerationCondition(runCtx, e.Client, request, c, enabled, false, e.VerifiedModel)
+			record, err := EvaluateAccelerationCondition(runCtx, e.Client, AccelerationObservation{Request: request, Case: c, MTPEnabled: enabled, Warmup: false, VerifiedServedModel: e.VerifiedModel})
 			if err != nil {
 				return err
 			}
@@ -301,92 +208,4 @@ func (e *AccelerationLocalExecutor) ExecuteLocal(ctx context.Context, _ LocalRun
 		return LocalCall{}, err
 	}
 	return LocalCall{ServedModel: results[true].ServedModel, Output: out}, nil
-}
-
-func bytesSHA256(data []byte) string {
-	hash := sha256.Sum256(data)
-	return hex.EncodeToString(hash[:])
-}
-
-func setMTPEnabled(data []byte, parent string, enabled bool) ([]byte, error) {
-	var root map[string]json.RawMessage
-	if err := json.Unmarshal(data, &root); err != nil {
-		return nil, fmt.Errorf("parse model settings: %w", err)
-	}
-	if root == nil {
-		return nil, errors.New("parse model settings: root object is required")
-	}
-	if raw, ok := root[parent]; ok {
-		updated, err := setMTPInModelObject(raw, enabled)
-		if err != nil {
-			return nil, fmt.Errorf("update model %q: %w", parent, err)
-		}
-		root[parent] = updated
-		return json.Marshal(root)
-	}
-	rawModels, ok := root["models"]
-	if !ok {
-		return nil, fmt.Errorf("model settings do not contain parent %q", parent)
-	}
-	var byID map[string]json.RawMessage
-	if json.Unmarshal(rawModels, &byID) == nil && byID != nil {
-		raw, found := byID[parent]
-		if !found {
-			return nil, fmt.Errorf("model settings do not contain parent %q", parent)
-		}
-		updated, err := setMTPInModelObject(raw, enabled)
-		if err != nil {
-			return nil, fmt.Errorf("update model %q: %w", parent, err)
-		}
-		byID[parent] = updated
-		encoded, err := json.Marshal(byID)
-		if err != nil {
-			return nil, err
-		}
-		root["models"] = encoded
-		return json.Marshal(root)
-	}
-	var entries []map[string]json.RawMessage
-	if err := json.Unmarshal(rawModels, &entries); err != nil {
-		return nil, fmt.Errorf("parse model settings list: %w", err)
-	}
-	found := 0
-	for _, entry := range entries {
-		id := ""
-		for _, key := range []string{"id", "model", "name"} {
-			if raw := entry[key]; raw != nil {
-				_ = json.Unmarshal(raw, &id)
-				if id != "" {
-					break
-				}
-			}
-		}
-		if id != parent {
-			continue
-		}
-		found++
-		entry["vlm_mtp_enabled"] = json.RawMessage(strconv.FormatBool(enabled))
-	}
-	if found != 1 {
-		return nil, fmt.Errorf("model settings contain %d entries for parent %q", found, parent)
-	}
-	var err error
-	root["models"], err = json.Marshal(entries)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(root)
-}
-
-func setMTPInModelObject(raw json.RawMessage, enabled bool) (json.RawMessage, error) {
-	var object map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &object); err != nil {
-		return nil, fmt.Errorf("parse model settings object: %w", err)
-	}
-	if object == nil {
-		return nil, errors.New("model settings must be an object")
-	}
-	object["vlm_mtp_enabled"] = json.RawMessage(strconv.FormatBool(enabled))
-	updated, err := json.Marshal(object)
-	return updated, err
 }

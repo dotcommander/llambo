@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-
-	whtypes "github.com/garyblankenship/wormhole/v3/types"
 )
 
 // Repeated string literals consolidated by goconst.
@@ -271,48 +269,15 @@ func translateAnthropicMessage(msg AnthropicInputMessage, index int) ([]Message,
 	if json.Unmarshal(msg.Content, &blocks) != nil || len(blocks) == 0 || len(blocks) > maxAnthropicContentBlocks {
 		return nil, fmt.Errorf("messages[%d].content is invalid", index)
 	}
-	out := []Message{}
-	current := Message{Role: msg.Role}
-	flush := func() {
-		if current.Content != "" || len(current.ToolCalls) > 0 {
-			out = append(out, current)
-			current = Message{Role: msg.Role}
-		}
-	}
+	state := anthropicMessageTranslation{role: msg.Role, out: []Message{}, current: Message{Role: msg.Role}}
 	for _, b := range blocks {
-		switch b.Type {
-		case text1:
-			current.Content += b.Text
-		case toolUse:
-			if msg.Role != assistant1 || b.ID == "" || b.Name == "" {
-				return nil, errors.New("invalid tool_use block")
-			}
-			var args map[string]any
-			if json.Unmarshal(b.Input, &args) != nil || args == nil {
-				return nil, errors.New("tool_use.input must be an object")
-			}
-			current.ToolCalls = append(current.ToolCalls, whtypes.ToolCall{Type: function1, ID: b.ID, Name: b.Name, Arguments: args, Function: &whtypes.ToolCallFunction{Name: b.Name, Arguments: string(b.Input)}})
-		case "tool_result":
-			if msg.Role != user4 || b.ToolUseID == "" {
-				return nil, errors.New("invalid tool_result block")
-			}
-			flush()
-			content, err := parseAnthropicContent(b.Content, "tool_result.content")
-			if err != nil {
-				var value map[string]any
-				if json.Unmarshal(b.Content, &value) != nil {
-					return nil, err
-				}
-				content = compactJSON(b.Content)
-			}
-			out = append(out, Message{Role: tool2, ToolCallID: b.ToolUseID, Content: content})
-		default:
-			return nil, fmt.Errorf("unsupported content block %q", b.Type)
+		if err := state.appendBlock(b); err != nil {
+			return nil, err
 		}
 	}
-	flush()
-	if len(out) == 0 {
-		out = append(out, current)
+	state.flush()
+	if len(state.out) == 0 {
+		state.out = append(state.out, state.current)
 	}
-	return out, nil
+	return state.out, nil
 }

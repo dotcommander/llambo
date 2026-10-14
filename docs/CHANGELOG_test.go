@@ -7,6 +7,7 @@ import (
 )
 
 func TestChangelogExists(t *testing.T) {
+	t.Parallel()
 	// Test that CHANGELOG.md exists
 	_, err := os.Stat("CHANGELOG.md")
 	if err != nil {
@@ -15,6 +16,7 @@ func TestChangelogExists(t *testing.T) {
 }
 
 func TestChangelogFollowsKeepAChangelogFormat(t *testing.T) {
+	t.Parallel()
 	// Read the CHANGELOG.md file
 	content, err := os.ReadFile("CHANGELOG.md")
 	if err != nil {
@@ -52,6 +54,7 @@ func TestChangelogFollowsKeepAChangelogFormat(t *testing.T) {
 }
 
 func TestChangelogHasUnreleasedSection(t *testing.T) {
+	t.Parallel()
 	content, err := os.ReadFile("CHANGELOG.md")
 	if err != nil {
 		t.Fatalf("Failed to read CHANGELOG.md: %v", err)
@@ -87,6 +90,7 @@ func TestChangelogHasUnreleasedSection(t *testing.T) {
 }
 
 func TestChangelogTypesOfChangesSection(t *testing.T) {
+	t.Parallel()
 	content, err := os.ReadFile("CHANGELOG.md")
 	if err != nil {
 		t.Fatalf("Failed to read CHANGELOG.md: %v", err)

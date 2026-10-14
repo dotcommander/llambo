@@ -23,25 +23,6 @@ var DefaultChatConfig = ChatRequestConfig{
 	Backoffs:   DefaultRetryBackoffs,
 }
 
-type chatRetryAction uint8
-
-const (
-	chatRetryStop chatRetryAction = iota
-	chatRetryAfterBackoff
-	chatRetryWithoutNativeStops
-)
-
-func decideChatRetry(err error, attempt, maxRetries int, usedNativeStops, emitted bool) (chatRetryAction, error) {
-	if usedNativeStops && !emitted && isUnsupportedStopError(err) {
-		return chatRetryWithoutNativeStops, nil
-	}
-	wrapped := wrapProviderError(err)
-	if emitted || !IsRetryable(wrapped) || attempt >= maxRetries {
-		return chatRetryStop, wrapped
-	}
-	return chatRetryAfterBackoff, wrapped
-}
-
 // executeChatRequestWithIdentity preserves the provider/model declared by
 // wormhole's response. The public compatibility wrapper intentionally
 // retains the pre-existing return shape for non-evaluation callers.
@@ -53,67 +34,57 @@ func executeChatRequestWithIdentity(
 ) (chatReply, chatResponseIdentity, error) {
 	cfg, systemPrompt, userContent := call.cfg, call.systemPrompt, call.userContent
 	request := buildTextRequest(ctx, cfg, systemPrompt, userContent)
-	usedNativeStops := len(request.Stop) > 0
-	if _, structured := ctx.Value(structuredRequestKey{}).(StructuredChatRequest); structured {
-		usedNativeStops = false
-	}
+	usedNativeStops := nativeStopsEnabled(request, ctx)
 	start := time.Now()
 	chatLog().DebugContext(ctx, "provider chat request: entry", "provider", cfg.GetProviderType(), "model", cfg.Model)
 
 	var lastErr error
 	for attempt := 0; attempt <= reqConfig.MaxRetries; attempt++ {
 		attemptRequest := buildTextRequest(ctx, cfg, systemPrompt, userContent)
-		if len(request.Stop) == 0 {
-			attemptRequest.Stop = nil
-		}
+		attemptRequest.Stop = attemptStops(request)
 		resp, err := client.Text(ctx, attemptRequest)
 		if err == nil {
 			reply, identity, extractErr := extractContentFromTextResponseWithIdentity(resp, cfg.Model)
 			reply.usage = usageOrEstimate(reply.usage, systemPrompt, userContent, reply.content)
-			err = extractErr
-			outcome := "success"
-			if err != nil {
-				outcome = "error"
-			}
-			chatLog().DebugContext(ctx, "provider chat request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", outcome)
-			return reply, identity, err
+			logChatExit(ctx, cfg, chatExitEvent, start, chatExitResult{attempt: attempt, outcome: outcomeLabel(extractErr)})
+			return reply, identity, extractErr
 		}
 
-		action, wrapped := decideChatRetry(err, attempt, reqConfig.MaxRetries, usedNativeStops, false)
-		if action == chatRetryWithoutNativeStops {
-			request.Stop = nil
-			usedNativeStops = false
+		follow, retryErr := advanceChatRetry(ctx, &request, &usedNativeStops, reqConfig, chatRetryFailure{attempt: attempt, err: err, emitted: false})
+		if follow == retryWithoutNativeStops {
 			attempt--
 			continue
 		}
-
-		lastErr = wrapped
-		if action == chatRetryStop {
-			break
+		if follow == retryStop {
+			// Terminal provider error: the exhausted schedule is the retry count.
+			logChatExit(ctx, cfg, chatExitEvent, start, chatExitResult{attempt: reqConfig.MaxRetries, outcome: chatOutcomeError})
+			return chatReply{}, chatResponseIdentity{}, retryErr
 		}
-		if err = waitChatBackoff(ctx, reqConfig, attempt); err != nil {
-			chatLog().DebugContext(ctx, "provider chat request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "error")
-			return chatReply{}, chatResponseIdentity{}, err
+		if follow == retryBackoffInterrupted {
+			logChatExit(ctx, cfg, chatExitEvent, start, chatExitResult{attempt: attempt, outcome: chatOutcomeError})
+			return chatReply{}, chatResponseIdentity{}, retryErr
 		}
+		lastErr = retryErr
 	}
 
-	chatLog().DebugContext(ctx, "provider chat request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", reqConfig.MaxRetries, "outcome", "error")
+	logChatExit(ctx, cfg, chatExitEvent, start, chatExitResult{attempt: reqConfig.MaxRetries, outcome: chatOutcomeError})
 	return chatReply{}, chatResponseIdentity{}, lastErr
 }
 
+// executeChatStreamRequestWithIdentity runs one streaming chat attempt with
+// the same retry policy as the non-streaming path. Each attempt consumes the
+// stream under its own cancellable context so an in-flight stream is torn
+// down before a retry or failover begins.
 func executeChatStreamRequestWithIdentity(
 	ctx context.Context,
 	client whtypes.Provider,
 	call chatAttempt,
 	onChunk ChatStreamHandler,
 	reqConfig ChatRequestConfig,
-) (chatReply, bool, chatResponseIdentity, error) {
+) chatStreamOutcome {
 	cfg, systemPrompt, userContent := call.cfg, call.systemPrompt, call.userContent
 	request := buildTextRequest(ctx, cfg, systemPrompt, userContent)
-	usedNativeStops := len(request.Stop) > 0
-	if _, structured := ctx.Value(structuredRequestKey{}).(StructuredChatRequest); structured {
-		usedNativeStops = false
-	}
+	usedNativeStops := nativeStopsEnabled(request, ctx)
 	start := time.Now()
 	chatLog().DebugContext(ctx, "provider chat stream request: entry", "provider", cfg.GetProviderType(), "model", cfg.Model)
 
@@ -121,57 +92,43 @@ func executeChatStreamRequestWithIdentity(
 	for attempt := 0; attempt <= reqConfig.MaxRetries; attempt++ {
 		attemptCtx, cancel := context.WithCancel(ctx)
 		attemptRequest := buildTextRequest(ctx, cfg, systemPrompt, userContent)
-		if len(request.Stop) == 0 {
-			attemptRequest.Stop = nil
-		}
+		attemptRequest.Stop = attemptStops(request)
 		stream, err := client.Stream(attemptCtx, attemptRequest)
 		if err != nil {
 			cancel()
-			action, wrapped := decideChatRetry(err, attempt, reqConfig.MaxRetries, usedNativeStops, false)
-			if action == chatRetryWithoutNativeStops {
-				request.Stop = nil
-				usedNativeStops = false
+			follow, retryErr := advanceChatRetry(ctx, &request, &usedNativeStops, reqConfig, chatRetryFailure{attempt: attempt, err: err, emitted: false})
+			if follow == retryWithoutNativeStops {
 				attempt--
 				continue
 			}
-			lastErr = wrapped
-			if action == chatRetryStop {
-				chatLog().DebugContext(ctx, "provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "error")
-				return chatReply{}, false, chatResponseIdentity{}, lastErr
+			if follow == retryStop || follow == retryBackoffInterrupted {
+				logChatExit(ctx, cfg, chatStreamExitEvent, start, chatExitResult{attempt: attempt, outcome: chatOutcomeError})
+				return chatStreamOutcome{err: retryErr}
 			}
-			if err = waitChatBackoff(ctx, reqConfig, attempt); err != nil {
-				chatLog().DebugContext(ctx, "provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "error")
-				return chatReply{}, false, chatResponseIdentity{}, err
-			}
+			lastErr = retryErr
 			continue
 		}
 
-		content, usage, finishReason, toolCalls, emitted, identity, err := consumeTextStream(stream, cfg.Model, onChunk)
+		outcome := consumeTextStream(stream, cfg.Model, onChunk)
 		cancel()
-		if err == nil {
-			chatLog().DebugContext(ctx, "provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "success")
-			return chatReply{content: content, usage: usageOrEstimate(usage, systemPrompt, userContent, content), finishReason: finishReason, toolCalls: toolCalls}, emitted, identity, nil
+		if outcome.err == nil {
+			logChatExit(ctx, cfg, chatStreamExitEvent, start, chatExitResult{attempt: attempt, outcome: chatOutcomeSuccess})
+			outcome.reply.usage = usageOrEstimate(outcome.reply.usage, systemPrompt, userContent, outcome.reply.content)
+			return outcome
 		}
 
-		action, wrapped := decideChatRetry(err, attempt, reqConfig.MaxRetries, usedNativeStops, emitted)
-		if action == chatRetryWithoutNativeStops {
-			request.Stop = nil
-			usedNativeStops = false
+		follow, retryErr := advanceChatRetry(ctx, &request, &usedNativeStops, reqConfig, chatRetryFailure{attempt: attempt, err: outcome.err, emitted: outcome.emitted})
+		if follow == retryWithoutNativeStops {
 			attempt--
 			continue
 		}
-
-		lastErr = wrapped
-		if action == chatRetryStop {
-			chatLog().DebugContext(ctx, "provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "error")
-			return chatReply{}, emitted, chatResponseIdentity{}, lastErr
+		if follow == retryStop || follow == retryBackoffInterrupted {
+			logChatExit(ctx, cfg, chatStreamExitEvent, start, chatExitResult{attempt: attempt, outcome: chatOutcomeError})
+			return chatStreamOutcome{emitted: outcome.emitted, err: retryErr}
 		}
-		if err := waitChatBackoff(ctx, reqConfig, attempt); err != nil {
-			chatLog().DebugContext(ctx, "provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", attempt, "outcome", "error")
-			return chatReply{}, emitted, chatResponseIdentity{}, err
-		}
+		lastErr = retryErr
 	}
 
-	chatLog().DebugContext(ctx, "provider chat stream request: exit", "provider", cfg.GetProviderType(), "model", cfg.Model, "latency", time.Since(start), "retry_count", reqConfig.MaxRetries, "outcome", "error")
-	return chatReply{}, false, chatResponseIdentity{}, lastErr
+	logChatExit(ctx, cfg, chatStreamExitEvent, start, chatExitResult{attempt: reqConfig.MaxRetries, outcome: chatOutcomeError})
+	return chatStreamOutcome{err: lastErr}
 }

@@ -93,24 +93,24 @@ func TestConsumerFailureAndToolIndices(t *testing.T) {
 	stream <- whtypes.TextChunk{ToolCalls: []whtypes.ToolCall{{Index: 1, ID: "call", Function: &whtypes.ToolCallFunction{Name: "fn", Arguments: "{"}}}}
 	stream <- whtypes.TextChunk{ToolCalls: []whtypes.ToolCall{{Index: 1, Function: &whtypes.ToolCallFunction{Arguments: "}"}}}}
 	close(stream)
-	_, _, _, calls, _, _, err := consumeTextStream(stream, "model", func(c ChatStreamChunk) error {
+	result := consumeTextStream(stream, "model", func(c ChatStreamChunk) error {
 		if c.ToolDeltas[0].Index != 1 {
 			t.Fatal("index lost")
 		}
 		return nil
 	})
-	if err != nil || len(calls) != 1 || calls[0].Arguments != "{}" {
-		t.Fatalf("calls=%+v err=%v", calls, err)
+	if result.err != nil || len(result.reply.toolCalls) != 1 || result.reply.toolCalls[0].Arguments != "{}" {
+		t.Fatalf("calls=%+v err=%v", result.reply.toolCalls, result.err)
 	}
 	stream2 := make(chan whtypes.TextChunk, 1)
 	stream2 <- whtypes.TextChunk{Text: "text"}
 	close(stream2)
-	_, _, _, _, _, _, err = consumeTextStream(stream2, "model", func(ChatStreamChunk) error { return source })
-	if !IsConsumerError(err) || !errors.Is(err, source) {
-		t.Fatalf("cause lost: %v", err)
+	consumerAborted := consumeTextStream(stream2, "model", func(ChatStreamChunk) error { return source })
+	if !IsConsumerError(consumerAborted.err) || !errors.Is(consumerAborted.err, source) {
+		t.Fatalf("cause lost: %v", consumerAborted.err)
 	}
 	breaker := NewCircuitBreaker([]string{"fixture"}, nil)
-	breaker.RecordFailure("fixture", err)
+	breaker.RecordFailure("fixture", consumerAborted.err)
 	if breaker.GetHealth("fixture").Failures != 0 {
 		t.Fatal("consumer penalized")
 	}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	whgemini "github.com/garyblankenship/wormhole/v3/providers/gemini"
 	whtypes "github.com/garyblankenship/wormhole/v3/types"
@@ -15,13 +14,9 @@ type pingGeminiClient struct {
 	model    string
 }
 
+// pingGeminiResult reports a completed native-Gemini ping attempt.
 type pingGeminiResult struct {
-	Content    string
-	Model      string
-	TokensIn   int
-	TokensOut  int
-	TTFB       time.Duration
-	Generation time.Duration
+	pingStreamOutcome
 }
 
 func newPingGeminiClient(apiKey, baseURL, model string) *pingGeminiClient {
@@ -42,10 +37,10 @@ func (c *pingGeminiClient) Chat(ctx context.Context, systemPrompt, userContent s
 		return nil, fmt.Errorf("gemini API: %w", err)
 	}
 
-	result := &pingGeminiResult{
+	result := &pingGeminiResult{pingStreamOutcome: pingStreamOutcome{
 		Content: strings.TrimSpace(resp.Text),
 		Model:   resp.Model,
-	}
+	}}
 	if resp.Usage != nil {
 		result.TokensIn = resp.Usage.PromptTokens
 		result.TokensOut = resp.Usage.CompletionTokens
@@ -54,23 +49,11 @@ func (c *pingGeminiClient) Chat(ctx context.Context, systemPrompt, userContent s
 }
 
 func (c *pingGeminiClient) ChatStream(ctx context.Context, systemPrompt, userContent string, maxTokens int) (*pingGeminiResult, error) {
-	started := time.Now()
-	stream, err := c.provider.Stream(ctx, c.textRequest(systemPrompt, userContent, maxTokens))
+	outcome, err := streamPingText(ctx, c.provider, c.textRequest(systemPrompt, userContent, maxTokens), c.model)
 	if err != nil {
 		return nil, err
 	}
-	stats, err := consumePingStream(stream, started)
-	if err != nil {
-		return nil, err
-	}
-	return &pingGeminiResult{
-		Content:    stats.Content,
-		Model:      c.model,
-		TokensIn:   stats.TokensIn,
-		TokensOut:  stats.TokensOut,
-		TTFB:       stats.TTFB,
-		Generation: stats.Generation,
-	}, nil
+	return &pingGeminiResult{pingStreamOutcome: outcome}, nil
 }
 
 func (c *pingGeminiClient) textRequest(systemPrompt, userContent string, maxTokens int) whtypes.TextRequest {

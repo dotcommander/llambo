@@ -68,15 +68,7 @@ func parseSSEEvents(t *testing.T, body string) []parsedSSEEvent {
 			if !haveCurrent {
 				continue
 			}
-			payload := strings.TrimPrefix(line, "data: ")
-			if payload == "" {
-				continue
-			}
-			var m map[string]any
-			if err := json.Unmarshal([]byte(payload), &m); err != nil {
-				t.Fatalf("Failed to parse SSE data payload %q: %v", payload, err)
-			}
-			current.Data = m
+			parseSSEEventData(t, &current, line)
 			continue
 		}
 		if line == "" && haveCurrent {
@@ -88,6 +80,19 @@ func parseSSEEvents(t *testing.T, body string) []parsedSSEEvent {
 		events = append(events, current)
 	}
 	return events
+}
+
+func parseSSEEventData(t *testing.T, current *parsedSSEEvent, line string) {
+	t.Helper()
+	payload := strings.TrimPrefix(line, "data: ")
+	if payload == "" {
+		return
+	}
+	var m map[string]any
+	if err := json.Unmarshal([]byte(payload), &m); err != nil {
+		t.Fatalf("Failed to parse SSE data payload %q: %v", payload, err)
+	}
+	current.Data = m
 }
 
 func sseIndexField(t *testing.T, data map[string]any) int {
@@ -669,7 +674,12 @@ func TestHandler_AnthropicMessages_ForwardsMetadataAndOverrides(t *testing.T) {
 		t.Fatalf("Expected top_p override 0.85, got %+v", ov)
 	}
 
-	meta := providers.RequestMetadataFromContext(mockChat.lastCtx)
+	assertAnthropicRequestMetadataAndJSON(t, mockChat.lastCtx)
+}
+
+func assertAnthropicRequestMetadataAndJSON(t *testing.T, ctx context.Context) {
+	t.Helper()
+	meta := providers.RequestMetadataFromContext(ctx)
 	if meta["trace_id"] != "abc123" {
 		t.Fatalf("Expected metadata trace_id=abc123, got %+v", meta)
 	}
@@ -677,7 +687,7 @@ func TestHandler_AnthropicMessages_ForwardsMetadataAndOverrides(t *testing.T) {
 		t.Fatalf("Expected metadata tags to preserve array data, got %+v", meta)
 	}
 
-	jsonOverrides := providers.JSONOverridesFromContext(mockChat.lastCtx)
+	jsonOverrides := providers.JSONOverridesFromContext(ctx)
 	if jsonOverrides["top_k"] != float64(64) && jsonOverrides["top_k"] != 64 {
 		t.Fatalf("Expected top_k JSON override 64, got %+v", jsonOverrides["top_k"])
 	}

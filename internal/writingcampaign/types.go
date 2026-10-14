@@ -136,6 +136,7 @@ func LoadRoster(path string) (Roster, error) {
 	return roster, nil
 }
 
+// Validate checks the locked roster, exact selectors, assets, and pricing bounds.
 func (r Roster) Validate() error {
 	if r.SchemaVersion != 1 || !r.Locked {
 		return errors.New("roster must be locked schema version 1")
@@ -157,24 +158,8 @@ func (r Roster) Validate() error {
 			return fmt.Errorf("duplicate model %q", model.OpenRouterModelID)
 		}
 		seen[model.OpenRouterModelID] = struct{}{}
-		if model.InputPer1M < 0 || model.OutputPer1M < 0 || model.OutputPer1M > r.Pricing.MaximumOutputPer1M {
-			return fmt.Errorf("model %q violates pricing policy", model.OpenRouterModelID)
-		}
-		if model.DynamicRouting {
-			if model.OpenRouterModelID != "openrouter/auto" || model.RoutingMaxInputPer1M <= 0 || model.RoutingMaxOutputPer1M <= 0 || model.RoutingMaxOutputPer1M > r.Pricing.MaximumOutputPer1M {
-				return fmt.Errorf("model %q has invalid dynamic-routing price limits", model.OpenRouterModelID)
-			}
-		} else if model.RoutingMaxInputPer1M != 0 || model.RoutingMaxOutputPer1M != 0 {
-			return fmt.Errorf("model %q has routing limits without dynamic routing", model.OpenRouterModelID)
-		}
-		if model.MaxCompletionTokens < 1 {
-			return fmt.Errorf("model %q has no completion-token limit", model.OpenRouterModelID)
-		}
-		if model.Disabled && strings.TrimSpace(model.DisabledReason) == "" {
-			return fmt.Errorf("disabled model %q has no reason", model.OpenRouterModelID)
-		}
-		if !model.Disabled && strings.TrimSpace(model.DisabledReason) != "" {
-			return fmt.Errorf("enabled model %q has a disabled reason", model.OpenRouterModelID)
+		if err := model.validateRosterEntry(r.Pricing.MaximumOutputPer1M); err != nil {
+			return err
 		}
 	}
 	if len(r.Models) == 0 {

@@ -13,33 +13,10 @@ import (
 )
 
 func TestLLMStatsStatsV1BearerPaginationDedupeNormalizationAndSealing(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	now := time.Date(2026, 8, 22, 14, 0, 0, 0, time.UTC)
-	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
-		if request.Header.Get("Authorization") != "Bearer secret" {
-			t.Errorf("missing Bearer token: %q", request.Header.Get("Authorization"))
-		}
-		body := ""
-		switch request.URL.Path {
-		case "/stats/v1/benchmarks":
-			body = `{"benchmarks":[{"id":"unreviewed","name":"Unreviewed","model_count":99},{"id":"gpqa","name":"GPQA","model_count":5}]}`
-		case "/stats/v1/scores":
-			if request.URL.Query().Get("benchmark") != "gpqa" || request.URL.Query().Get("limit") != "500" {
-				t.Fatalf("unexpected scores query: %s", request.URL.RawQuery)
-			}
-			switch cursor := request.URL.Query().Get("cursor"); cursor {
-			case "":
-				body = fmt.Sprintf(`{"scores":[%s,%s,%s],"next_cursor":"cursor-2","total":6}`, statsV1ScoreRow("model-a", .946, true), statsV1ScoreRow("model-a", .946, true), statsV1ScoreRow("model-b", 0, false))
-			case "cursor-2":
-				body = fmt.Sprintf(`{"scores":[%s,%s,%s,%s],"next_cursor":"","total":6}`, statsV1ScoreRow("model-c", .25, true), statsV1ScoreRow("model-d", .75, true), statsV1ScoreRow("model-e", .6, false), statsV1ScoreRow("model-a", .946, true))
-			default:
-				t.Fatalf("unexpected cursor %q", cursor)
-			}
-		default:
-			return nil, fmt.Errorf("unexpected request %s", request.URL.String())
-		}
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
-	})}
+	client := statsV1BearerPaginationFixtureClient(t)
 	opts := Options{
 		CacheDir: dir, LLMStatsAPIKey: "secret", Client: client,
 		LLMStatsStatsV1BenchmarksURL: "https://test/stats/v1/benchmarks",
@@ -73,6 +50,7 @@ func TestLLMStatsStatsV1BearerPaginationDedupeNormalizationAndSealing(t *testing
 }
 
 func TestLLMStatsStatsV1RejectsConflictingDuplicateModels(t *testing.T) {
+	t.Parallel()
 	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
 		body := ""
 		switch request.URL.Path {
@@ -98,6 +76,7 @@ func TestLLMStatsStatsV1RejectsConflictingDuplicateModels(t *testing.T) {
 }
 
 func TestLLMStatsStatsV1RowsUsePinnedCommonCohortScale(t *testing.T) {
+	t.Parallel()
 	cohorts, err := loadFrozenLLMStatsStatsV1Cohorts()
 	if err != nil {
 		t.Fatal(err)
@@ -131,6 +110,7 @@ func TestLLMStatsStatsV1RowsUsePinnedCommonCohortScale(t *testing.T) {
 }
 
 func TestCommonCohortAppliesToFirstPartyRawResults(t *testing.T) {
+	t.Parallel()
 	cohorts, err := loadFrozenLLMStatsStatsV1Cohorts()
 	if err != nil {
 		t.Fatal(err)
@@ -153,6 +133,7 @@ func TestCommonCohortAppliesToFirstPartyRawResults(t *testing.T) {
 }
 
 func TestLLMStatsStatsV1CatalogRejectsSchemaDrift(t *testing.T) {
+	t.Parallel()
 	for _, input := range []string{`{}`, `{"benchmarks":[]}`, `{"benchmarks":[{"id":"","name":"GPQA","model_count":1}]}`, `{"benchmarks":[{"id":"gpqa","name":"GPQA","model_count":-1}]}`} {
 		if _, err := decodeLLMStatsStatsV1Benchmarks([]byte(input)); err == nil {
 			t.Fatalf("schema drift accepted: %s", input)
@@ -161,6 +142,7 @@ func TestLLMStatsStatsV1CatalogRejectsSchemaDrift(t *testing.T) {
 }
 
 func TestLLMStatsStatsV1OptionsDefaults(t *testing.T) {
+	t.Parallel()
 	var options Options
 	options.applyDefaults()
 	if options.LLMStatsStatsV1BenchmarksURL != LLMStatsStatsV1BenchmarksURL || options.LLMStatsStatsV1ScoresURL != LLMStatsStatsV1ScoresURL {
@@ -172,6 +154,7 @@ func TestLLMStatsStatsV1OptionsDefaults(t *testing.T) {
 }
 
 func TestLLMStatsStatsV1FrozenCohortManifestIsPinned(t *testing.T) {
+	t.Parallel()
 	cohorts, err := loadFrozenLLMStatsStatsV1Cohorts()
 	if err != nil {
 		t.Fatal(err)
@@ -194,12 +177,13 @@ func TestLLMStatsStatsV1FrozenCohortManifestIsPinned(t *testing.T) {
 }
 
 func TestLLMStatsStatsV1FallsBackToScoreOverMaxScore(t *testing.T) {
+	t.Parallel()
 	row := llmStatsStatsV1ScoreRow{
 		ModelID: "model", ModelName: "Model", Organization: "lab", BenchmarkID: "gpqa",
 		BenchmarkName: "GPQA", Score: .5, MaxScore: 1, ScoredAt: time.Unix(1, 0).UTC(),
 		Source: "LLM Stats", URL: "https://llm-stats.com/models/model",
 	}
-	observation, err := llmStatsStatsV1Observation(row, llmStatsStatsV1Benchmark{ID: "gpqa", ModelCount: 1}, strings.Repeat("a", 64), "https://test/scores", 0, func() time.Time { return time.Unix(2, 0).UTC() })
+	observation, err := llmStatsStatsV1Observation(row, statsV1ScorePageEvidence{benchmark: llmStatsStatsV1Benchmark{ID: "gpqa", ModelCount: 1}, digest: strings.Repeat("a", 64), endpoint: "https://test/scores"}, 0, func() time.Time { return time.Unix(2, 0).UTC() })
 	if err != nil {
 		t.Fatal(err)
 	}

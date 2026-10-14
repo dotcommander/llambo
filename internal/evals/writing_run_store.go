@@ -39,10 +39,10 @@ type WritingRunStore struct {
 // OpenWritingRunStore locks the run directory and opens or validates its
 // ledger against the manifest identity.
 func OpenWritingRunStore(dir string, manifest WritingRunManifest) (*WritingRunStore, error) {
-	return openWritingRunStore(dir, manifest, os.OpenFile)
+	return acquireWritingRunStore(dir, manifest, os.OpenFile)
 }
 
-func openWritingRunStore(dir string, manifest WritingRunManifest, openLedger func(string, int, os.FileMode) (*os.File, error)) (*WritingRunStore, error) {
+func acquireWritingRunStore(dir string, manifest WritingRunManifest, openLedger func(string, int, os.FileMode) (*os.File, error)) (*WritingRunStore, error) {
 	dir = filepath.Clean(dir)
 	if dir == "." || dir == "" || filepath.Dir(dir) == dir {
 		return nil, errors.New("writing run output directory must be explicit")
@@ -65,32 +65,8 @@ func openWritingRunStore(dir string, manifest WritingRunManifest, openLedger fun
 			_ = lock.Close()
 		}
 	}()
-	manifestPath := filepath.Join(dir, manifestJSON)
-	var data []byte
-	if data, err = os.ReadFile(manifestPath); err == nil {
-		var existing WritingRunManifest
-		if err = json.Unmarshal(data, &existing); err != nil {
-			return nil, fmt.Errorf("parse existing writing manifest: %w", err)
-		}
-		if err = sameWritingRunIdentity(existing, manifest); err != nil {
-			return nil, err
-		}
-		if err = os.Chmod(manifestPath, 0o600); err != nil {
-			return nil, fmt.Errorf("secure writing manifest: %w", err)
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, fmt.Errorf("read writing manifest: %w", err)
-	} else {
-		for _, name := range []string{intentsJsonl, "generations.jsonl", "judgments.jsonl", "receipt.json", reportJSON1, reportMd, qualityImportJSON} {
-			if _, statErr := os.Stat(filepath.Join(dir, name)); statErr == nil {
-				return nil, fmt.Errorf("writing run directory has %s but no manifest; use a new --output-dir", name)
-			} else if !errors.Is(statErr, os.ErrNotExist) {
-				return nil, fmt.Errorf("inspect writing run directory: %w", statErr)
-			}
-		}
-		if err = writeSyncedJSON(manifestPath, manifest); err != nil {
-			return nil, fmt.Errorf("write writing manifest: %w", err)
-		}
+	if manifestErr := initializeWritingManifest(dir, manifest); manifestErr != nil {
+		return nil, manifestErr
 	}
 	if err = os.Chmod(dir, 0o700); err != nil { //nolint:gosec // directory, not file, permission
 		return nil, fmt.Errorf("secure writing run directory: %w", err)
@@ -115,26 +91,8 @@ func openWritingRunStore(dir string, manifest WritingRunManifest, openLedger fun
 	if err = store.load(); err != nil {
 		return nil, err
 	}
-	store.intentFile, err = openLedger(filepath.Join(dir, intentsJsonl), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-	if err != nil {
-		return nil, fmt.Errorf("open dispatch intent ledger: %w", err)
-	}
-	store.generationFile, err = openLedger(filepath.Join(dir, "generations.jsonl"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-	if err != nil {
-		return nil, fmt.Errorf("open generation ledger: %w", err)
-	}
-	store.judgmentFile, err = openLedger(filepath.Join(dir, "judgments.jsonl"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-	if err != nil {
-		return nil, fmt.Errorf("open judgment ledger: %w", err)
-	}
-	if err := store.intentFile.Chmod(0o600); err != nil {
-		return nil, fmt.Errorf("secure dispatch intent ledger: %w", err)
-	}
-	if err := store.generationFile.Chmod(0o600); err != nil {
-		return nil, fmt.Errorf("secure generation ledger: %w", err)
-	}
-	if err := store.judgmentFile.Chmod(0o600); err != nil {
-		return nil, fmt.Errorf("secure judgment ledger: %w", err)
+	if err := store.openLedgers(openLedger); err != nil {
+		return nil, err
 	}
 	initialized = true
 	return store, nil
@@ -159,53 +117,13 @@ func sameWritingRunIdentity(existing, requested WritingRunManifest) error {
 }
 
 func (s *WritingRunStore) load() error {
-	if err := readWritingJSONL(filepath.Join(s.dir, intentsJsonl), func(data []byte) error {
-		var intent WritingDispatchIntent
-		if err := json.Unmarshal(data, &intent); err != nil {
-			return err
-		}
-		if err := validateWritingDispatchIntent(intent); err != nil {
-			return err
-		}
-		key := writingIntentKey(intent.Kind, intent.Key, intent.Attempt)
-		if _, exists := s.intents[key]; exists {
-			return fmt.Errorf("duplicate dispatch intent %s", key)
-		}
-		s.intents[key] = intent
-		return nil
-	}); err != nil {
+	if err := readWritingJSONL(filepath.Join(s.dir, intentsJsonl), s.loadWritingIntent); err != nil {
 		return fmt.Errorf("load dispatch intent ledger: %w", err)
 	}
-	if err := readWritingJSONL(filepath.Join(s.dir, "generations.jsonl"), func(data []byte) error {
-		var record WritingGenerationRecord
-		if err := json.Unmarshal(data, &record); err != nil {
-			return err
-		}
-		s.generations = append(s.generations, record)
-		if record.Attempt > s.generationAttempts[record.Key] {
-			s.generationAttempts[record.Key] = record.Attempt
-		}
-		if record.Status == success1 {
-			s.generationSuccess[record.Key] = record
-		}
-		return nil
-	}); err != nil {
+	if err := readWritingJSONL(filepath.Join(s.dir, "generations.jsonl"), s.loadWritingGeneration); err != nil {
 		return fmt.Errorf("load generation ledger: %w", err)
 	}
-	if err := readWritingJSONL(filepath.Join(s.dir, "judgments.jsonl"), func(data []byte) error {
-		var record WritingJudgmentRecord
-		if err := json.Unmarshal(data, &record); err != nil {
-			return err
-		}
-		s.judgments = append(s.judgments, record)
-		if record.Attempt > s.judgmentAttempts[record.Key] {
-			s.judgmentAttempts[record.Key] = record.Attempt
-		}
-		if record.Status == success1 {
-			s.judgmentSuccess[record.Key] = record
-		}
-		return nil
-	}); err != nil {
+	if err := readWritingJSONL(filepath.Join(s.dir, "judgments.jsonl"), s.loadWritingJudgment); err != nil {
 		return fmt.Errorf("load judgment ledger: %w", err)
 	}
 	return nil
@@ -253,24 +171,12 @@ func (s *WritingRunStore) CheckNoInDoubtDispatch() error {
 	for intentKey, intent := range s.intents {
 		switch intent.Kind {
 		case generation1:
-			found := false
-			for _, record := range s.generations {
-				if record.Key == intent.Key && record.Attempt == intent.Attempt {
-					found = true
-					break
-				}
-			}
+			found := s.hasWritingGenerationResult(intent)
 			if !found {
 				return fmt.Errorf("dispatch %s has no durable generation result; attempt is in doubt and will not be resumed", intentKey)
 			}
 		case judgment1:
-			found := false
-			for _, record := range s.judgments {
-				if record.Key == intent.Key && record.Attempt == intent.Attempt {
-					found = true
-					break
-				}
-			}
+			found := s.hasWritingJudgmentResult(intent)
 			if !found {
 				return fmt.Errorf("dispatch %s has no durable judgment result; attempt is in doubt and will not be resumed", intentKey)
 			}

@@ -61,24 +61,14 @@ func (c executionCoordinator) executeStream(ctx context.Context, plan chatExecut
 	result, emitted, err := request(ctx, plan.attemptFor(plan.selected), onChunk)
 	outcome := chatExecutionOutcome{provider: plan.selected, result: result, decision: plan.decision}
 	if err == nil {
-		if result.finishReason == "" {
-			c.promotionIneligible = true
-		}
-		c.recordSuccessfulAttempt(plan, plan.selected, result)
-		if result.finishReason != "" {
-			c.checkCanaryAutoPromote(ctx)
-		}
+		c.recordStreamSuccess(ctx, plan, plan.selected, result)
 		return outcome, nil
 	}
 
-	c.recordAttemptFailure(plan.selected.name, result.usage, result.duration, err)
-	if IsConsumerError(err) {
-		return outcome, err
-	}
-	if ctx.Err() != nil {
-		return outcome, ctx.Err()
-	}
 	errStrings := []string{fmt.Sprintf("%s: %v", plan.selected.name, err)}
+	if fenced := c.streamFailureFence(ctx, plan.selected.name, result, err); fenced != nil {
+		return outcome, fenced
+	}
 	if emitted {
 		c.logFailedStreamOutcome(plan.routeOutcome(plan.selected.name, plan.selected.cfg.Model, result.usage, result.duration, strings.Join(errStrings, "; ")))
 		return outcome, fmt.Errorf("stream failed after emission: %w", err)
@@ -98,31 +88,51 @@ func (c executionCoordinator) executeStream(ctx context.Context, plan chatExecut
 		result, emitted, err = request(ctx, plan.attemptFor(info), onChunk)
 		outcome = chatExecutionOutcome{provider: info, result: result, decision: plan.decision}
 		if err == nil {
-			if result.finishReason == "" {
-				c.promotionIneligible = true
-			}
-			c.recordSuccessfulAttempt(plan, info, result)
-			if result.finishReason != "" {
-				c.checkCanaryAutoPromote(ctx)
-			}
+			c.recordStreamSuccess(ctx, plan, info, result)
 			return outcome, nil
 		}
 
-		c.recordAttemptFailure(info.name, result.usage, result.duration, err)
-		if IsConsumerError(err) {
-			return outcome, err
-		}
-		if ctx.Err() != nil {
-			return outcome, ctx.Err()
-		}
 		errStrings = append(errStrings, fmt.Sprintf("%s: %v", info.name, err))
-		if emitted || IsConsumerError(err) {
+		if fenced := c.streamFailureFence(ctx, info.name, result, err); fenced != nil {
+			return outcome, fenced
+		}
+		// Consumer errors already ended execution in the fence; only a stream
+		// that emitted chunks before failing stops the failover walk here.
+		if emitted {
 			return outcome, err
 		}
 	}
 
 	c.logFailedStreamOutcome(plan.failedRouteOutcome(strings.Join(errStrings, "; ")))
 	return outcome, fmt.Errorf("all providers failed: %s", strings.Join(errStrings, "; "))
+}
+
+// recordStreamSuccess applies stream-specific success bookkeeping: a stream
+// that ended without a finish reason is promotion-ineligible, and only a
+// complete stream triggers the canary auto-promotion check.
+func (c executionCoordinator) recordStreamSuccess(ctx context.Context, plan chatExecutionPlan, info providerInfo, result chatRequestResult) {
+	if result.finishReason == "" {
+		c.promotionIneligible = true
+	}
+	c.recordSuccessfulAttempt(plan, info, result)
+	if result.finishReason != "" {
+		c.checkCanaryAutoPromote(ctx)
+	}
+}
+
+// streamFailureFence records a failed stream attempt and applies the fences
+// that end execution without failover: a consumer cancellation (never
+// penalized, never retried) or a cancelled context. It returns the error to
+// propagate, or nil when failover may continue.
+func (c executionCoordinator) streamFailureFence(ctx context.Context, provider string, result chatRequestResult, err error) error {
+	c.recordAttemptFailure(provider, result.usage, result.duration, err)
+	if IsConsumerError(err) {
+		return err
+	}
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
+	}
+	return nil
 }
 
 func (c executionCoordinator) recordSuccessfulAttempt(plan chatExecutionPlan, info providerInfo, result chatRequestResult) {

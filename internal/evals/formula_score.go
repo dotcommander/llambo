@@ -116,18 +116,7 @@ func scoreCategory(model Model, spec categorySpec, reference FormulaReference) *
 	}
 	percentile := empiricalPercentile(cohort, *raw, true)
 	primary := evidenceFor(model, selected, raw, percentile, len(cohort))
-	checks := make([]benchmarkEvidence, 0, len(legacy.checks))
-	deltas := make([]float64, 0, len(legacy.checks))
-	for _, check := range legacy.checks {
-		value, ok := check.value(model)
-		values := reference.Metrics[check.reference]
-		if check.benchmark == selected.benchmark || !ok || value == nil || !finite(*value) || len(values) == 0 {
-			continue
-		}
-		checkPercentile := empiricalPercentile(values, *value, true)
-		checks = append(checks, evidenceFor(model, check, value, checkPercentile, len(values)))
-		deltas = append(deltas, math.Abs(checkPercentile-percentile))
-	}
+	checks, deltas := legacyCategoryChecks(model, legacy, selected, reference, percentile)
 	var agreement *float64
 	if len(deltas) > 0 {
 		value := 100 - mean(deltas)
@@ -172,30 +161,8 @@ func scoreCategoryV3WithContext(model Model, spec categorySpec, models []Model, 
 	conflicts := make([]string, 0)
 	stale := false
 	for _, family := range spec.families {
-		var selected *benchmarkEvidence
-		for _, benchmark := range family.benchmarks {
-			result, ok := model.Benchmarks[benchmark]
-			if ok && result.Quarantined {
-				conflicts = append(conflicts, benchmark+": "+result.Conflict)
-				continue
-			}
-			if !ok || !eligibleCanonicalResult(result) {
-				continue
-			}
-			cohort := context.resolvedFrozenBenchmarkCohort(benchmark, result)
-			if len(cohort) < 5 {
-				continue
-			}
-			higher := result.Direction != lower1
-			percentile := empiricalPercentile(cohort, *result.Score, higher)
-			trust := evidenceMultiplier(result.EvidenceGrade) * identityMultiplier(result.Identity)
-			evidence := evidenceForResult(benchmark, family.name, 1, result, percentile, len(cohort))
-			evidence.EvidenceMultiplier, evidence.IdentityMultiplier, evidence.EffectiveWeight, evidence.Stale = evidenceMultiplier(result.EvidenceGrade), identityMultiplier(result.Identity), trust, result.Stale
-			// A family contributes once. Its first reviewed benchmark in registry
-			// order wins, so duplicates never amplify a model's score.
-			selected = &evidence
-			break
-		}
+		selected, familyConflicts := selectFamilyEvidence(model, family, context)
+		conflicts = append(conflicts, familyConflicts...)
 		if selected == nil {
 			continue
 		}
@@ -262,12 +229,13 @@ func evidenceMultiplier(grade string) float64 {
 	}
 }
 
-func evidenceForResult(benchmark, family string, weight float64, result BenchmarkResult, percentile float64, population int) benchmarkEvidence {
+func evidenceForResult(input resultEvidenceInput) benchmarkEvidence {
+	result := input.result
 	grade := result.EvidenceGrade
 	if grade == "" {
 		grade = "sealed_direct"
 	}
-	return benchmarkEvidence{Benchmark: benchmark, RawScore: cloneFloat64(result.Score), Percentile: scoreFloat64Ptr(percentile), SourceVersion: result.Version, URL: result.URL, CommitSHA: result.CommitSHA, ContentSHA: result.ContentSHA, Methodology: result.Method, JudgeVersion: result.Judge, ReferencePopulation: population, Family: family, NominalWeight: weight, EvidenceGrade: grade, SourceID: result.SourceID, SourceRevision: result.SourceRevision, SourceClass: result.SourceClass, Mirrors: append([]BenchmarkMirror(nil), result.Mirrors...)}
+	return benchmarkEvidence{Benchmark: input.benchmark, RawScore: cloneFloat64(result.Score), Percentile: scoreFloat64Ptr(input.percentile), SourceVersion: result.Version, URL: result.URL, CommitSHA: result.CommitSHA, ContentSHA: result.ContentSHA, Methodology: result.Method, JudgeVersion: result.Judge, ReferencePopulation: input.population, Family: input.family, NominalWeight: input.weight, EvidenceGrade: grade, SourceID: result.SourceID, SourceRevision: result.SourceRevision, SourceClass: result.SourceClass, Mirrors: append([]BenchmarkMirror(nil), result.Mirrors...)}
 }
 
 // Later authority-ladder sources are unsealed until the model result and its

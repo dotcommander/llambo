@@ -376,6 +376,7 @@ func TestModelsListIncludesCatalogOnlyScoredModels(t *testing.T) {
 }
 
 func TestModelMetricLabelsDoesNotInferSpeedFromTotalLatency(t *testing.T) {
+	t.Parallel()
 	cat := &catalog.Catalog{Providers: map[string]*catalog.ProviderCatalog{
 		"openai": {Models: map[string]*catalog.ModelEntry{
 			"slow-looking": {
@@ -396,17 +397,19 @@ func TestModelMetricLabelsDoesNotInferSpeedFromTotalLatency(t *testing.T) {
 		}},
 	}}
 
-	_, _, _, speed, latency := modelMetricLabels(cat, nil, "openai", "slow-looking")
+	labels := buildModelMetricLabels(cat, nil, "openai", "slow-looking")
+	speed, latency := labels.speed, labels.latency
 	if speed != "—" || latency != "2000ms" {
 		t.Fatalf("legacy speed fallback = %q with latency %q, want em dash and 2000ms", speed, latency)
 	}
-	_, _, _, speed, _ = modelMetricLabels(cat, nil, "openai", "measured")
+	speed = buildModelMetricLabels(cat, nil, "openai", "measured").speed
 	if speed != "25.0 tok/s" {
 		t.Fatalf("persisted speed = %q, want 25.0 tok/s", speed)
 	}
 }
 
 func TestModelMetricLabelsUsesOMLXSpeedEstimate(t *testing.T) {
+	t.Parallel()
 	cat := &catalog.Catalog{Providers: map[string]*catalog.ProviderCatalog{
 		"omlx": {Models: map[string]*catalog.ModelEntry{
 			"Qwen3.8-27B-4bit": {
@@ -426,18 +429,19 @@ func TestModelMetricLabelsUsesOMLXSpeedEstimate(t *testing.T) {
 		}},
 	}}
 
-	_, _, _, speed, _ := modelMetricLabels(cat, nil, "omlx", "Qwen3.8-27B-4bit")
+	speed := buildModelMetricLabels(cat, nil, "omlx", "Qwen3.8-27B-4bit").speed
 	if speed != "~20.3 tok/s" {
 		t.Fatalf("estimated speed = %q, want estimate instead of cached measurement", speed)
 	}
 
-	_, _, _, speed, _ = modelMetricLabels(cat, nil, "omlx", "local")
+	speed = buildModelMetricLabels(cat, nil, "omlx", "local").speed
 	if speed != "12.5 tok/s" {
 		t.Fatalf("unestimatable speed = %q, want cached measurement to remain fallback", speed)
 	}
 }
 
 func TestModelMetricLabelsPrefersFreshLiveTiming(t *testing.T) {
+	t.Parallel()
 	benchmarkAt := time.Now().UTC().Add(-time.Hour)
 	liveAt := benchmarkAt.Add(time.Minute)
 	cat := &catalog.Catalog{Providers: map[string]*catalog.ProviderCatalog{
@@ -456,24 +460,27 @@ func TestModelMetricLabelsPrefersFreshLiveTiming(t *testing.T) {
 		}},
 	}}
 
-	_, _, _, speed, latency := modelMetricLabels(cat, nil, "omlx", "model")
+	labels := buildModelMetricLabels(cat, nil, "omlx", "model")
+	speed, latency := labels.speed, labels.latency
 	if speed != "12.5 tok/s" || latency != "10156ms" {
 		t.Fatalf("metrics = speed %q, latency %q, want 12.5 tok/s and 10156ms", speed, latency)
 	}
 }
 
 func TestModelMetricLabelsSeparatesLlamboAndTaskScore(t *testing.T) {
+	t.Parallel()
 	cat := &catalog.Catalog{Providers: map[string]*catalog.ProviderCatalog{
 		"omlx": {Models: map[string]*catalog.ModelEntry{
 			"model": {Quality: map[string]catalog.QualityEvidence{"writing": {Score: .98}}},
 		}},
 	}}
 	snapshot := &evals.OMLXScoreSnapshot{FormulaVersion: evals.CategoryFormulaVersion, PopulationFingerprint: "fingerprint", Inventory: []string{"model"}, CategoryScores: map[string]map[string]*evals.LlamboScore{"model": {"coding": {Score: 82.25, Coverage: .6, TrustedCoverage: .45, Confidence: "medium", WinnerStatus: "official"}}}}
-	llambo, provenance, task, _, _ := modelMetricLabels(cat, snapshot, "omlx", "model")
+	labels := buildModelMetricLabels(cat, snapshot, "omlx", "model")
+	llambo, provenance, task := labels.llamboScore, labels.llamboProvenance, labels.taskScore
 	if llambo != "coding=82.2 (official)" || task != "writing 98.0/100" || !strings.Contains(provenance, "formula=LLAMBO-9-category") || !strings.Contains(provenance, "coding={coverage=0.600000,trusted_coverage=0.450000,confidence=medium,winner=official,stale=false}") || !strings.Contains(provenance, "writing=unresolved") {
 		t.Fatalf("scores/provenance were incomplete: llambo=%q provenance=%q task=%q", llambo, provenance, task)
 	}
-	llambo, _, _, _, _ = modelMetricLabels(cat, snapshot, "hosted", "model")
+	llambo = buildModelMetricLabels(cat, snapshot, "hosted", "model").llamboScore
 	if llambo != "—" {
 		t.Fatalf("hosted model got LLAMBO SCORE %q", llambo)
 	}
@@ -499,4 +506,33 @@ func writeModelsTestConfig(t *testing.T, data string) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+func TestAppendCatalogMetricModelsRequiresSavedEvidence(t *testing.T) {
+	t.Parallel()
+	cat := &catalog.Catalog{Providers: map[string]*catalog.ProviderCatalog{
+		"local": {Models: map[string]*catalog.ModelEntry{
+			"configured":         {},
+			"zero-score-quality": {Quality: map[string]catalog.QualityEvidence{"task": {Score: 0}}},
+			"quality-scored":     {},
+			"benchmark-scored":   {},
+			"zero-signal-bench":  {Benchmarks: map[string]catalog.BenchmarkEvidence{"saved": {}}},
+		}},
+	}}
+
+	models := appendCatalogMetricModels(cat, nil, "local", []string{"configured"})
+	if got, want := strings.Join(models, ","), "configured"; got != want {
+		t.Fatalf("configured-only evidence = %q, want %q", got, want)
+	}
+
+	cat.Providers["local"].Models["quality-scored"].Quality = map[string]catalog.QualityEvidence{"task": {Score: 0.8}}
+	cat.Providers["local"].Models["benchmark-scored"].Benchmarks = map[string]catalog.BenchmarkEvidence{"saved": {Score: 0.9}}
+	models = appendCatalogMetricModels(cat, nil, "local", []string{"configured", "quality-scored"})
+	if got, want := strings.Join(models, ","), "configured,quality-scored,benchmark-scored"; got != want {
+		t.Fatalf("appended evidence models = %q, want %q", got, want)
+	}
+
+	if models := appendCatalogMetricModels(nil, nil, "local", []string{"configured"}); len(models) != 1 || models[0] != "configured" {
+		t.Fatalf("missing catalog must return config models untouched, got %q", strings.Join(models, ","))
+	}
 }

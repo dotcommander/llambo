@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-10-14
+
+### Changed
+- Decomposed provider routing, gateway stream handling, catalog updates, and evaluation workflows into owner-local operations while preserving public APIs, CLI output, scoring, and persisted formats
+- Replaced oversized internal argument and result lists with typed request and result bundles, with corresponding caller and regression-test updates
+
+### Fixed
+- Recognize wrapped stream errors without losing error classification
+- Handle retry-stop outcomes explicitly rather than relying on a default branch
+
 ## [0.5.0] - 2026-10-13
 
 ### Added

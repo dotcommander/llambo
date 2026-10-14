@@ -22,7 +22,7 @@ func TestOMLXAudioAdapterASRAndTTS(t *testing.T) {
 			if err != nil {
 				t.Error(err)
 			} else {
-				defer func() { _ = file.Close() }()
+				t.Cleanup(func() { _ = file.Close() })
 				got, _ := io.ReadAll(file)
 				if string(got) != string(wav) {
 					t.Error("ASR did not send sealed WAV")
@@ -41,14 +41,38 @@ func TestOMLXAudioAdapterASRAndTTS(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 	adapter := OMLXAudioAdapter{BaseURL: server.URL, Client: server.Client()}
+	t.Run("ASR", func(t *testing.T) {
+		t.Parallel()
+		assertLocalASR(t, adapter, wav)
+	})
+	t.Run("TTS", func(t *testing.T) {
+		t.Parallel()
+		assertLocalTTS(t, adapter)
+	})
+	t.Run("round-trip", func(t *testing.T) {
+		t.Parallel()
+		assertLocalAudioRoundTrip(t, adapter, wav)
+	})
+}
+
+func assertLocalASR(t *testing.T, adapter OMLXAudioAdapter, wav []byte) {
+	t.Helper()
 	asr, err := adapter.Transcribe(context.Background(), "omlx/asr", ASRAudioInput{Case: ASRCase{ID: "clip", Transcript: "hello world"}, WAV: wav})
 	if err != nil || asr.WER != 0 || asr.RealTimeFactor <= 0 {
 		t.Fatalf("ASR = %#v, %v", asr, err)
 	}
+}
+
+func assertLocalTTS(t *testing.T, adapter OMLXAudioAdapter) {
+	t.Helper()
 	tts, err := adapter.Synthesize(context.Background(), TTSSpeechRequest{Model: "omlx/tts", Input: "hello world"}, audioRoundTripFunc(func(context.Context, []byte) (string, error) { return "hello world", nil }))
 	if err != nil || tts.IntelligibilityWER == nil || *tts.IntelligibilityWER != 0 || tts.WAVBase64 == "" {
 		t.Fatalf("TTS = %#v, %v", tts, err)
 	}
+}
+
+func assertLocalAudioRoundTrip(t *testing.T, adapter OMLXAudioAdapter, wav []byte) {
+	t.Helper()
 	roundTrip := OMLXTTSRoundTripper{Adapter: adapter, Model: "omlx/asr"}
 	transcript, err := roundTrip.TranscribeGeneratedAudio(context.Background(), wav)
 	if err != nil || transcript != "Hello, world!" {

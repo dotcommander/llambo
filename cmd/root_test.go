@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -92,47 +93,84 @@ func TestVersionFlagsAndPositionalCommand(t *testing.T) {
 }
 
 func TestHelpAndErrorsHonorTerminalColorControls(t *testing.T) {
-	t.Run("forced color", func(t *testing.T) {
-		t.Setenv("NO_COLOR", "")
-		t.Setenv("CLICOLOR_FORCE", "1")
-		var out, errOut bytes.Buffer
-		if err := executeRoot(context.Background(), []string{"serve", "--help"}, &out, &errOut); err != nil {
-			t.Fatal(err)
+	t.Parallel()
+	for _, mode := range []string{"forced color", "no color"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
+			command := exec.Command(os.Args[0], "-test.run=^TestHelpColorSubprocess$")
+			command.Env = helpColorEnvironment(mode)
+			if output, err := command.CombinedOutput(); err != nil {
+				t.Fatalf("color subprocess: %v\n%s", err, output)
+			}
+		})
+	}
+}
+
+func helpColorEnvironment(mode string) []string {
+	env := make([]string, 0, len(os.Environ())+3)
+	for _, value := range os.Environ() {
+		key, _, _ := strings.Cut(value, "=")
+		if key != "NO_COLOR" && key != "CLICOLOR_FORCE" && key != "LLAMBO_TEST_COLOR" {
+			env = append(env, value)
 		}
-		if !strings.Contains(out.String(), "\x1b[") {
-			t.Fatalf("forced-color help contains no ANSI styling: %q", out.String())
-		}
-		out.Reset()
-		if err := executeRoot(context.Background(), []string{"--help"}, &out, &errOut); err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(out.String(), "\x1b[2mRun ") {
-			t.Fatalf("forced-color command hint is not faint: %q", out.String())
-		}
-		if err := WriteError(&errOut, errors.New("unknown flag --wat")); err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(errOut.String(), "\x1b[") || strings.Contains(errOut.String(), "Usage:") {
-			t.Fatalf("unexpected forced-color error output: %q", errOut.String())
-		}
-	})
-	t.Run("no color", func(t *testing.T) {
-		t.Setenv("NO_COLOR", "1")
-		t.Setenv("CLICOLOR_FORCE", "")
-		var out, errOut bytes.Buffer
-		if err := executeRoot(context.Background(), []string{"--help"}, &out, &errOut); err != nil {
-			t.Fatal(err)
-		}
-		if strings.Contains(out.String(), "\x1b[") {
-			t.Fatalf("NO_COLOR help contains ANSI styling: %q", out.String())
-		}
-		if err := WriteError(&errOut, errors.New("unknown flag --wat")); err != nil {
-			t.Fatal(err)
-		}
-		if strings.Contains(errOut.String(), "\x1b[") || strings.Contains(errOut.String(), "Usage:") {
-			t.Fatalf("unexpected NO_COLOR error output: %q", errOut.String())
-		}
-	})
+	}
+	if mode == "forced color" {
+		return append(env, "LLAMBO_TEST_COLOR="+mode, "NO_COLOR=", "CLICOLOR_FORCE=1")
+	}
+	return append(env, "LLAMBO_TEST_COLOR="+mode, "NO_COLOR=1", "CLICOLOR_FORCE=")
+}
+
+func TestHelpColorSubprocess(t *testing.T) {
+	t.Parallel()
+	switch os.Getenv("LLAMBO_TEST_COLOR") {
+	case "forced color":
+		assertForcedHelpColor(t)
+	case "no color":
+		assertNoHelpColor(t)
+	default:
+		t.Skip("subprocess-only color assertions")
+	}
+}
+
+func assertForcedHelpColor(t *testing.T) {
+	t.Helper()
+	var out, errOut bytes.Buffer
+	if err := executeRoot(context.Background(), []string{"serve", "--help"}, &out, &errOut); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "\x1b[") {
+		t.Fatalf("forced-color help contains no ANSI styling: %q", out.String())
+	}
+	out.Reset()
+	if err := executeRoot(context.Background(), []string{"--help"}, &out, &errOut); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "\x1b[2mRun ") {
+		t.Fatalf("forced-color command hint is not faint: %q", out.String())
+	}
+	if err := WriteError(&errOut, errors.New("unknown flag --wat")); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(errOut.String(), "\x1b[") || strings.Contains(errOut.String(), "Usage:") {
+		t.Fatalf("unexpected forced-color error output: %q", errOut.String())
+	}
+}
+
+func assertNoHelpColor(t *testing.T) {
+	t.Helper()
+	var out, errOut bytes.Buffer
+	if err := executeRoot(context.Background(), []string{"--help"}, &out, &errOut); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.String(), "\x1b[") {
+		t.Fatalf("NO_COLOR help contains ANSI styling: %q", out.String())
+	}
+	if err := WriteError(&errOut, errors.New("unknown flag --wat")); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(errOut.String(), "\x1b[") || strings.Contains(errOut.String(), "Usage:") {
+		t.Fatalf("unexpected NO_COLOR error output: %q", errOut.String())
+	}
 }
 
 func TestParseErrorsAreConcise(t *testing.T) {

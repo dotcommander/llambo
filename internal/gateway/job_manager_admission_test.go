@@ -168,7 +168,9 @@ func TestJobManager_Stats(t *testing.T) {
 	// Wait a moment for jobs to transition
 	time.Sleep(10 * time.Millisecond)
 
-	total, pending, processing, completed, failed, cancelled := manager.Stats()
+	stats := manager.Stats()
+	total, pending, processing := stats.Total, stats.Pending, stats.Processing
+	completed, failed, cancelled := stats.Completed, stats.Failed, stats.Cancelled
 
 	if total != 2 {
 		t.Errorf("expected total=2, got %d", total)
@@ -242,7 +244,7 @@ func TestJobManager_Concurrent(t *testing.T) {
 	}
 
 	// Verify all jobs are tracked in manager
-	total, _, _, _, _, _ := manager.Stats()
+	total := manager.Stats().Total
 	if total != expectedJobs {
 		t.Errorf("expected total=%d, got %d", expectedJobs, total)
 	}

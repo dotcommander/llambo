@@ -98,6 +98,17 @@ func writeAnthropicError(w http.ResponseWriter, status int, requestID, message s
 	})
 }
 
+func statusCodeFromErrorText(msg string) (int, bool) {
+	for _, match := range statusCodeRegex.FindAllStringSubmatch(msg, -1) {
+		if len(match) >= 2 {
+			if code, convErr := strconv.Atoi(match[1]); convErr == nil && code >= 400 && code <= 599 {
+				return code, true
+			}
+		}
+	}
+	return 0, false
+}
+
 func anthropicStatusFromError(err error) int {
 	if err == nil {
 		return http.StatusBadGateway
@@ -115,12 +126,8 @@ func anthropicStatusFromError(err error) int {
 		}
 	}
 	msg := strings.ToLower(err.Error())
-	for _, match := range statusCodeRegex.FindAllStringSubmatch(msg, -1) {
-		if len(match) >= 2 {
-			if code, convErr := strconv.Atoi(match[1]); convErr == nil && code >= 400 && code <= 599 {
-				return code
-			}
-		}
+	if code, ok := statusCodeFromErrorText(msg); ok {
+		return code
 	}
 	switch {
 	case strings.Contains(msg, "rate limit"):
