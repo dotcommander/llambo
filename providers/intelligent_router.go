@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // RoutingIntent classifies a request by task shape for intelligent routing.
@@ -38,32 +39,147 @@ type CandidateScore struct {
 // RouteDecision records the chosen backend and the scored candidates behind
 // it.
 type RouteDecision struct {
-	Mode       string           `json:"mode"`
-	Intent     RoutingIntent    `json:"intent"`
-	Chosen     string           `json:"chosen"`
-	Reason     string           `json:"reason"`
-	Candidates []CandidateScore `json:"candidates,omitempty"`
-	IsCanary   bool             `json:"is_canary,omitempty"`
+	Mode         string           `json:"mode"`
+	Intent       RoutingIntent    `json:"intent"`
+	IntentDetail string           `json:"intent_detail,omitempty"`
+	Chosen       string           `json:"chosen"`
+	Reason       string           `json:"reason"`
+	Candidates   []CandidateScore `json:"candidates,omitempty"`
+	IsCanary     bool             `json:"is_canary,omitempty"`
 }
+
+// longContextByteThreshold preserves DetectIntent's structural long-context
+// rule: prompts whose user content exceeds this byte length route as
+// long_context before any embedding work happens.
+const longContextByteThreshold = 8000
 
 // DetectIntent infers a routing intent from prompt content.
 func DetectIntent(systemPrompt, userContent string) RoutingIntent {
-	text := strings.ToLower(systemPrompt + "\n" + userContent)
-	if strings.Contains(text, "```") || strings.Contains(text, "function") || strings.Contains(text, "golang") || strings.Contains(text, "python") || strings.Contains(text, "typescript") || strings.Contains(text, "debug") {
-		return IntentCode
-	}
-	if strings.Contains(text, "extract") || strings.Contains(text, "summary") || strings.Contains(text, "evidence") {
-		return IntentExtraction
-	}
-	if len(userContent) > 8000 {
-		return IntentLongCtx
-	}
-	return IntentChat
+	intent, _ := detectIntentDetailed(systemPrompt, userContent)
+	return intent
 }
 
-// EstimatePromptTokens approximates token count as a quarter of byte length.
+// detectIntentDetailed returns the lexical intent and whether any lexical
+// rule actually fired. matched=false means the returned chat intent is the
+// inconclusive default, not a positive classification.
+func detectIntentDetailed(systemPrompt, userContent string) (RoutingIntent, bool) {
+	text := strings.ToLower(systemPrompt + "\n" + userContent)
+	if strings.Contains(text, "```") || strings.Contains(text, "function") || strings.Contains(text, "golang") || strings.Contains(text, "python") || strings.Contains(text, "typescript") || strings.Contains(text, "debug") {
+		return IntentCode, true
+	}
+	if strings.Contains(text, "extract") || strings.Contains(text, "summary") || strings.Contains(text, "evidence") {
+		return IntentExtraction, true
+	}
+	if len(userContent) > longContextByteThreshold {
+		return IntentLongCtx, true
+	}
+	return IntentChat, false
+}
+
+// IntentSource records which routing layer produced an intent.
+type IntentSource uint8
+
+// Intent resolution layers, cheapest first.
+const (
+	// IntentLexical is the keyword detector (L0).
+	IntentLexical IntentSource = iota
+	// IntentStatic is the static-embedding centroid match (L1).
+	IntentStatic
+	// IntentFallback marks the inconclusive default: no lexical rule fired
+	// and no confident static match existed.
+	IntentFallback
+)
+
+// IntentResolution is one resolved routing intent plus the confidence
+// signals behind it. Ambiguous resolutions must degrade neutrally in
+// capability scoring, never punitively.
+type IntentResolution struct {
+	Intent    RoutingIntent
+	Top1      float32
+	Margin    float32
+	Source    IntentSource
+	Ambiguous bool
+}
+
+// ResolveIntent classifies a prompt through the cascaded intent router:
+// structural long-context gate, then the static-embedding centroid match
+// (when assets and config exist), then the lexical detector, then the
+// inconclusive chat fallback. Per the L1 intent router spec, escalation is
+// asymmetric: any failed static gate marks the resolution ambiguous so
+// capability fit stays neutral.
+func ResolveIntent(systemPrompt, userContent string, assets *IntentAssets, cfg *IntentRouterConfig) IntentResolution {
+	if len(userContent) > longContextByteThreshold {
+		return IntentResolution{Intent: IntentLongCtx, Source: IntentLexical}
+	}
+	lexical, matched := detectIntentDetailed(systemPrompt, userContent)
+	if assets == nil || cfg == nil || !cfg.Enabled || cfg.MinTop1 <= 0 || cfg.MinMargin <= 0 {
+		return lexicalResolution(lexical, matched)
+	}
+	if vec, ok := assets.Embed(systemPrompt + "\n" + userContent); ok {
+		if idx, top1, margin := matchCentroid(vec, assets.centroids); idx >= 0 && idx < len(assets.intents) {
+			if float64(top1) >= cfg.MinTop1 && float64(margin) >= cfg.MinMargin {
+				return IntentResolution{Intent: assets.intents[idx], Top1: top1, Margin: margin, Source: IntentStatic}
+			}
+			res := lexicalResolution(lexical, matched)
+			res.Top1, res.Margin, res.Ambiguous = top1, margin, true
+			return res
+		}
+	}
+	res := lexicalResolution(lexical, matched)
+	res.Ambiguous = true
+	return res
+}
+
+func lexicalResolution(intent RoutingIntent, matched bool) IntentResolution {
+	if !matched {
+		return IntentResolution{Intent: IntentChat, Source: IntentFallback, Ambiguous: true}
+	}
+	return IntentResolution{Intent: intent, Source: IntentLexical}
+}
+
+// ResolutionDetail renders the resolution provenance for decision records.
+// It returns "" for plain confident lexical hits to keep routine events
+// unchanged.
+func ResolutionDetail(r IntentResolution) string {
+	switch {
+	case r.Source == IntentStatic:
+		return fmt.Sprintf("%s (static top1=%.2f margin=%.2f)", r.Intent, r.Top1, r.Margin)
+	case r.Ambiguous && r.Top1 > 0:
+		return fmt.Sprintf("%s (lexical; static top1=%.2f margin=%.2f below gate)", r.Intent, r.Top1, r.Margin)
+	case r.Source == IntentFallback:
+		return fmt.Sprintf("%s (no lexical or static signal; neutral fit)", r.Intent)
+	case r.Ambiguous:
+		return fmt.Sprintf("%s (lexical; static unresolved)", r.Intent)
+	default:
+		return ""
+	}
+}
+
+// EstimatePromptTokens approximates the token count as the larger of the
+// word count and the bytes/4 character estimate. The word floor catches
+// short whitespace-heavy prompts where bytes/4 badly undercounts.
 func EstimatePromptTokens(systemPrompt, userContent string) int {
-	return (len(systemPrompt) + len(userContent)) / 4
+	words := countWords(systemPrompt) + countWords(userContent)
+	charEst := (len(systemPrompt) + len(userContent) + 3) / 4
+	if words > charEst {
+		return words
+	}
+	return charEst
+}
+
+func countWords(s string) int {
+	words, inWord := 0, false
+	for _, r := range s {
+		if unicode.IsSpace(r) {
+			inWord = false
+			continue
+		}
+		if !inWord {
+			words++
+			inWord = true
+		}
+	}
+	return words
 }
 
 // NormalizeRoutingMode canonicalizes a routing mode, defaulting to balanced.
@@ -113,6 +229,7 @@ type candidateScoring struct {
 	routing         RoutingConfig
 	estimatedTokens int
 	intent          RoutingIntent
+	intentAmbiguous bool
 	allowed         map[string]struct{}
 	denied          map[string]struct{}
 }
@@ -132,13 +249,14 @@ func providerNameSet(names []string) map[string]struct{} {
 // newCandidateScoring assembles the request-wide routing inputs shared by
 // every candidate in one scoring pass. The metrics snapshot is referenced,
 // never copied or mutated.
-func newCandidateScoring(routing RoutingConfig, metrics map[string]ProviderRuntimeMetrics, intent RoutingIntent, estimatedTokens int) candidateScoring {
+func newCandidateScoring(routing RoutingConfig, metrics map[string]ProviderRuntimeMetrics, resolution IntentResolution, estimatedTokens int) candidateScoring {
 	return candidateScoring{
 		metrics:         metrics,
 		mode:            NormalizeRoutingMode(routing.Mode),
 		routing:         routing,
 		estimatedTokens: estimatedTokens,
-		intent:          intent,
+		intent:          resolution.Intent,
+		intentAmbiguous: resolution.Ambiguous,
 		allowed:         providerNameSet(routing.AllowedProviders),
 		denied:          providerNameSet(routing.DeniedProviders),
 	}
@@ -204,7 +322,7 @@ func (s candidateScoring) score(cfg Config, b Backend) (CandidateScore, bool) {
 		errorRate = float64(m.Failures) / float64(m.Requests)
 	}
 
-	fit := capabilityFit(cfg.Capabilities, s.intent)
+	fit := capabilityFit(cfg.Capabilities, s.intent, s.intentAmbiguous)
 	score, reason := applyModeScoreNormalized(s.mode, modeScoreInputs{quality: cfg.Quality, runtimeQuality: runtimeQualityScore(m), fit: fit, latencyMs: latencyMs, costUSD: cost, errorRate: errorRate})
 	return CandidateScore{Provider: b.Name, Model: b.Model, Score: score, Reason: reason}, true
 }
@@ -268,8 +386,11 @@ func exceedsDailyQuota(routing RoutingConfig, provider string, m ProviderRuntime
 	return false
 }
 
-func capabilityFit(capabilities []string, intent RoutingIntent) float64 {
-	if len(capabilities) == 0 {
+// capabilityFit scores how well a backend's declared capabilities match the
+// resolved intent. Ambiguous resolutions (and tag-less configs) score the
+// neutral 0.5: an uncertain classification must never punish candidates.
+func capabilityFit(capabilities []string, intent RoutingIntent, ambiguous bool) float64 {
+	if len(capabilities) == 0 || ambiguous {
 		return 0.5
 	}
 	needle := strings.ToLower(string(intent))

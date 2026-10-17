@@ -43,6 +43,9 @@ func runRouteQuery(cmd *commandIO, args []string) error {
 	}
 
 	fmt.Fprintf(cmd.OutOrStdout(), "intent: %s\n", result.Intent)
+	if result.IntentDetail != "" {
+		fmt.Fprintf(cmd.OutOrStdout(), "intent-detail: %s\n", result.IntentDetail)
+	}
 	fmt.Fprintf(cmd.OutOrStdout(), "model: %s/%s\n", result.Provider, result.Model)
 	if result.Reason != "" {
 		fmt.Fprintf(cmd.OutOrStdout(), "reason: %s\n", result.Reason)

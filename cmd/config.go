@@ -52,6 +52,9 @@ func runConfigShow(cmd *commandIO) error {
 	cfg.Routing.ApplyDefaults()
 	fmt.Fprintln(out, "\nRouting:")
 	fmt.Fprintf(out, "  mode: %s\n", cfg.Routing.Mode)
+	if ir := cfg.Routing.IntentRouter; ir != nil {
+		fmt.Fprintf(out, "  intent_router: enabled=%v min_top1=%.2f min_margin=%.2f\n", ir.Enabled, ir.MinTop1, ir.MinMargin)
+	}
 	if cfg.Routing.MaxCostUSD > 0 {
 		fmt.Fprintf(out, "  max_cost_usd: %.6f\n", cfg.Routing.MaxCostUSD)
 	}

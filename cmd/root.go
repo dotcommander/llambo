@@ -178,6 +178,12 @@ func normalizeRoutePositionals(args []string, root int) []string {
 		return insertArg(args, root+1, "query")
 	}
 	switch args[branch] {
+	case "intents":
+		sub := firstPositional(args, branch+1, map[string]bool{config1: true})
+		if sub < 0 {
+			return insertArg(args, branch+1, "build")
+		}
+		return args
 	case "query", "simulate", "canary":
 		return args
 	default:

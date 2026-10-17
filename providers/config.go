@@ -232,6 +232,11 @@ func InitDefaultConfig() error {
 			Mode:        string(RoutingModeBalanced),
 			MetricsPath: filepath.Join(configDir, "routing-metrics.json"),
 			EventsPath:  filepath.Join(configDir, "routing-events.jsonl"),
+			IntentRouter: &IntentRouterConfig{
+				Enabled:   defaultIntentRouterEnabled,
+				MinTop1:   defaultIntentRouterMinTop1,
+				MinMargin: defaultIntentRouterMinMargin,
+			},
 		},
 		Gateway: GatewayConfig{
 			MaxActiveJobs:     DefaultMaxActiveJobs,

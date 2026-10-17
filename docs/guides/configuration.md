@@ -460,6 +460,40 @@ routing backend using that provider's credentials. Price estimates come from
 provider config and `~/.config/llambo/model-costs.csv`; a model is considered
 free only when both input and output prices are explicitly `0`.
 
+### Intent Router (Static Embeddings)
+
+`routing.intent_router` gates the semantic intent resolver. When router
+assets exist under `~/.config/llambo/router/`, prompts are classified by
+static-embedding centroid match (no LLM calls, sub-millisecond); otherwise
+llambo falls back to keyword detection:
+
+```json
+{
+  "routing": {
+    "intent_router": {
+      "enabled": true,
+      "min_top1": 0.78,
+      "min_margin": 0.08
+    }
+  }
+}
+```
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `enabled` | `true` | Enable the static resolver when assets exist |
+| `min_top1` | `0.78` | Minimum top cosine score to accept a match |
+| `min_margin` | `0.08` | Minimum top1−top2 margin; below it the resolution is ambiguous |
+
+Ambiguous resolutions score capability fit neutrally (0.5) instead of
+punishing non-matching models. Build assets from an offline export plus a
+seed set (never network-fetched):
+
+```bash
+llambo route intents build --source <export-dir>
+# export-dir layout: vocab.txt (one token per line), dim.txt, embeddings.f32.bin
+```
+
 Useful checks:
 
 ```bash

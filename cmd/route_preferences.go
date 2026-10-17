@@ -42,10 +42,11 @@ type routeModelChoice struct {
 }
 
 type routeQueryResult struct {
-	Intent   providers.RoutingIntent
-	Provider string
-	Model    string
-	Reason   string
+	Intent       providers.RoutingIntent
+	IntentDetail string
+	Provider     string
+	Model        string
+	Reason       string
 }
 
 func routePreferencesPath() (string, error) {
@@ -95,26 +96,30 @@ func writeDefaultRoutePreferences(path string) error {
 }
 
 func routeQuery(query string, configs map[string]providers.Config, routing providers.RoutingConfig, metrics map[string]providers.ProviderRuntimeMetrics, prefs routePreferenceSet) (routeQueryResult, error) {
-	intent := providers.DetectIntent("", query)
+	resolution := providers.ResolveIntent("", query, providers.DefaultIntentAssets(), routing.IntentRouter)
+	intent := resolution.Intent
 	if result, ok := matchRoutePreference(query, intent, configs, prefs.Preferences); ok {
+		result.IntentDetail = providers.ResolutionDetail(resolution)
 		return result, nil
 	}
 	if result, ok := matchRouteChoice(intent, configs, prefs.FallbackDecider); ok {
+		result.IntentDetail = providers.ResolutionDetail(resolution)
 		return result, nil
 	}
 
 	routing.Mode = routeFallbackMode(prefs)
-	decision := providers.SimulateRoute(configs, routing, metrics, intent, providers.EstimatePromptTokens("", query))
+	decision := providers.SimulateRouteResolved(configs, routing, metrics, resolution, providers.EstimatePromptTokens("", query))
 	if decision.Chosen == "" {
 		return routeQueryResult{}, fmt.Errorf("no route candidates available for intent %q", intent)
 	}
 
 	cfg := configs[decision.Chosen]
 	return routeQueryResult{
-		Intent:   intent,
-		Provider: providers.BaseProviderName(decision.Chosen, cfg.Model),
-		Model:    cfg.Model,
-		Reason:   decision.Reason,
+		Intent:       intent,
+		IntentDetail: providers.ResolutionDetail(resolution),
+		Provider:     providers.BaseProviderName(decision.Chosen, cfg.Model),
+		Model:        cfg.Model,
+		Reason:       decision.Reason,
 	}, nil
 }
 

@@ -66,14 +66,18 @@ func (c executionCoordinator) collectEnabledProviders() ([]providerInfo, int) {
 
 func (c executionCoordinator) collectEnabledProvidersForPrompt(systemPrompt, userContent string) chatPlanningSnapshot {
 	healthy := c.oc.GetHealthyBackends()
-	intent := DetectIntent(systemPrompt, userContent)
+	resolution := ResolveIntent(systemPrompt, userContent, DefaultIntentAssets(), c.routing.IntentRouter)
+	intent := resolution.Intent
 	estimatedTokens := EstimatePromptTokens(systemPrompt, userContent)
 	metrics := map[string]ProviderRuntimeMetrics{}
 	if c.oc.RoutingMetrics != nil {
 		metrics = c.oc.RoutingMetrics.Snapshot()
 	}
-	scored := scoreCandidates(c.configs, healthy, newCandidateScoring(c.routing, metrics, intent, estimatedTokens))
+	scored := scoreCandidates(c.configs, healthy, newCandidateScoring(c.routing, metrics, resolution, estimatedTokens))
 	decision := &RouteDecision{Mode: c.routing.Mode, Intent: intent, Candidates: scored}
+	if detail := ResolutionDetail(resolution); detail != "" {
+		decision.IntentDetail = detail
+	}
 
 	if len(scored) > 0 {
 		decision.Chosen = scored[0].Provider

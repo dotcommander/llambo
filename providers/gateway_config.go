@@ -68,20 +68,38 @@ func (g *GatewayConfig) ApplyDefaults() {
 	}
 }
 
+// IntentRouterConfig gates the static-embedding intent resolver (L1). All
+// values are operator config per the config-is-data rule; the defaults here
+// are the single sanctioned literal site (mirrored into config.json by
+// ApplyDefaults).
+type IntentRouterConfig struct {
+	Enabled   bool    `json:"enabled,omitempty"`
+	MinTop1   float64 `json:"min_top1,omitempty"`
+	MinMargin float64 `json:"min_margin,omitempty"`
+}
+
+// Default intent-router gates: KB starting values, operator-tunable.
+const (
+	defaultIntentRouterEnabled   = true
+	defaultIntentRouterMinTop1   = 0.78
+	defaultIntentRouterMinMargin = 0.08
+)
+
 // RoutingConfig controls intelligent provider selection.
 type RoutingConfig struct {
-	Mode             string             `json:"mode,omitempty"` // fastest|cheapest|balanced|quality
-	CatalogModels    string             `json:"catalog_models,omitempty"`
-	MaxCostUSD       float64            `json:"max_cost_usd,omitempty"`
-	MaxLatencyMs     int                `json:"max_latency_ms,omitempty"`
-	AllowedProviders []string           `json:"allowed_providers,omitempty"`
-	DeniedProviders  []string           `json:"denied_providers,omitempty"`
-	DailyMaxRequests map[string]int64   `json:"daily_max_requests,omitempty"`
-	DailyMaxTokens   map[string]int64   `json:"daily_max_tokens,omitempty"`
-	DailyMaxCostUSD  map[string]float64 `json:"daily_max_cost_usd,omitempty"`
-	MetricsPath      string             `json:"metrics_path,omitempty"`
-	EventsPath       string             `json:"events_path,omitempty"`
-	Canary           *CanaryConfig      `json:"canary,omitempty"`
+	Mode             string              `json:"mode,omitempty"` // fastest|cheapest|balanced|quality
+	CatalogModels    string              `json:"catalog_models,omitempty"`
+	MaxCostUSD       float64             `json:"max_cost_usd,omitempty"`
+	MaxLatencyMs     int                 `json:"max_latency_ms,omitempty"`
+	AllowedProviders []string            `json:"allowed_providers,omitempty"`
+	DeniedProviders  []string            `json:"denied_providers,omitempty"`
+	DailyMaxRequests map[string]int64    `json:"daily_max_requests,omitempty"`
+	DailyMaxTokens   map[string]int64    `json:"daily_max_tokens,omitempty"`
+	DailyMaxCostUSD  map[string]float64  `json:"daily_max_cost_usd,omitempty"`
+	MetricsPath      string              `json:"metrics_path,omitempty"`
+	EventsPath       string              `json:"events_path,omitempty"`
+	Canary           *CanaryConfig       `json:"canary,omitempty"`
+	IntentRouter     *IntentRouterConfig `json:"intent_router,omitempty"`
 }
 
 // ApplyDefaults normalizes routing mode and paths.
@@ -92,6 +110,20 @@ func (r *RoutingConfig) ApplyDefaults() {
 	}
 	if r.EventsPath == "" {
 		r.EventsPath = filepath.Join(configDir, "routing-events.jsonl")
+	}
+	if r.IntentRouter == nil {
+		r.IntentRouter = &IntentRouterConfig{
+			Enabled:   defaultIntentRouterEnabled,
+			MinTop1:   defaultIntentRouterMinTop1,
+			MinMargin: defaultIntentRouterMinMargin,
+		}
+	} else {
+		if r.IntentRouter.MinTop1 <= 0 {
+			r.IntentRouter.MinTop1 = defaultIntentRouterMinTop1
+		}
+		if r.IntentRouter.MinMargin <= 0 {
+			r.IntentRouter.MinMargin = defaultIntentRouterMinMargin
+		}
 	}
 }
 

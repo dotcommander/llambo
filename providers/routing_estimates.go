@@ -26,17 +26,26 @@ func costFromTokenSplit(cfg Config, promptTokens, completionTokens int) float64 
 
 // SimulateRoute computes a routing decision for a given intent and token estimate.
 func SimulateRoute(configs map[string]Config, routing RoutingConfig, metrics map[string]ProviderRuntimeMetrics, intent RoutingIntent, estimatedTokens int) RouteDecision {
+	return SimulateRouteResolved(configs, routing, metrics, IntentResolution{Intent: intent}, estimatedTokens)
+}
+
+// SimulateRouteResolved computes a routing decision from a full intent
+// resolution, honoring ambiguity in capability fit.
+func SimulateRouteResolved(configs map[string]Config, routing RoutingConfig, metrics map[string]ProviderRuntimeMetrics, resolution IntentResolution, estimatedTokens int) RouteDecision {
 	entries := FilterEnabledProviders(configs)
 	healthy := make([]Backend, 0, len(entries))
 	for _, e := range entries {
 		healthy = append(healthy, Backend{Name: e.Name, Model: e.Config.Model})
 	}
 
-	candidates := scoreCandidates(configs, healthy, newCandidateScoring(routing, metrics, intent, estimatedTokens))
+	candidates := scoreCandidates(configs, healthy, newCandidateScoring(routing, metrics, resolution, estimatedTokens))
 	decision := RouteDecision{
 		Mode:       routing.Mode,
-		Intent:     intent,
+		Intent:     resolution.Intent,
 		Candidates: candidates,
+	}
+	if detail := ResolutionDetail(resolution); detail != "" {
+		decision.IntentDetail = detail
 	}
 	if len(candidates) > 0 {
 		decision.Chosen = candidates[0].Provider

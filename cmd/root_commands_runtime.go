@@ -75,6 +75,7 @@ type routeCommand struct {
 	Query    routeQueryCommand    `cmd:"" hidden:""`
 	Simulate routeSimulateCommand `cmd:""`
 	Canary   canaryCommand        `cmd:""`
+	Intents  routeIntentsCommand  `cmd:""`
 }
 
 type routeQueryCommand struct {
