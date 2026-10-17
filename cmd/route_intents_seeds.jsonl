@@ -4,27 +4,41 @@
 {"intent": "chat", "prompt": "brainstorm five names for a coffee shop"}
 {"intent": "chat", "prompt": "rewrite this paragraph in a warmer tone"}
 {"intent": "chat", "prompt": "what is a good gift for someone who likes hiking"}
+{"intent": "chat", "prompt": "suggest three movies for a rainy evening"}
+{"intent": "chat", "prompt": "what should I cook for a casual dinner tonight"}
 {"intent": "code", "prompt": "refactor this function to reduce nesting"}
 {"intent": "code", "prompt": "fix the failing unit test in the parser"}
 {"intent": "code", "prompt": "write a goroutine worker pool in go"}
 {"intent": "code", "prompt": "why does this typescript compiler error happen"}
 {"intent": "code", "prompt": "optimize this sql query for postgres"}
 {"intent": "code", "prompt": "add error handling to this python script"}
+{"intent": "code", "prompt": "why is this loop off by one"}
+{"intent": "code", "prompt": "there is a race condition in the worker"}
+{"intent": "code", "prompt": "fix the flaky integration test"}
+{"intent": "code", "prompt": "explain this stack trace and find the bug"}
+{"intent": "code", "prompt": "index out of range panic in the scheduler"}
+{"intent": "code", "prompt": "nil pointer dereference on line forty two"}
 {"intent": "extraction", "prompt": "extract the key decisions from this meeting transcript"}
 {"intent": "extraction", "prompt": "summarize the article into five bullet points"}
 {"intent": "extraction", "prompt": "pull the dates and owners out of this email"}
 {"intent": "extraction", "prompt": "list every dollar figure mentioned in the report"}
 {"intent": "extraction", "prompt": "identify the claims that need supporting evidence"}
 {"intent": "extraction", "prompt": "convert these meeting notes into action items"}
+{"intent": "extraction", "prompt": "who committed what and when from this log"}
+{"intent": "extraction", "prompt": "count the occurrences of each error code"}
 {"intent": "long_context", "prompt": "read the entire attached documentation and answer questions about it"}
 {"intent": "long_context", "prompt": "review the full repository history and describe the architecture"}
 {"intent": "long_context", "prompt": "compare the two lengthy contracts clause by clause"}
 {"intent": "long_context", "prompt": "analyze the complete transcript and find contradictions"}
 {"intent": "long_context", "prompt": "here is the whole book chapter explain the argument"}
 {"intent": "long_context", "prompt": "index the full manual so we can search it later"}
+{"intent": "long_context", "prompt": "read the full deposition and flag inconsistencies"}
+{"intent": "long_context", "prompt": "trace this bug across the whole commit history"}
 {"intent": "embeddings", "prompt": "compute the embedding vector for this sentence"}
 {"intent": "embeddings", "prompt": "find similar documents by vector similarity"}
 {"intent": "embeddings", "prompt": "build a semantic search index over these notes"}
 {"intent": "embeddings", "prompt": "measure the cosine distance between these two paragraphs"}
 {"intent": "embeddings", "prompt": "cluster the customer tickets by meaning"}
 {"intent": "embeddings", "prompt": "deduplicate near-identical articles using embeddings"}
+{"intent": "embeddings", "prompt": "measure semantic drift between versions"}
+{"intent": "embeddings", "prompt": "retrieve the top k passages by vector score"}
